@@ -36,5 +36,3 @@ flutter:
       android:
         package: com.songhieu.flutter_litert_lm
         pluginClass: FlutterLitertLmPlugin
-      ios:
-        pluginClass: FlutterLitertLmPlugin
