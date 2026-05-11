@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -39,18 +39,24 @@ class _ImageViewerState extends State<ImageViewer> {
   Future<void> _download() async {
     setState(() => _isSaving = true);
     try {
-      final result = await ImageGallerySaver.saveImage(
-        _bytes,
-        quality: 100,
-        name: 'privatelm_${DateTime.now().millisecondsSinceEpoch}',
-      );
+      // Request permission if needed
+      final hasAccess = await Gal.hasAccess();
+      if (!hasAccess) {
+        await Gal.requestAccess();
+      }
+      await Gal.putImageBytes(_bytes);
       if (mounted) {
-        final success = result['isSuccess'] == true;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success ? 'Image saved to gallery' : 'Failed to save image'),
-            duration: const Duration(seconds: 2),
+          const SnackBar(
+            content: Text('Image saved to gallery'),
+            duration: Duration(seconds: 2),
           ),
+        );
+      }
+    } on GalException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save image: ${e.type.message}')),
         );
       }
     } catch (e) {

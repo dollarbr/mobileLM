@@ -72,9 +72,13 @@ void _validateLastModel() async {
   final settings = Get.find<SettingsController>();
   final modelName = hive.getSetting<String>(AppConstants.keyLocalModelName);
   final modelPath = hive.getSetting<String>(AppConstants.keyLocalModelPath);
-  final modelRuntime = hive.getSetting<String>(AppConstants.keyLocalModelRuntime);
+  final modelRuntime =
+      hive.getSetting<String>(AppConstants.keyLocalModelRuntime);
 
-  if (modelName != null && modelName.isNotEmpty && modelPath != null && modelPath.isNotEmpty) {
+  if (modelName != null &&
+      modelName.isNotEmpty &&
+      modelPath != null &&
+      modelPath.isNotEmpty) {
     final downloadService = Get.find<DownloadService>();
     if (!await downloadService.isModelDownloaded(modelName)) {
       // Model file is missing, clear the active model settings
@@ -84,7 +88,8 @@ void _validateLastModel() async {
       // Model exists, let's autoload it if inference mode is local
       if (settings.inferenceMode.value == 'local') {
         // Start loading without awaiting
-        inference.loadModel(modelPath, modelName: modelName, modelRuntime: modelRuntime);
+        inference.loadModel(modelPath,
+            modelName: modelName, modelRuntime: modelRuntime);
       }
     }
   }
