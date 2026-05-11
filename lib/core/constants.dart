@@ -230,12 +230,30 @@ class AppConstants {
       'template': 'sd',
     },
     {
-      'name': 'CyberRealistic V4 (SD 1.5)',
-      'filename': 'cyberrealistic_v42.safetensors',
+      'name': 'CyberRealistic V8 FP16 (SD 1.5)',
+      'filename': 'CyberRealistic_V8_FP16.safetensors',
       'url':
-          'https://huggingface.co/philz1337x/cyberrealistic-v4.2/resolve/main/cyberrealistic_v42.safetensors',
+          'https://huggingface.co/cyberdelia/CyberRealistic/resolve/main/CyberRealistic_V8_FP16.safetensors',
       'size': '2.0 GB',
-      'description': 'Photorealistic, uncensored local image generation',
+      'description': 'Photorealistic, uncensored local image generation — FP16 for mobile',
+      'template': 'sd',
+    },
+    {
+      'name': 'Realistic Vision V5.1 fp16 (SD 1.5)',
+      'filename': 'Realistic_Vision_V5.1_fp16-no-ema.safetensors',
+      'url':
+          'https://huggingface.co/SG161222/Realistic_Vision_V5.1_noVAE/resolve/main/Realistic_Vision_V5.1_fp16-no-ema.safetensors',
+      'size': '2.0 GB',
+      'description': 'Highly popular photorealistic portrait and scene model',
+      'template': 'sd',
+    },
+    {
+      'name': 'AbsoluteReality 1.8.1 pruned (SD 1.5)',
+      'filename': 'AbsoluteReality_1.8.1_pruned.safetensors',
+      'url':
+          'https://huggingface.co/Lykon/AbsoluteReality/resolve/main/AbsoluteReality_1.8.1_pruned.safetensors',
+      'size': '2.0 GB',
+      'description': 'Photorealistic general-purpose image generation',
       'template': 'sd',
     },
     {

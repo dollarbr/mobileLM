@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show File, Platform;
 import 'dart:typed_data';
 import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
@@ -27,20 +28,41 @@ class LocalImageService extends GetxService {
       isLoadingModel.value = true;
       progress.value = 0.0;
 
-      // ── Vulkan 1.2 safety gate ──
-      try {
-        final gpu = await LlamaController().detectGpu();
-        if (!gpu.vulkanSupported || gpu.vulkanApiVersion < 0x00402000) {
-          isLoadingModel.value = false;
-          final versionHex = '0x${gpu.vulkanApiVersion.toRadixString(16)}';
-          return 'ERROR: Local image generation requires Vulkan 1.2. '
-              'This device reports Vulkan $versionHex — image models are not supported.';
+      print('[LocalImageService] loadModel called with path: $modelPath');
+
+      // ── Vulkan 1.2 safety gate (Android only) ──
+      if (Platform.isAndroid) {
+        try {
+          final gpu = await LlamaController().detectGpu();
+          if (!gpu.vulkanSupported || gpu.vulkanApiVersion < 0x00402000) {
+            isLoadingModel.value = false;
+            final versionHex = '0x${gpu.vulkanApiVersion.toRadixString(16)}';
+            return 'ERROR: Local image generation requires Vulkan 1.2. '
+                'This device reports Vulkan $versionHex — image models are not supported.';
+          }
+        } catch (e) {
+          // If GPU detection itself fails, proceed and let native layer handle it
         }
-      } catch (e) {
-        // If GPU detection itself fails, proceed and let native layer handle it
       }
 
-      final success = await SdFlutterAndroid.initModel(modelPath);
+      // Debug: check file existence and size from Dart side
+      try {
+        final file = File(modelPath);
+        final exists = await file.exists();
+        print('[LocalImageService] File exists: $exists');
+        if (exists) {
+          final length = await file.length();
+          print('[LocalImageService] File size: $length bytes');
+        }
+      } catch (e) {
+        print('[LocalImageService] File check error: $e');
+      }
+
+      print('[LocalImageService] Calling SdFlutterAndroid.initModel...');
+      final rawResult = await SdFlutterAndroid.initModelRaw(modelPath);
+      print('[LocalImageService] initModel raw result: $rawResult');
+
+      final success = rawResult is bool ? rawResult : (rawResult is String && rawResult == 'true');
 
       if (success) {
         isModelLoaded.value = true;
@@ -50,7 +72,8 @@ class LocalImageService extends GetxService {
       } else {
         isModelLoaded.value = false;
         isLoadingModel.value = false;
-        return 'ERROR: Native Engine failed to initialize model.';
+        final errorDetail = rawResult is String ? rawResult : 'Native Engine failed to initialize model.';
+        return 'ERROR: $errorDetail';
       }
     } catch (e) {
       isModelLoaded.value = false;

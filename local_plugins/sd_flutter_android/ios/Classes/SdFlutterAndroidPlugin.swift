@@ -23,8 +23,13 @@ public class SdFlutterAndroidPlugin: NSObject, FlutterPlugin {
         result(FlutterError(code: "INVALID_ARGUMENT", message: "Path is null", details: nil))
         return
       }
-      let success = wrapper.initModel(path)
-      result(success)
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self = self else { return }
+        let initResult = self.wrapper.loadModel(path)
+        DispatchQueue.main.async {
+          result(initResult)
+        }
+      }
 
     case "generateImage":
       guard let args = call.arguments as? [String: Any],
@@ -32,6 +37,15 @@ public class SdFlutterAndroidPlugin: NSObject, FlutterPlugin {
             let steps = args["steps"] as? Int else {
         result(FlutterError(code: "INVALID_ARGUMENT", message: "Invalid arguments", details: nil))
         return
+      }
+
+      self.wrapper.onProgress = { step, total in
+        DispatchQueue.main.async {
+          self.channel.invokeMethod("onProgress", arguments: [
+            "step": step,
+            "total": total
+          ])
+        }
       }
 
       DispatchQueue.global(qos: .userInitiated).async { [weak self] in

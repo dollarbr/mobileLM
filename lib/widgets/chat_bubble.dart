@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/chat_message.dart';
 import '../utils/thought_parser.dart';
 import 'attachment_preview.dart';
+import 'image_viewer.dart';
 import 'thought_disclosure.dart';
 
 class ChatBubble extends StatelessWidget {
@@ -53,22 +54,25 @@ class ChatBubble extends StatelessWidget {
               if (message.imageBase64 != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.memory(
-                      base64Decode(message.imageBase64!),
-                      width: double.infinity,
-                      height: 200,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.05)
-                              : Colors.black.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(14),
+                  child: GestureDetector(
+                    onTap: () => ImageViewer.show(context, message.imageBase64!),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.memory(
+                        base64Decode(message.imageBase64!),
+                        width: double.infinity,
+                        height: 200,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.white.withValues(alpha: 0.05)
+                                : Colors.black.withValues(alpha: 0.05),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Center(child: Icon(Icons.broken_image_rounded, size: 28)),
                         ),
-                        child: const Center(child: Icon(Icons.broken_image_rounded, size: 28)),
                       ),
                     ),
                   ),
