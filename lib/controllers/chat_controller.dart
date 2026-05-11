@@ -68,6 +68,10 @@ class ChatController extends GetxController {
   final isStreaming = false.obs;
   final streamingAttachmentType = Rxn<String>();
 
+  // Image generation progress (lightweight, replaces text-heavy updates)
+  final imageGenStep = 0.obs;
+  final imageGenTotal = 0.obs;
+
   final textController = TextEditingController();
   final scrollController = ScrollController();
   Timer? _scrollTimer;
@@ -402,16 +406,13 @@ class ChatController extends GetxController {
 
         if (localImage.isModelLoaded.value) {
           // Local image generation
+          imageGenStep.value = 0;
+          imageGenTotal.value = 0;
           final pngBytes = await localImage.generateImage(
             prompt: text,
             onProgress: (step, total) {
-              final estSec = (total - step) * 20; // ~20 sec per step on CPU
-              final estText = estSec > 60
-                  ? '${(estSec / 60).ceil()} min remaining'
-                  : '$estSec sec remaining';
-              streamingResponse.value =
-                  'Generating image... step $step/$total · ~$estText';
-              trackThoughtTiming();
+              imageGenStep.value = step;
+              imageGenTotal.value = total;
               _scrollToBottom();
             },
           );
@@ -473,6 +474,8 @@ class ChatController extends GetxController {
       isStreaming.value = false;
       streamingAttachmentType.value = null;
       streamingResponse.value = '';
+      imageGenStep.value = 0;
+      imageGenTotal.value = 0;
 
       String? outImageBase64;
       if (rawResponse.startsWith('[IMAGE_BASE64]')) {
@@ -507,6 +510,8 @@ class ChatController extends GetxController {
       isStreaming.value = false;
       streamingAttachmentType.value = null;
       streamingResponse.value = '';
+      imageGenStep.value = 0;
+      imageGenTotal.value = 0;
       Get.find<AppLogService>().error('Chat response failed', details: e);
       final errorMsg = ChatMessage(
         id: _uuid.v4(),

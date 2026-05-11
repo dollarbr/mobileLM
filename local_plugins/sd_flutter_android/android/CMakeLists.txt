@@ -9,9 +9,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 
-# Enable Vulkan GPU backend for ggml on Android
-set(SD_VULKAN ON CACHE BOOL "Enable Vulkan backend" FORCE)
-set(GGML_VULKAN ON CACHE BOOL "Enable GGML Vulkan" FORCE)
+# Vulkan is disabled on Android because Adreno drivers crash with ggml compute shaders.
+# CPU (ARM64 NEON) is slower but stable.
+set(SD_VULKAN OFF CACHE BOOL "Enable Vulkan backend" FORCE)
+set(GGML_VULKAN OFF CACHE BOOL "Enable GGML Vulkan" FORCE)
 
 # Use custom FindVulkan that works with Android NDK cross-compilation
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -30,7 +31,6 @@ target_link_libraries(sd_jni
     stable-diffusion
     android
     log
-    $<$<BOOL:${ANDROID}>:-lvulkan>
 )
 
 target_include_directories(sd_jni PRIVATE

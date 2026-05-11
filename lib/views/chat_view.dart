@@ -317,17 +317,32 @@ class ChatView extends GetView<ChatController> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Column(children: [
-                const Icon(Icons.download_rounded, color: Color(0xFFFF9500), size: 36),
+                const Icon(Icons.download_rounded,
+                    color: Color(0xFFFF9500), size: 36),
                 const SizedBox(height: 14),
-                Text('No Local Models', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black)),
+                Text('No Local Models',
+                    style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black)),
                 const SizedBox(height: 6),
-                Text('You need to download a model to use local inference on your device.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 14, color: Theme.of(context).hintColor)),
+                Text(
+                    'You need to download a model to use local inference on your device.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                        fontSize: 14, color: Theme.of(context).hintColor)),
                 const SizedBox(height: 20),
                 FilledButton.icon(
                   onPressed: () => Get.find<HomeController>().changeTab(1),
                   icon: const Icon(Icons.arrow_downward_rounded, size: 18),
                   label: const Text('Go to Models'),
-                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFFFF9500), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12), textStyle: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF9500),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
+                      textStyle: GoogleFonts.inter(
+                          fontSize: 15, fontWeight: FontWeight.w600)),
                 ),
               ]),
             );
@@ -378,6 +393,7 @@ class ChatView extends GetView<ChatController> {
   // ── Streaming Bubble ──
   Widget _streamBubble(BuildContext context, String text, bool isDark) {
     final attType = controller.streamingAttachmentType.value;
+    final isImageGen = controller.imageGenTotal.value > 0;
     final clean = _cleanStream(text).trimLeft();
     final parts = splitThoughtTags(clean);
     final answer = parts.answer.trimLeft();
@@ -401,7 +417,9 @@ class ChatView extends GetView<ChatController> {
           ),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (!hasText)
+            if (isImageGen)
+              _ImageGenIndicator(controller: controller, isDark: isDark)
+            else if (!hasText)
               _typingHint(context, isDark, attachmentType: attType)
             else ...[
               if (parts.hasThought)
@@ -419,7 +437,7 @@ class ChatView extends GetView<ChatController> {
                   _BlinkingCursor(color: Theme.of(context).hintColor),
                 ]),
             ],
-            if (hasText)
+            if (hasText && !isImageGen)
               Obx(() {
                 final inf = Get.find<InferenceService>();
                 if (inf.tokensPerSecond.value <= 0)
@@ -750,6 +768,98 @@ class ChatView extends GetView<ChatController> {
       : v >= 1000
           ? '${(v / 1000).toStringAsFixed(1)}K'
           : v.toString();
+}
+
+// ── Image Generation Indicator ──
+class _ImageGenIndicator extends StatefulWidget {
+  final ChatController controller;
+  final bool isDark;
+  const _ImageGenIndicator({required this.controller, required this.isDark});
+
+  @override
+  State<_ImageGenIndicator> createState() => _ImageGenIndicatorState();
+}
+
+class _ImageGenIndicatorState extends State<_ImageGenIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final dots = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final t = ((_c.value - i * 0.18) % 1.0).clamp(0.0, 1.0);
+            final pulse = math.sin(t * math.pi).clamp(0.0, 1.0);
+            return Padding(
+              padding: EdgeInsets.only(right: i < 2 ? 5 : 0),
+              child: Opacity(
+                opacity: 0.25 + 0.75 * pulse,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: widget.isDark
+                        ? Colors.white.withValues(alpha: 0.6)
+                        : Colors.black.withValues(alpha: 0.35),
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            dots,
+            const SizedBox(height: 10),
+            Text(
+              'Generating image',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Theme.of(context).hintColor,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Obx(() {
+              final step = widget.controller.imageGenStep.value;
+              final total = widget.controller.imageGenTotal.value;
+              if (total <= 0) return const SizedBox.shrink();
+              return Text(
+                '$step / $total',
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  color: Theme.of(context).hintColor.withValues(alpha: 0.5),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
 }
 
 // ── Typing Dots ──

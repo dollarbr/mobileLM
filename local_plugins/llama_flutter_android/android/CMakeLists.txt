@@ -48,14 +48,11 @@ add_library(llama_jni SHARED
     src/main/cpp/jni_wrapper.cpp
 )
 
-find_library(VULKAN_LIB vulkan)
-
 target_link_libraries(llama_jni
     llama
     c++_shared
     android
     log
-    ${VULKAN_LIB}
 )
 
 target_include_directories(llama_jni PRIVATE

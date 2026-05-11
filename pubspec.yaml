@@ -38,7 +38,6 @@ dependencies:
 
   # Image Support
   image_picker: ^1.1.0
-  image_gallery_saver: ^2.0.3
   share_plus: ^10.0.0
 
   # UI
@@ -57,6 +56,7 @@ dependencies:
   image: ^4.8.0
   flutter_litert_lm:
     path: local_plugins/flutter_litert_lm
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:

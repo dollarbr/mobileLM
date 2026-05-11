@@ -30,21 +30,6 @@ class LocalImageService extends GetxService {
 
       print('[LocalImageService] loadModel called with path: $modelPath');
 
-      // ── Vulkan 1.2 safety gate (Android only) ──
-      if (Platform.isAndroid) {
-        try {
-          final gpu = await LlamaController().detectGpu();
-          if (!gpu.vulkanSupported || gpu.vulkanApiVersion < 0x00402000) {
-            isLoadingModel.value = false;
-            final versionHex = '0x${gpu.vulkanApiVersion.toRadixString(16)}';
-            return 'ERROR: Local image generation requires Vulkan 1.2. '
-                'This device reports Vulkan $versionHex — image models are not supported.';
-          }
-        } catch (e) {
-          // If GPU detection itself fails, proceed and let native layer handle it
-        }
-      }
-
       // Debug: check file existence and size from Dart side
       try {
         final file = File(modelPath);
