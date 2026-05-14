@@ -5,7 +5,10 @@ import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'controllers/settings_controller.dart';
 import 'controllers/cloud_model_controller.dart';
+import 'controllers/server_controller.dart';
+import 'controllers/model_controller.dart';
 import 'core/theme.dart';
+//////
 import 'core/routes.dart';
 import 'services/hive_service.dart';
 import 'services/inference_service.dart';
@@ -42,6 +45,8 @@ void main() async {
   Get.put(DownloadService());
   Get.put(LocalImageService());
   Get.put(AppLogService());
+  Get.put(ServerController(), permanent: true);
+  Get.put(ModelController());
 
   // Auto-configure inference settings based on device RAM
   _autoConfigureForDevice();
@@ -49,7 +54,7 @@ void main() async {
   // Keep last model as a quick-load option, but do not auto-load on startup.
   _validateLastModel();
 
-  runApp(const AIChatApp());
+  runApp(const PrivateLMApp());
 
   // Apply system UI after frame is rendered so Get.mediaQuery is available
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -58,19 +63,34 @@ void main() async {
 }
 
 /// If a remembered model is missing, clear it so the quick-load option is honest.
+/// If it is present, start loading it in the background if in local mode.
 void _validateLastModel() async {
   final inference = Get.find<InferenceService>();
   if (!inference.supportsLocalInference) return;
 
   final hive = Get.find<HiveService>();
+  final settings = Get.find<SettingsController>();
   final modelName = hive.getSetting<String>(AppConstants.keyLocalModelName);
+  final modelPath = hive.getSetting<String>(AppConstants.keyLocalModelPath);
+  final modelRuntime =
+      hive.getSetting<String>(AppConstants.keyLocalModelRuntime);
 
-  if (modelName != null && modelName.isNotEmpty) {
+  if (modelName != null &&
+      modelName.isNotEmpty &&
+      modelPath != null &&
+      modelPath.isNotEmpty) {
     final downloadService = Get.find<DownloadService>();
     if (!await downloadService.isModelDownloaded(modelName)) {
       // Model file is missing, clear the active model settings
       await hive.setSetting(AppConstants.keyLocalModelPath, '');
       await hive.setSetting(AppConstants.keyLocalModelName, '');
+    } else {
+      // Model exists, let's autoload it if inference mode is local
+      if (settings.inferenceMode.value == 'local') {
+        // Start loading without awaiting
+        inference.loadModel(modelPath,
+            modelName: modelName, modelRuntime: modelRuntime);
+      }
     }
   }
 }
@@ -94,14 +114,14 @@ void _autoConfigureForDevice() {
       'maxTokens=${device.recommendedMaxTokens} for ${device.totalRamGB.value.toStringAsFixed(1)}GB RAM');
 }
 
-class AIChatApp extends StatelessWidget {
-  const AIChatApp({super.key});
+class PrivateLMApp extends StatelessWidget {
+  const PrivateLMApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     final settings = Get.find<SettingsController>();
     return Obx(() => GetMaterialApp(
-          title: 'AI Chat',
+          title: 'PrivateLM',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,

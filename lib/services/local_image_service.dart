@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io' show File, Platform;
 import 'dart:typed_data';
 import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
+import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:sd_flutter_android/sd_flutter_android.dart';
 import '../core/constants.dart';
 import 'hive_service.dart';
@@ -26,7 +28,26 @@ class LocalImageService extends GetxService {
       isLoadingModel.value = true;
       progress.value = 0.0;
 
-      final success = await SdFlutterAndroid.initModel(modelPath);
+      print('[LocalImageService] loadModel called with path: $modelPath');
+
+      // Debug: check file existence and size from Dart side
+      try {
+        final file = File(modelPath);
+        final exists = await file.exists();
+        print('[LocalImageService] File exists: $exists');
+        if (exists) {
+          final length = await file.length();
+          print('[LocalImageService] File size: $length bytes');
+        }
+      } catch (e) {
+        print('[LocalImageService] File check error: $e');
+      }
+
+      print('[LocalImageService] Calling SdFlutterAndroid.initModel...');
+      final rawResult = await SdFlutterAndroid.initModelRaw(modelPath);
+      print('[LocalImageService] initModel raw result: $rawResult');
+
+      final success = rawResult is bool ? rawResult : (rawResult is String && rawResult == 'true');
 
       if (success) {
         isModelLoaded.value = true;
@@ -36,7 +57,8 @@ class LocalImageService extends GetxService {
       } else {
         isModelLoaded.value = false;
         isLoadingModel.value = false;
-        return 'ERROR: Native Engine failed to initialize model.';
+        final errorDetail = rawResult is String ? rawResult : 'Native Engine failed to initialize model.';
+        return 'ERROR: $errorDetail';
       }
     } catch (e) {
       isModelLoaded.value = false;
@@ -60,7 +82,9 @@ class LocalImageService extends GetxService {
 
     isGenerating.value = true;
     try {
-      final steps = _hive.getSetting<int>('image_steps', defaultValue: 20) ?? 20;
+      final steps = _hive.getSetting<int>(AppConstants.keyImageSteps,
+          defaultValue: AppConstants.defaultImageSteps) ??
+          AppConstants.defaultImageSteps;
       
       final rawBytes = await SdFlutterAndroid.generateImage(
         prompt, 
