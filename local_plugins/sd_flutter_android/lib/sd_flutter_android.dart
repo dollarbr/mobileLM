@@ -10,9 +10,20 @@ class SdFlutterAndroid {
     return _channel.invokeMethod<String>('getPlatformVersion');
   }
 
+  static Future<dynamic> initModelRaw(String path) async {
+    final result = await _channel.invokeMethod<dynamic>('initModel', {'path': path});
+    return result;
+  }
+
   static Future<bool> initModel(String path) async {
-    final success = await _channel.invokeMethod<bool>('initModel', {'path': path});
-    return success ?? false;
+    final result = await initModelRaw(path);
+    if (result is bool) {
+      return result;
+    }
+    if (result is String && result == 'true') {
+      return true;
+    }
+    return false;
   }
 
   static Function(int step, int total)? _onProgress;

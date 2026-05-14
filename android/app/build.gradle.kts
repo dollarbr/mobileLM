@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.aichat.ai_chat"
+    namespace = "com.orailnoor.privatelm"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,8 +21,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.aichat.ai_chat"
-        minSdk = 26
+        applicationId = "com.orailnoor.privatelm"
+        minSdk = 28
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
