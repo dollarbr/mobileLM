@@ -82,7 +82,7 @@ class ServerView extends GetView<ServerController> {
               Divider(height: 0.5, indent: 16, color: isDark ? Colors.white.withValues(alpha: 0.06) : Colors.black.withValues(alpha: 0.06)),
               Padding(padding: const EdgeInsets.all(14), child: Row(children: [
                 Expanded(child: TextField(
-                  controller: TextEditingController(text: controller.apiKey.value)..selection = TextSelection.collapsed(offset: controller.apiKey.value.length),
+                  controller: controller.apiKeyCtrl,
                   onChanged: (v) => controller.apiKey.value = v,
                   onSubmitted: (_) => controller.saveSettings(),
                   decoration: const InputDecoration(labelText: 'API key', hintText: 'Optional'),
@@ -111,13 +111,13 @@ class ServerView extends GetView<ServerController> {
                 ),
                 const SizedBox(height: 14),
                 if (controller.tunnelProvider.value == 'cloudflare') ...[
-                  _settingField('Cloudflare tunnel token', controller.cloudflareToken.value, (v) => controller.cloudflareToken.value = v, (_) => controller.saveSettings()),
+                  _settingField('Cloudflare tunnel token', controller.cloudflareTokenCtrl, (v) => controller.cloudflareToken.value = v, (_) => controller.saveSettings()),
                   const SizedBox(height: 8),
-                  _settingField('Stable public URL', controller.cloudflarePublicUrl.value, (v) => controller.cloudflarePublicUrl.value = v, (_) => controller.saveSettings()),
+                  _settingField('Stable public URL', controller.cloudflarePublicUrlCtrl, (v) => controller.cloudflarePublicUrl.value = v, (_) => controller.saveSettings()),
                 ] else ...[
-                  _settingField('ngrok auth token', controller.ngrokAuthToken.value, (v) => controller.ngrokAuthToken.value = v, (_) => controller.saveSettings()),
+                  _settingField('ngrok auth token', controller.ngrokAuthTokenCtrl, (v) => controller.ngrokAuthToken.value = v, (_) => controller.saveSettings()),
                   const SizedBox(height: 8),
-                  _settingField('ngrok reserved domain', controller.ngrokDomain.value, (v) => controller.ngrokDomain.value = v, (_) => controller.saveSettings()),
+                  _settingField('ngrok reserved domain', controller.ngrokDomainCtrl, (v) => controller.ngrokDomain.value = v, (_) => controller.saveSettings()),
                 ],
                 const SizedBox(height: 14),
                 Row(children: [
@@ -216,9 +216,9 @@ class ServerView extends GetView<ServerController> {
     );
   }
 
-  Widget _settingField(String label, String value, ValueChanged<String> onChanged, ValueChanged<String> onSubmitted) {
+  Widget _settingField(String label, TextEditingController ctrl, ValueChanged<String> onChanged, ValueChanged<String> onSubmitted) {
     return TextField(
-      controller: TextEditingController(text: value)..selection = TextSelection.collapsed(offset: value.length),
+      controller: ctrl,
       onChanged: onChanged,
       onSubmitted: onSubmitted,
       decoration: InputDecoration(labelText: label),

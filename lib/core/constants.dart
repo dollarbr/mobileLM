@@ -267,16 +267,8 @@ class AppConstants {
       'description': 'Highly versatile Anime / Stylized image generator',
       'template': 'sd',
     },
-    {
-      'name': 'SDXS 512 (Experimental)',
-      'filename': 'sdxs-512-tinySDdistilled_Q8_0.gguf',
-      'url':
-          'https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF/resolve/main/sdxs-512-tinySDdistilled_Q8_0.gguf',
-      'size': '0.9 GB',
-      'description': 'Experimental 1-step ultra-fast image generation',
-      'template': 'sd',
-    },
   ];
+
 
   // Cloud API Endpoints
   static const String openaiEndpoint =
