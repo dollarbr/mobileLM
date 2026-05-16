@@ -60,17 +60,17 @@ class LocalImageService extends GetxService {
         loadedModelName.value = modelName ?? modelPath.split('/').last;
         await _hive.setSetting(AppConstants.keyImageModelPath, modelPath);
         await _hive.setSetting(AppConstants.keyImageModelName, loadedModelName.value);
-        return 'SUCCESS: Native Image Engine loaded.';
+        return 'Image model loaded successfully.';
       } else {
         isModelLoaded.value = false;
         isLoadingModel.value = false;
-        final errorDetail = rawResult is String ? rawResult : 'Native Engine failed to initialize model.';
-        return 'ERROR: $errorDetail';
+        final errorDetail = rawResult is String ? rawResult : 'Model initialization failed.';
+        return 'Could not load this model. Try CyberRealistic, Realistic Vision, or AbsoluteReality — these work reliably on most devices.\n\nTechnical detail: $errorDetail';
       }
     } catch (e) {
       isModelLoaded.value = false;
       isLoadingModel.value = false;
-      return 'ERROR: Failed to load native engine — $e';
+      return 'Could not load this model. Try CyberRealistic, Realistic Vision, or AbsoluteReality — these work reliably on most devices.\n\nTechnical detail: $e';
     }
   }
 

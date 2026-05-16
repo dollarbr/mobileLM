@@ -1,7 +1,5 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:get/get.dart';
 
-// dart:io is conditionally available — only used behind kIsWeb guards
 import 'device_info_native.dart' if (dart.library.html) 'device_info_web.dart'
     as platform_info;
 
@@ -11,6 +9,9 @@ class DeviceInfoService extends GetxService {
   final totalRamGB = 0.0.obs;
   final availableRamGB = 0.0.obs;
   final deviceTier = ''.obs; // 'low', 'mid', 'high', 'ultra'
+  final isTensorSoC = false.obs;
+  final socFamily = platform_info.SocFamily.unknown.obs;
+  final socHardware = ''.obs;
 
   // Recommended limits based on device RAM
   int get recommendedContextSize => _tierConfig['contextSize']!;
@@ -75,14 +76,19 @@ class DeviceInfoService extends GetxService {
 
     print('[DeviceInfo] RAM: ${totalRamGB.value.toStringAsFixed(1)}GB total, '
         '${availableRamGB.value.toStringAsFixed(1)}GB available, '
-        'tier: ${deviceTier.value}');
+        'tier: ${deviceTier.value}, tensor: ${isTensorSoC.value}');
     return this;
   }
 
   Future<void> refreshMemoryInfo() async {
     final info = await platform_info.getDeviceInfo();
-    totalRamGB.value = info['totalRamGB'] as double;
-    availableRamGB.value = info['availableRamGB'] as double;
+    totalRamGB.value = (info['totalRamGB'] as num).toDouble();
+    availableRamGB.value = (info['availableRamGB'] as num).toDouble();
+    isTensorSoC.value = (info['isTensorSoC'] as num? ?? 0.0) > 0.5;
+    final rawIndex = (info['socFamily'] as num? ?? 8).toInt();
+    final clamped = rawIndex < 0 ? 0 : (rawIndex > 8 ? 8 : rawIndex);
+    socFamily.value = platform_info.SocFamily.values[clamped];
+    socHardware.value = (info['socHardware'] as String?) ?? '';
   }
 
   String get tierDescription {

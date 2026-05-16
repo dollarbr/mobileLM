@@ -31,6 +31,7 @@ class InferenceEngine {
   LiteLmEngine? _liteEngine;
   LiteLmConversation? _liteConversation;
   StreamSubscription? _subscription;
+  StreamSubscription? _loadProgressSub;
   Timer? _idleTimer;
   void Function()? _onStop;
   bool _isLiteRt = false;
@@ -45,6 +46,7 @@ class InferenceEngine {
     String? modelRuntime,
     required int contextSize,
     required String deviceTier,
+    bool isTensorSoC = false,
     String liteRtPerformanceMode = 'auto_fast',
     bool forceLiteRtCpu = false,
     bool clearLiteRtCache = false,
@@ -114,9 +116,20 @@ class InferenceEngine {
                   : 3;
     }
 
+    // Google Tensor SoC (Pixel 6/7/8) has known Q4_K_M dequant bugs
+    // that corrupt logits at >1 thread on Gemma models. Force single-threaded
+    // to eliminate KV cache races in the quantization dot-product path.
+    final modelName = modelPath.toLowerCase();
+    if (isTensorSoC && modelName.contains('gemma')) {
+      threads = 1;
+      print('[Inference] Tensor SoC + Gemma detected — forcing single-threaded inference');
+    }
+
     // ── Load Progress ──
+    await _loadProgressSub?.cancel();
+    _loadProgressSub = null;
     try {
-      _controller!.loadProgress.listen((progress) {
+      _loadProgressSub = _controller!.loadProgress.listen((progress) {
         onProgress?.call(_normalizeProgress(progress));
       });
     } catch (_) {}
@@ -258,7 +271,7 @@ class InferenceEngine {
     bool completed = false;
 
     void finish(String result) {
-      if (!completed) {
+      if (!completed && !_disposed) {
         completed = true;
         _idleTimer?.cancel();
         _subscription?.cancel();
@@ -315,9 +328,11 @@ class InferenceEngine {
         if (tokenCount == 0) {
           print('[Inference] ✓ FIRST TOKEN received! Prefill done.');
         }
-        buffer.write(token);
+        final clean = _sanitizeGemmaGarbage(token);
+        if (clean.isEmpty) return;
+        buffer.write(clean);
         tokenCount++;
-        onToken?.call(token);
+        onToken?.call(clean);
         _idleTimer?.cancel();
         _idleTimer = Timer(const Duration(seconds: 5), () {
           print('[Inference] Idle timeout — $tokenCount tokens');
@@ -380,7 +395,7 @@ class InferenceEngine {
     var tokenCount = 0;
 
     void finish(String result) {
-      if (!completed) {
+      if (!completed && !_disposed) {
         completed = true;
         _idleTimer?.cancel();
         _subscription?.cancel();
@@ -560,6 +575,22 @@ class InferenceEngine {
     } catch (_) {}
   }
 
+  /// Reset any persistent conversation state so the next generation
+  /// starts with a clean context. Essential when switching chat sessions.
+  Future<void> resetConversation() async {
+    if (_isLiteRt) {
+      try {
+        await _liteConversation?.dispose();
+      } catch (_) {}
+      _liteConversation = null;
+      _liteConversationSystemPrompt = null;
+      _liteConversationTemperature = null;
+      _liteConversationHasMessages = false;
+    }
+    // llama.cpp (GGUF) is stateless per-generation — no native
+    // conversation object to reset.
+  }
+
   Future<ContextInfo?> getContextInfo() async {
     if (_isLiteRt) return null;
     try {
@@ -584,6 +615,8 @@ class InferenceEngine {
     try {
       await _liteEngine?.dispose();
     } catch (_) {}
+    unawaited(_loadProgressSub?.cancel() ?? Future<void>.value());
+    _loadProgressSub = null;
     _controller = null;
     _liteConversation = null;
     _liteEngine = null;
@@ -635,15 +668,32 @@ class InferenceEngine {
   }
 
   String _cleanLiteRtChunk(String text) {
+    return _sanitizeGemmaGarbage(
+      text
+          .replaceAll(
+              RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]'),
+              '')
+          .replaceAll(RegExp(r'[\u200B-\u200D\uFEFF]'), '')
+          .replaceAll('\uFFFD', '')
+          .replaceAll('<|endoftext|>', '')
+          .replaceAll('<|im_end|>', '')
+          .replaceAll('<|end|>', ''),
+    );
+  }
+
+  /// Strip Gemma garbage tokens that leak when Q4_K_M dequant is corrupt
+  /// on Google Tensor SoC. Harmless on devices that don't produce them.
+  /// NOTE: Do NOT trim() — SentencePiece tokens rely on leading spaces.
+  String _sanitizeGemmaGarbage(String text) {
     return text
-        .replaceAll(
-            RegExp(r'[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]'),
-            '')
-        .replaceAll(RegExp(r'[\u200B-\u200D\uFEFF]'), '')
-        .replaceAll('\uFFFD', '')
-        .replaceAll('<|endoftext|>', '')
-        .replaceAll('<|im_end|>', '')
-        .replaceAll('<|end|>', '');
+        .replaceAll(RegExp(r'<unused\d+>'), '')
+        .replaceAll(RegExp(r'\[@BOS@\]'), '')
+        .replaceAll('<bos>', '')
+        .replaceAll('<mask>', '')
+        .replaceAll('<pad>', '')
+        .replaceAll('<unk>', '')
+        .replaceAll('<s>', '')
+        .replaceAll('</s>', '');
   }
 
   bool _hasPrintableText(String text) {

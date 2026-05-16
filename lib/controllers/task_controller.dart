@@ -59,8 +59,8 @@ Steps:''';
 
       String response;
       final mode = _hive.getSetting(AppConstants.keyInferenceMode,
-              defaultValue: 'cloud') ??
-          'cloud';
+              defaultValue: 'local') ??
+          'local';
 
       if (mode == 'local') {
         final inference = Get.find<InferenceService>();
