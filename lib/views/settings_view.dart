@@ -8,6 +8,7 @@ import '../core/constants.dart';
 import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
 import '../services/device_info_service.dart';
+import '../services/device_info_native.dart' as platform_info;
 import 'log_view.dart';
 
 class SettingsView extends GetView<SettingsController> {
@@ -221,7 +222,7 @@ class SettingsView extends GetView<SettingsController> {
                               style: GoogleFonts.inter(
                                   fontSize: 17, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 2),
-                          Text('v1.0.0 · by orailnoor',
+                          Text('v1.0.2 · by orailnoor',
                               style: GoogleFonts.inter(
                                   fontSize: 13,
                                   color: Theme.of(context).hintColor)),
@@ -354,6 +355,10 @@ class SettingsView extends GetView<SettingsController> {
           tierColor = Theme.of(context).hintColor;
           tierIcon = Icons.phone_android;
       }
+
+      final soc = device.socFamily.value;
+      final quantWarning = soc.quantWarning;
+
       return _appleGroupedCard(context, isDark, children: [
         Padding(
             padding: const EdgeInsets.all(16),
@@ -374,6 +379,61 @@ class SettingsView extends GetView<SettingsController> {
                             fontSize: 12, color: Theme.of(context).hintColor)),
                   ])),
             ])),
+        // SoC + quantization recommendation
+        if (soc != platform_info.SocFamily.unknown) ...[
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(children: [
+              _iconBox(const Color(0xFF5856D6), Icons.memory_outlined),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(soc.displayName,
+                        style: GoogleFonts.inter(
+                            fontSize: 14, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 3),
+                    Text('Recommended: ${soc.recommendedQuant}',
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: quantWarning != null
+                                ? const Color(0xFFFF9500)
+                                : Theme.of(context).hintColor)),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+        ],
+        // Warning banner for problematic SoCs
+        if (quantWarning != null) ...[
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF9500).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    size: 16, color: Color(0xFFFF9500)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(quantWarning,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: const Color(0xFFFF9500),
+                        fontWeight: FontWeight.w500,
+                      )),
+                ),
+              ],
+            ),
+          ),
+        ],
       ]);
     });
   }

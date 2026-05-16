@@ -178,8 +178,9 @@ class ChatView extends GetView<ChatController> {
                 size: 20, color: Theme.of(context).hintColor),
             onPressed: () => _showHistory(context)),
         IconButton(
-            icon: Icon(Icons.square_outlined,
-                size: 20, color: _appleBlue(context)),
+            tooltip: 'New Chat',
+            icon: Icon(Icons.edit_note,
+                size: 22, color: _appleBlue(context)),
             onPressed: () => controller.createNewChat()),
       ],
     );
@@ -799,6 +800,14 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
     super.dispose();
   }
 
+  String _fmtEta(int seconds) {
+    if (seconds <= 0) return '';
+    if (seconds < 60) return '~$seconds s remaining';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return s > 0 ? '~$m m $s s remaining' : '~$m m remaining';
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -828,35 +837,74 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
           }),
         );
 
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            dots,
-            const SizedBox(height: 10),
-            Text(
-              'Generating image',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: Theme.of(context).hintColor,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Obx(() {
-              final step = widget.controller.imageGenStep.value;
-              final total = widget.controller.imageGenTotal.value;
-              if (total <= 0) return const SizedBox.shrink();
-              return Text(
-                '$step / $total',
+        return Obx(() {
+          final step = widget.controller.imageGenStep.value;
+          final total = widget.controller.imageGenTotal.value;
+          final eta = widget.controller.imageGenEstimatedSecs.value;
+          final hasProgress = total > 0 && step > 0;
+          final pct = hasProgress ? (step / total).clamp(0.0, 1.0) : 0.0;
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              dots,
+              const SizedBox(height: 10),
+              Text(
+                'Generating image',
                 style: GoogleFonts.inter(
-                  fontSize: 10,
-                  color: Theme.of(context).hintColor.withValues(alpha: 0.5),
+                  fontSize: 13,
+                  color: Theme.of(context).hintColor,
+                  fontWeight: FontWeight.w400,
                 ),
-              );
-            }),
-          ],
-        );
+              ),
+              if (hasProgress) ...[
+                const SizedBox(height: 10),
+                // Progress bar
+                Container(
+                  width: 160,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: (widget.isDark ? Colors.white : Colors.black)
+                        .withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: pct,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _appleBlue(context),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Percentage + steps
+                Text(
+                  '${(pct * 100).toStringAsFixed(0)}% · Step $step of $total',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: Theme.of(context).hintColor.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                // ETA (only if we have a real estimate)
+                if (eta > 0 && step >= 2) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    _fmtEta(eta),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.45),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          );
+        });
       },
     );
   }

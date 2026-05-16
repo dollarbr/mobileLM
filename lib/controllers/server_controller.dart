@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
@@ -35,6 +36,12 @@ class ServerController extends GetxController {
   final ngrokAuthToken = ''.obs;
   final ngrokDomain = ''.obs;
 
+  late final TextEditingController apiKeyCtrl;
+  late final TextEditingController cloudflareTokenCtrl;
+  late final TextEditingController cloudflarePublicUrlCtrl;
+  late final TextEditingController ngrokAuthTokenCtrl;
+  late final TextEditingController ngrokDomainCtrl;
+
   static const int port = 8080;
 
   @override
@@ -56,7 +63,15 @@ class ServerController extends GetxController {
         _hive.getSetting<String>(AppConstants.keyServerNgrokToken) ?? '';
     ngrokDomain.value =
         _hive.getSetting<String>(AppConstants.keyServerNgrokDomain) ?? '';
+
+    apiKeyCtrl = TextEditingController(text: apiKey.value);
+    cloudflareTokenCtrl = TextEditingController(text: cloudflareToken.value);
+    cloudflarePublicUrlCtrl = TextEditingController(text: cloudflarePublicUrl.value);
+    ngrokAuthTokenCtrl = TextEditingController(text: ngrokAuthToken.value);
+    ngrokDomainCtrl = TextEditingController(text: ngrokDomain.value);
   }
+
+
 
   bool get hasLiteRtModel =>
       inference.isModelLoaded.value &&
@@ -195,6 +210,11 @@ class ServerController extends GetxController {
 
   @override
   void onClose() {
+    apiKeyCtrl.dispose();
+    cloudflareTokenCtrl.dispose();
+    cloudflarePublicUrlCtrl.dispose();
+    ngrokAuthTokenCtrl.dispose();
+    ngrokDomainCtrl.dispose();
     unawaited(stopServer());
     super.onClose();
   }

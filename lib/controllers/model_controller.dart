@@ -435,7 +435,17 @@ class ModelController extends GetxController {
           template: '',
         ))) {
       final result = await _localImage.loadModel(path, modelName: filename);
-      Get.snackbar('Image Model', result, snackPosition: SnackPosition.BOTTOM);
+      final isError = !_localImage.isModelLoaded.value;
+      Get.snackbar(
+        isError ? 'Model Not Loaded' : 'Image Model',
+        result,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: isError
+            ? const Color(0xFFFF9500).withValues(alpha: 0.15)
+            : const Color(0xFF34C759).withValues(alpha: 0.15),
+        colorText: isError ? const Color(0xFFFF9500) : const Color(0xFF34C759),
+        duration: isError ? const Duration(seconds: 6) : const Duration(seconds: 2),
+      );
     } else {
       final result = await _inference.loadModel(
         path,

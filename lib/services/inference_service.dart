@@ -110,6 +110,7 @@ class InferenceService extends GetxService {
           AppConstants.defaultContextSize;
 
       final deviceTier = _getDeviceTier();
+      final isTensorSoC = _getIsTensorSoC();
 
       final requestedModelName = modelName ?? modelPath.split('/').last;
       var activeModelName = requestedModelName;
@@ -118,6 +119,7 @@ class InferenceService extends GetxService {
         modelRuntime: modelRuntime,
         contextSize: contextSize,
         deviceTier: deviceTier,
+        isTensorSoC: isTensorSoC,
         liteRtPerformanceMode: liteRtMode,
         forceLiteRtCpu: forceLiteRtCpu,
         clearLiteRtCache: hadPendingGpuLoad || (isLiteRt && gpuCrashDetected),
@@ -215,6 +217,7 @@ class InferenceService extends GetxService {
     gpuName.value = '';
     contextTokensUsed.value = 0;
     contextTokensTotal.value = 0;
+    _sessionNativeRuntime = '';
   }
 
   Future<String> generate({
@@ -309,6 +312,23 @@ class InferenceService extends GetxService {
       await refreshContextInfo();
       isGenerating.value = false;
       generationSource.value = '';
+
+      // Detect Tensor SoC + Gemma Q4_K_M corruption: model outputs only
+      // special tokens and terminates immediately with empty result.
+      if (result.trim().isEmpty &&
+          tokenCount.value < 5 &&
+          loadedModelName.value.toLowerCase().contains('gemma')) {
+        final isTensor = _getIsTensorSoC();
+        if (isTensor) {
+          return '⚠️ This Gemma model is incompatible with your Pixel\'s Google Tensor chip. '
+              'The Q4_K_M quantization format has a known bug on Tensor SoC that produces empty responses.\n\n'
+              'Try one of these fixes:\n'
+              '1. Download a Q4_0 or Q5_K_M version of the same model\n'
+              '2. Use a different model (Qwen, Phi, or Llama-3)\n'
+              '3. Switch to Cloud mode in Settings';
+        }
+      }
+
       return result;
     } catch (e) {
       isGenerating.value = false;
@@ -334,6 +354,15 @@ class InferenceService extends GetxService {
     }
   }
 
+  /// Reset the native conversation context. Call this whenever the user
+  /// switches to a different chat session so old context doesn't leak.
+  Future<void> resetConversation() async {
+    final engine = _engine;
+    if (engine != null) {
+      await engine.resetConversation();
+    }
+  }
+
   Future<void> refreshContextInfo() async {
     if (!supportsLocalInference || _engine == null || !isModelLoaded.value) {
       return;
@@ -355,11 +384,21 @@ class InferenceService extends GetxService {
     }
   }
 
+  bool _getIsTensorSoC() {
+    try {
+      final device = Get.find<DeviceInfoService>();
+      return device.isTensorSoC.value;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<platform.LoadResult> _loadModelOnEngine({
     required String modelPath,
     required String? modelRuntime,
     required int contextSize,
     required String deviceTier,
+    bool isTensorSoC = false,
     required String liteRtPerformanceMode,
     required bool forceLiteRtCpu,
     required bool clearLiteRtCache,
@@ -375,6 +414,7 @@ class InferenceService extends GetxService {
         modelRuntime: modelRuntime,
         contextSize: contextSize,
         deviceTier: deviceTier,
+        isTensorSoC: isTensorSoC,
         liteRtPerformanceMode: liteRtPerformanceMode,
         forceLiteRtCpu: forceLiteRtCpu,
         clearLiteRtCache: clearLiteRtCache,
@@ -391,6 +431,7 @@ class InferenceService extends GetxService {
             modelRuntime: modelRuntime,
             contextSize: contextSize,
             deviceTier: deviceTier,
+            isTensorSoC: isTensorSoC,
             liteRtPerformanceMode: liteRtPerformanceMode,
             forceLiteRtCpu: true,
             clearLiteRtCache: true,

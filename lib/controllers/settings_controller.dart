@@ -13,7 +13,7 @@ class SettingsController extends GetxController {
 
   // Observable settings
   final themeMode = ThemeMode.system.obs;
-  final inferenceMode = 'cloud'.obs; // 'local' or 'cloud'
+  final inferenceMode = 'local'.obs; // 'local' or 'cloud'
   final cloudProvider = 'kimi'.obs;
   final openaiKey = ''.obs;
   final anthropicKey = ''.obs;
@@ -103,8 +103,8 @@ class SettingsController extends GetxController {
     final savedTheme = _hive.getSetting<String>('theme_mode');
     themeMode.value = _themeModeFromString(savedTheme);
     inferenceMode.value = _hive.getSetting(AppConstants.keyInferenceMode,
-            defaultValue: 'cloud') ??
-        'cloud';
+            defaultValue: 'local') ??
+        'local';
     cloudProvider.value =
         _hive.getSetting(AppConstants.keyCloudProvider, defaultValue: 'kimi') ??
             'kimi';

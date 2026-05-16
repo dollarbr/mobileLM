@@ -19,6 +19,7 @@ import '../services/inference_service.dart';
 import '../services/cloud_service.dart';
 import '../services/local_image_service.dart';
 import '../services/app_log_service.dart';
+import '../services/document_extractor_service.dart';
 import '../utils/thought_parser.dart';
 
 const int _visionImageMaxSide = 768;
@@ -71,6 +72,7 @@ class ChatController extends GetxController {
   // Image generation progress (lightweight, replaces text-heavy updates)
   final imageGenStep = 0.obs;
   final imageGenTotal = 0.obs;
+  final imageGenEstimatedSecs = 0.obs;
 
   final textController = TextEditingController();
   final scrollController = ScrollController();
@@ -114,7 +116,15 @@ class ChatController extends GetxController {
     openChat(id);
   }
 
+  void _resetInferenceContext() {
+    final inference = Get.find<InferenceService>();
+    if (inference.isModelLoaded.value) {
+      unawaited(inference.resetConversation());
+    }
+  }
+
   void openChat(String sessionId) {
+    stopGenerating();
     currentSessionId.value = sessionId;
     final raw = _hive.getMessagesForChat(sessionId);
     messages.value = raw.map((m) => ChatMessage.fromMap(m)).toList()
@@ -123,10 +133,14 @@ class ChatController extends GetxController {
     if (inference.isModelLoaded.value) {
       inference.refreshContextInfo();
     }
+    _resetInferenceContext();
     _scrollToBottom(force: true);
   }
 
   void deleteChat(String sessionId) {
+    if (currentSessionId.value == sessionId && isLoading.value) {
+      stopGenerating();
+    }
     _hive.deleteSession(sessionId);
     sessions.removeWhere((s) => s.id == sessionId);
     if (currentSessionId.value == sessionId) {
@@ -157,8 +171,15 @@ class ChatController extends GetxController {
   }
 
   void clearImage() {
+    final path = selectedImagePath.value;
     selectedImagePath.value = null;
     selectedImageBase64.value = null;
+    if (path != null && path.isNotEmpty) {
+      try {
+        final f = File(path);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
     if (selectedFileType.value == 'image') {
       clearFile();
     }
@@ -176,6 +197,7 @@ class ChatController extends GetxController {
           'gif',
           'heic',
           'pdf',
+          'docx',
           'mp3',
           'm4a',
           'wav',
@@ -203,6 +225,17 @@ class ChatController extends GetxController {
       final file = result.files.single;
       final extension = file.extension?.toLowerCase() ?? '';
       final fileType = _attachmentTypeForExtension(extension);
+
+      // Reject unsupported or extension-less files
+      if (extension.isEmpty || fileType == 'file') {
+        Get.snackbar(
+          'Unsupported file',
+          'Only images, audio, PDF, DOCX, and text/code files are supported.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        return;
+      }
+
       if (fileType == 'image') {
         final bytes = file.bytes ??
             (file.path != null ? await File(file.path!).readAsBytes() : null);
@@ -232,7 +265,28 @@ class ChatController extends GetxController {
       selectedImagePath.value = null;
       selectedImageBase64.value = null;
 
-      if (fileType == 'text') {
+      if (fileType == 'pdf' || fileType == 'docx') {
+        final path = file.path;
+        if (path != null) {
+          try {
+            var content = await DocumentExtractorService.extractText(
+              path,
+              extension,
+            );
+            if (content.length > 12000) {
+              content =
+                  '${content.substring(0, 12000)}\n\n[File truncated for context size]';
+            }
+            selectedFileContent.value = content;
+          } catch (e) {
+            Get.find<AppLogService>().warning(
+              'Document extraction failed',
+              details: e,
+            );
+            selectedFileContent.value = '[Could not extract text from ${selectedFileName.value}: $e]';
+          }
+        }
+      } else if (fileType == 'text') {
         final bytes = file.bytes ??
             (file.path != null ? await File(file.path!).readAsBytes() : null);
         if (bytes == null) return;
@@ -307,9 +361,9 @@ class ChatController extends GetxController {
     final imageBase64 = selectedImageBase64.value;
     final visibleText =
         text.isEmpty ? _defaultAttachmentPrompt(fileType) : text;
-    final effectiveText = fileContent == null
-        ? visibleText
-        : '$visibleText\n\nAttached file: $fileName\n```text\n$fileContent\n```';
+    final effectiveText = (fileContent != null && fileContent.trim().isNotEmpty)
+        ? '$visibleText\n\nAttached file: $fileName\n```text\n$fileContent\n```'
+        : visibleText;
 
     // Create a session if none selected
     if (currentSessionId.value.isEmpty) {
@@ -384,9 +438,9 @@ class ChatController extends GetxController {
 
       final inferenceMode = _hive.getSetting(
             AppConstants.keyInferenceMode,
-            defaultValue: 'cloud',
+            defaultValue: 'local',
           ) ??
-          'cloud';
+          'local';
 
       String rawResponse;
 
@@ -408,11 +462,20 @@ class ChatController extends GetxController {
           // Local image generation
           imageGenStep.value = 0;
           imageGenTotal.value = 0;
+          imageGenEstimatedSecs.value = 0;
+          final genStart = DateTime.now();
           final pngBytes = await localImage.generateImage(
             prompt: text,
             onProgress: (step, total) {
               imageGenStep.value = step;
               imageGenTotal.value = total;
+              if (step > 0 && total > 0) {
+                final elapsed = DateTime.now().difference(genStart).inMilliseconds;
+                final avgMsPerStep = elapsed / step;
+                final remainingSteps = total - step;
+                imageGenEstimatedSecs.value =
+                    (avgMsPerStep * remainingSteps / 1000).ceil();
+              }
               _scrollToBottom();
             },
           );
@@ -651,6 +714,7 @@ class ChatController extends GetxController {
     if (imageExtensions.contains(extension)) return 'image';
     if (audioExtensions.contains(extension)) return 'audio';
     if (extension == 'pdf') return 'pdf';
+    if (extension == 'docx') return 'docx';
     if (textExtensions.contains(extension)) return 'text';
     return 'file';
   }
@@ -661,6 +725,8 @@ class ChatController extends GetxController {
         return 'Describe this image.';
       case 'pdf':
         return 'Summarize this PDF.';
+      case 'docx':
+        return 'Summarize this document.';
       case 'audio':
         return 'Transcribe or analyze this audio.';
       case 'text':
