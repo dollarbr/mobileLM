@@ -505,9 +505,27 @@ class ModelController extends GetxController {
           description: '',
           template: '',
         ))) {
+      // Auto-download TAESD for fast VAE decode if not present
+      String? taesdPath;
+      try {
+        const taesdFilename = 'taesd.safetensors';
+        const taesdUrl = 'https://huggingface.co/madebyollin/taesd/resolve/main/diffusion_pytorch_model.safetensors';
+        final hasTaesd = await _download.isModelDownloaded(taesdFilename);
+        if (!hasTaesd) {
+          print('[ModelController] TAESD not found, downloading...');
+          await _download.downloadModel(url: taesdUrl, filename: taesdFilename);
+          print('[ModelController] TAESD downloaded successfully');
+        } else {
+          print('[ModelController] TAESD already present');
+        }
+        taesdPath = await _download.modelPath(taesdFilename);
+      } catch (e) {
+        print('[ModelController] TAESD download failed (will use standard VAE): $e');
+      }
+
       // Show loading dialog with live logs
       _showImageModelLoadingDialog(filename);
-      final result = await _localImage.loadModel(path, modelName: filename);
+      final result = await _localImage.loadModel(path, modelName: filename, taesdPath: taesdPath);
       // Close loading dialog
       if (Get.isDialogOpen ?? false) Get.back();
 
