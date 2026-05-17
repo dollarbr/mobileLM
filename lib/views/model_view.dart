@@ -288,7 +288,6 @@ class ModelView extends GetView<ModelController> {
         return const SizedBox.shrink();
       }
 
-      final percent = inference.modelLoadProgress.value * 100;
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -374,6 +373,8 @@ class ModelView extends GetView<ModelController> {
         ? settings.customCloudName.value
         : provider?.name ?? providerId;
     final model = cloudModels.activeModelFor(providerId);
+    final hasSelectedModel =
+        cloudModels.canSelectModel(providerId) && model.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -409,7 +410,7 @@ class ModelView extends GetView<ModelController> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  model.isEmpty ? 'No online model selected' : model,
+                  hasSelectedModel ? model : 'No online model selected',
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -422,7 +423,14 @@ class ModelView extends GetView<ModelController> {
             ),
           ),
           TextButton(
-            onPressed: () => controller.modelScope.value = 'online',
+            onPressed: () {
+              if (provider == null) return;
+              if (providerId == 'custom') {
+                _showCustomProviderSheet(context, cloudModels);
+              } else {
+                _openProviderFlow(context, cloudModels, provider);
+              }
+            },
             child: const Text('Change'),
           ),
         ],
@@ -699,7 +707,7 @@ class ModelView extends GetView<ModelController> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'ONLINE PROVIDERS',
+            'PROVIDERS',
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -709,12 +717,306 @@ class ModelView extends GetView<ModelController> {
           ),
           const SizedBox(height: 12),
           for (final provider in cloud.providers)
-            _buildProviderCard(context, cloud, provider),
+            _buildOnlineProviderRow(context, cloud, provider),
         ],
       );
     });
   }
 
+  Widget _buildOnlineProviderRow(
+    BuildContext context,
+    CloudModelController cloud,
+    CloudProviderInfo provider,
+  ) {
+    final settings = Get.find<SettingsController>();
+    final isCustom = provider.id == 'custom';
+    final isActive = cloud.activeProvider == provider.id;
+    final canUse = cloud.canSelectModel(provider.id);
+    final model = cloud.activeModelFor(provider.id);
+    final hasSelectedModel = canUse && model.isNotEmpty;
+    final modelLabel = hasSelectedModel ? model : 'No model selected';
+    final name = isCustom ? settings.customCloudName.value : provider.name;
+    final accent = _providerAccent(provider.id);
+    final error = cloud.errorByProvider[provider.id];
+    final status = isActive && hasSelectedModel
+        ? 'ACTIVE'
+        : canUse
+            ? 'READY'
+            : cloud.statusLabel(provider.id).toUpperCase();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => isCustom
+              ? _showCustomProviderSheet(context, cloud)
+              : _openProviderFlow(context, cloud, provider),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isActive
+                    ? accent.withValues(alpha: 0.55)
+                    : Theme.of(context).dividerColor.withValues(alpha: 0.55),
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(provider.icon, color: accent, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  name.isEmpty ? provider.name : name,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              _buildStatusPill(
+                                context,
+                                status,
+                                configured: canUse,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            modelLabel,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: hasSelectedModel
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: hasSelectedModel
+                                  ? Theme.of(context).colorScheme.onSurface
+                                  : Theme.of(context).hintColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.chevron_right, size: 20),
+                  ],
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  _buildErrorBox(context, error),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _providerAccent(String provider) {
+    switch (provider) {
+      case 'openrouter':
+        return AppColors.success;
+      case 'deepseek':
+        return const Color(0xFF00B8A9);
+      case 'google':
+        return AppColors.warning;
+      case 'nvidia':
+        return const Color(0xFF76B900);
+      case 'custom':
+        return AppColors.info;
+      default:
+        return AppColors.primary;
+    }
+  }
+
+  Future<void> _openProviderFlow(
+    BuildContext context,
+    CloudModelController cloud,
+    CloudProviderInfo provider,
+  ) async {
+    if (!cloud.canSelectModel(provider.id)) {
+      _showProviderKeyDialog(
+        context,
+        cloud,
+        provider,
+        openModelsAfterSave: true,
+      );
+      return;
+    }
+
+    await cloud.refreshModels(provider.id);
+    if ((cloud.errorByProvider[provider.id] ?? '').isNotEmpty) {
+      _showProviderKeyDialog(
+        context,
+        cloud,
+        provider,
+        openModelsAfterSave: true,
+      );
+      return;
+    }
+    _showModelSelectSheet(context, cloud, provider);
+  }
+
+  void _showProviderActionsSheet(
+    BuildContext context,
+    CloudModelController cloud,
+    CloudProviderInfo provider,
+  ) {
+    final settings = Get.find<SettingsController>();
+    final isCustom = provider.id == 'custom';
+
+    Get.bottomSheet(SizedBox(
+        height: MediaQuery.of(context).size.height * 0.75,
+        child: SafeArea(
+          child: Obx(() {
+            final model = cloud.activeModelFor(provider.id);
+            final configured = cloud.isConfigured(provider.id);
+            final name =
+                isCustom ? settings.customCloudName.value : provider.name;
+            final accent = _providerAccent(provider.id);
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 22,
+                right: 22,
+                top: 22,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 22,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.max,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(provider.icon, color: accent, size: 26),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name.isEmpty ? provider.name : name,
+                              style: GoogleFonts.inter(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              model.isEmpty ? provider.description : model,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                color: Theme.of(context).hintColor,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: Get.back,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  if (!isCustom) ...[
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      leading: const Icon(Icons.key_outlined, size: 26),
+                      title: Text(
+                        configured ? 'Update API key' : 'Add API key',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle:
+                          const Text('Required before selecting live models'),
+                      onTap: () {
+                        Get.back();
+                        _showProviderKeyDialog(
+                          context,
+                          cloud,
+                          provider,
+                          openModelsAfterSave: true,
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
+                  ],
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                    leading: Icon(
+                        isCustom ? Icons.tune : Icons.smart_toy_outlined,
+                        size: 26),
+                    title: Text(
+                      isCustom ? 'Configure and select' : 'Select model',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    subtitle: Text(isCustom
+                        ? 'Set base URL, key, and model ID'
+                        : 'Search provider models or enter a model ID'),
+                    onTap: () {
+                      Get.back();
+                      if (isCustom) {
+                        _showCustomProviderSheet(context, cloud);
+                      } else {
+                        _openProviderFlow(context, cloud, provider);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          }),
+
+          // isScrollControlled: true,
+          // backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          // shape: const RoundedRectangleBorder(
+          //   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          // ),
+        )));
+  }
+
+  // ignore: unused_element
   Widget _buildProviderCard(
     BuildContext context,
     CloudModelController cloud,
@@ -813,11 +1115,7 @@ class ModelView extends GetView<ModelController> {
                       onPressed: () =>
                           _showProviderKeyDialog(context, cloud, provider),
                       icon: const Icon(Icons.key_outlined, size: 16),
-                      label: Text(provider.id == 'openrouter'
-                          ? 'API Key'
-                          : configured
-                              ? 'Update Key'
-                              : 'Add Key'),
+                      label: Text(configured ? 'Update Key' : 'Add Key'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -845,31 +1143,135 @@ class ModelView extends GetView<ModelController> {
   void _showProviderKeyDialog(
     BuildContext context,
     CloudModelController cloud,
-    CloudProviderInfo provider,
-  ) {
+    CloudProviderInfo provider, {
+    bool openModelsAfterSave = false,
+  }) {
     final keyController = cloud.apiKeyControllerFor(provider.id);
+    final obscureKey = true.obs;
+    final isVerifying = false.obs;
+    final accent = _providerAccent(provider.id);
     Get.dialog(AlertDialog(
-      title: Text('${provider.name} API Key',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-      content: TextField(
-        controller: keyController,
-        obscureText: true,
-        style: GoogleFonts.firaCode(fontSize: 12),
-        decoration: InputDecoration(
-          labelText: provider.id == 'openrouter'
-              ? 'Optional for list, required for chat'
-              : 'API key',
-          prefixIcon: const Icon(Icons.key_outlined, size: 18),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      titlePadding: const EdgeInsets.fromLTRB(26, 26, 22, 0),
+      contentPadding: const EdgeInsets.fromLTRB(26, 20, 26, 10),
+      actionsPadding: const EdgeInsets.fromLTRB(22, 10, 22, 22),
+      title: Row(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(provider.icon, color: accent, size: 29),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  provider.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  'API key required',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).hintColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Obx(
+              () => TextField(
+                controller: keyController,
+                obscureText: obscureKey.value,
+                style: GoogleFonts.firaCode(fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'API key',
+                  hintText: 'Paste ${provider.name} key',
+                  prefixIcon: const Icon(Icons.key_outlined, size: 23),
+                  suffixIcon: IconButton(
+                    tooltip: obscureKey.value ? 'Show API key' : 'Hide API key',
+                    onPressed: () => obscureKey.value = !obscureKey.value,
+                    icon: Icon(
+                      obscureKey.value
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 24,
+                    ),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 20, horizontal: 18),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Obx(() {
+              final error = cloud.errorByProvider[provider.id];
+              if (error == null || error.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildErrorBox(context, error),
+              );
+            }),
+            Text(
+              'Save the key to verify it and load live models.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: Theme.of(context).hintColor,
+                height: 1.35,
+              ),
+            ),
+          ],
         ),
       ),
       actions: [
-        TextButton(onPressed: Get.back, child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Get.back(closeOverlays: false),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          ),
+          child: const Text('Cancel'),
+        ),
         ElevatedButton(
           onPressed: () async {
-            await cloud.saveApiKey(provider.id, keyController.text);
-            Get.back();
+            final value = keyController.text.trim();
+            if (value.isEmpty || isVerifying.value) return;
+            isVerifying.value = true;
+            await cloud.saveApiKey(provider.id, value);
+            await cloud.refreshModels(provider.id);
+            isVerifying.value = false;
+            if ((cloud.errorByProvider[provider.id] ?? '').isNotEmpty) {
+              return;
+            }
+            Get.back(closeOverlays: false);
+            if (openModelsAfterSave) {
+              _showModelSelectSheet(context, cloud, provider);
+            }
           },
-          child: const Text('Save'),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+          ),
+          child:
+              Obx(() => Text(isVerifying.value ? 'Verifying...' : 'Save Key')),
         ),
       ],
     ));
@@ -879,14 +1281,15 @@ class ModelView extends GetView<ModelController> {
     BuildContext context,
     CloudModelController cloud,
   ) {
+    final obscureCustomKey = true.obs;
     Get.bottomSheet(
       SafeArea(
         child: Padding(
           padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            left: 24,
+            right: 24,
+            top: 26,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 22,
           ),
           child: SingleChildScrollView(
             child: Column(
@@ -895,51 +1298,112 @@ class ModelView extends GetView<ModelController> {
               children: [
                 Text('Custom Provider',
                     style: GoogleFonts.inter(
-                        fontSize: 18, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 14),
+                        fontSize: 24, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(
+                  'Use any OpenAI-compatible endpoint. Enter the base URL without /chat/completions.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    height: 1.35,
+                    color: Theme.of(context).hintColor,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Obx(() {
+                  final error = cloud.customProviderError.value;
+                  if (error.isEmpty) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: _buildErrorBox(context, error),
+                  );
+                }),
                 TextField(
                   controller: cloud.customNameController,
                   decoration: const InputDecoration(
                     labelText: 'Provider name',
-                    prefixIcon: Icon(Icons.badge_outlined, size: 18),
+                    prefixIcon: Icon(Icons.badge_outlined, size: 23),
+                    contentPadding:
+                        EdgeInsets.symmetric(vertical: 20, horizontal: 18),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
                 TextField(
                   controller: cloud.customBaseUrlController,
                   decoration: const InputDecoration(
                     labelText: 'Base URL',
                     hintText: 'https://example.com/v1',
-                    prefixIcon: Icon(Icons.link, size: 18),
+                    prefixIcon: Icon(Icons.link, size: 23),
+                    contentPadding:
+                        EdgeInsets.symmetric(vertical: 20, horizontal: 18),
                   ),
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: cloud.customApiKeyController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'API key',
-                    prefixIcon: Icon(Icons.key_outlined, size: 18),
+                const SizedBox(height: 14),
+                Obx(
+                  () => TextField(
+                    controller: cloud.customApiKeyController,
+                    obscureText: obscureCustomKey.value,
+                    decoration: InputDecoration(
+                      labelText: 'API key',
+                      prefixIcon: const Icon(Icons.key_outlined, size: 23),
+                      suffixIcon: IconButton(
+                        tooltip: obscureCustomKey.value
+                            ? 'Show API key'
+                            : 'Hide API key',
+                        onPressed: () =>
+                            obscureCustomKey.value = !obscureCustomKey.value,
+                        icon: Icon(
+                          obscureCustomKey.value
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 24,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          vertical: 20, horizontal: 18),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
                 TextField(
                   controller: cloud.customModelController,
                   decoration: const InputDecoration(
                     labelText: 'Model ID',
-                    prefixIcon: Icon(Icons.smart_toy_outlined, size: 18),
+                    prefixIcon: Icon(Icons.smart_toy_outlined, size: 23),
+                    contentPadding:
+                        EdgeInsets.symmetric(vertical: 20, horizontal: 18),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 22),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () async {
                       await cloud.saveCustomProvider();
-                      Get.back();
+                      if (cloud.customProviderError.value.isEmpty) {
+                        Get.back(closeOverlays: false);
+                      }
                     },
-                    icon: const Icon(Icons.check, size: 16),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                    ),
+                    icon: const Icon(Icons.check, size: 22),
                     label: const Text('Save and Select'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: TextButton(
+                    onPressed: () async {
+                      await cloud.clearCustomProvider();
+                    },
+                    child: Text(
+                      'Clear custom provider',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.error,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -960,137 +1424,180 @@ class ModelView extends GetView<ModelController> {
     CloudModelController cloud,
     CloudProviderInfo provider,
   ) {
-    if (provider.requiresKeyForList && cloud.apiKeyFor(provider.id).isEmpty) {
-      _showProviderKeyDialog(context, cloud, provider);
+    if (!cloud.canSelectModel(provider.id)) {
+      _showProviderKeyDialog(
+        context,
+        cloud,
+        provider,
+        openModelsAfterSave: true,
+      );
       return;
     }
 
     cloud.searchByProvider[provider.id] = '';
     if ((cloud.modelsByProvider[provider.id] ?? const <String>[]).isEmpty) {
       cloud.refreshModels(provider.id);
+    } else if (cloud.canFetchModels(provider.id) &&
+        cloud.fetchedAtByProvider[provider.id] == null) {
+      cloud.refreshModels(provider.id);
     }
 
     Get.bottomSheet(
-      SafeArea(
-        child: Obx(() {
-          final isLoading = cloud.isLoadingProvider[provider.id] == true;
-          final error = cloud.errorByProvider[provider.id];
-          final models = cloud.filteredModelsFor(provider.id);
-          final activeModel = cloud.activeModelFor(provider.id);
-          final isActiveProvider = cloud.activeProvider == provider.id;
+      SizedBox(
+        height: MediaQuery.of(context).size.height * 0.75,
+        child: SafeArea(
+          child: Obx(() {
+            final isLoading = cloud.isLoadingProvider[provider.id] == true;
+            final error = cloud.errorByProvider[provider.id];
+            final models = cloud.filteredModelsFor(provider.id);
+            final activeModel = cloud.activeModelFor(provider.id);
+            final isActiveProvider = cloud.activeProvider == provider.id;
+            final canFetch = cloud.canFetchModels(provider.id);
+            final freeFirst = cloud.freeFirstByProvider[provider.id] == true;
+            final freeModelCount = cloud.freeModelCountFor(provider.id);
 
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 16,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text('Select ${provider.name} Model',
+            Widget modelList;
+            if (isLoading && models.isEmpty) {
+              modelList = const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(30),
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            } else if (models.isEmpty) {
+              modelList = _buildModelSelectEmptyState(context, provider);
+            } else {
+              modelList = ListView.separated(
+                itemCount: models.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final id = models[index];
+                  return _buildCloudModelRow(
+                    context,
+                    cloud,
+                    provider,
+                    id,
+                    activeModel,
+                    isActiveProvider,
+                  );
+                },
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 22,
+                right: 22,
+                top: 22,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 22,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.max,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Select ${provider.name} Model',
                           style: GoogleFonts.inter(
-                              fontSize: 18, fontWeight: FontWeight.w800)),
-                    ),
-                    IconButton(
-                      onPressed: Get.back,
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  onChanged: (value) =>
-                      cloud.searchByProvider[provider.id] = value,
-                  style: GoogleFonts.inter(fontSize: 13),
-                  decoration: const InputDecoration(
-                    hintText: 'Search models...',
-                    prefixIcon: Icon(Icons.search, size: 18),
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${models.length} models - ${cloud.fetchedLabel(provider.id)}',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: Theme.of(context).hintColor,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
-                    TextButton.icon(
-                      onPressed: isLoading
-                          ? null
-                          : () => cloud.refreshModels(provider.id),
-                      icon: isLoading
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh, size: 16),
-                      label: const Text('Refresh'),
-                    ),
-                  ],
-                ),
-                if (error != null) ...[
-                  const SizedBox(height: 8),
-                  _buildErrorBox(context, error),
-                ],
-                const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.52,
+                      IconButton(
+                        onPressed: Get.back,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
                   ),
-                  child: isLoading && models.isEmpty
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(30),
-                            child: CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  TextField(
+                    onChanged: (value) =>
+                        cloud.searchByProvider[provider.id] = value,
+                    style: GoogleFonts.inter(fontSize: 15),
+                    decoration: const InputDecoration(
+                      hintText: 'Search models...',
+                      prefixIcon: Icon(Icons.search, size: 23),
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: 18,
+                        horizontal: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${models.length} models - ${cloud.fetchedLabel(provider.id)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: Theme.of(context).hintColor,
                           ),
-                        )
-                      : models.isEmpty
-                          ? _buildModelSelectEmptyState(context, provider)
-                          : ListView.separated(
-                              shrinkWrap: true,
-                              itemCount: models.length,
-                              separatorBuilder: (_, __) =>
-                                  const SizedBox(height: 6),
-                              itemBuilder: (context, index) {
-                                final id = models[index];
-                                return _buildCloudModelRow(
-                                  context,
-                                  cloud,
-                                  provider.id,
-                                  id,
-                                  activeModel,
-                                  isActiveProvider,
-                                );
-                              },
-                            ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        _showCustomModelIdDialog(context, cloud, provider),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Use custom model ID'),
+                        ),
+                      ),
+                      if (provider.id == 'openrouter' ||
+                          freeModelCount > 0) ...[
+                        TextButton.icon(
+                          onPressed: freeModelCount == 0
+                              ? null
+                              : () => cloud.toggleFreeFirst(provider.id),
+                          icon: Icon(
+                            freeFirst
+                                ? Icons.check_circle
+                                : Icons.local_offer_outlined,
+                            size: 16,
+                          ),
+                          label: Text(
+                            freeModelCount == 0
+                                ? 'Free'
+                                : 'Free first ($freeModelCount)',
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                      ],
+                      TextButton.icon(
+                        onPressed: isLoading || !canFetch
+                            ? null
+                            : () => cloud.refreshModels(provider.id),
+                        icon: isLoading
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.refresh, size: 16),
+                        label: const Text('Refresh'),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          );
-        }),
+                  if (error != null) ...[
+                    const SizedBox(height: 8),
+                    _buildErrorBox(context, error),
+                  ],
+                  const SizedBox(height: 12),
+                  Expanded(child: modelList),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          _showCustomModelIdDialog(context, cloud, provider),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      icon: const Icon(Icons.add, size: 20),
+                      label: const Text('Use custom model ID'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ),
       ),
       isScrollControlled: true,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -1113,9 +1620,7 @@ class ModelView extends GetView<ModelController> {
         border: Border.all(color: Theme.of(context).dividerColor, width: 0.5),
       ),
       child: Text(
-        provider.requiresKeyForList
-            ? 'No models loaded. Check the API key and refresh.'
-            : 'No models loaded. Refresh or use a custom model ID.',
+        'No models loaded. Add an API key to update the live list, or use a custom model ID.',
         textAlign: TextAlign.center,
         style: GoogleFonts.inter(
           fontSize: 12,
@@ -1149,9 +1654,21 @@ class ModelView extends GetView<ModelController> {
           onPressed: () async {
             final value = textController.text.trim();
             if (value.isEmpty) return;
-            await cloud.selectModel(provider.id, value);
-            Get.back();
-            Get.back();
+            if (!cloud.canSelectModel(provider.id)) {
+              if (provider.id == 'custom') {
+                _showCustomProviderSheet(context, cloud);
+              } else {
+                _showProviderKeyDialog(context, cloud, provider);
+              }
+              return;
+            }
+            await cloud.selectModel(
+              provider.id,
+              value,
+              showSnackbar: false,
+            );
+            Get.back(closeOverlays: false);
+            Get.back(closeOverlays: false);
           },
           child: const Text('Select'),
         ),
@@ -1162,22 +1679,25 @@ class ModelView extends GetView<ModelController> {
   Widget _buildCloudModelRow(
     BuildContext context,
     CloudModelController cloud,
-    String provider,
+    CloudProviderInfo provider,
     String id,
     String activeModel,
     bool isActiveProvider,
   ) {
+    final providerId = provider.id;
     final normalized =
-        provider == 'google' ? id.replaceFirst('models/', '') : id;
-    final isActive = isActiveProvider && normalized == activeModel;
+        providerId == 'google' ? id.replaceFirst('models/', '') : id;
+    final canUse = cloud.canSelectModel(providerId);
+    final isActive = isActiveProvider && normalized == activeModel && canUse;
+    final tags = cloud.modelTagsFor(providerId, id);
     return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: isActive
             ? AppColors.secondary.withValues(alpha: 0.12)
             : Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isActive
               ? AppColors.secondary.withValues(alpha: 0.35)
@@ -1187,28 +1707,75 @@ class ModelView extends GetView<ModelController> {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              normalized,
-              style: GoogleFonts.firaCode(
-                fontSize: 11,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    normalized,
+                    style: GoogleFonts.firaCode(
+                      fontSize: 13,
+                      fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Wrap(
+                    spacing: 5,
+                    children: [
+                      for (final tag in tags) _buildModelTag(context, tag),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: 8),
           isActive
               ? _buildStatusPill(context, 'ACTIVE', configured: true)
               : TextButton(
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                  ),
                   onPressed: () async {
-                    await cloud.selectModel(provider, id);
-                    Get.back();
+                    if (!canUse) {
+                      _showProviderKeyDialog(context, cloud, provider);
+                      return;
+                    }
+                    await cloud.selectModel(
+                      providerId,
+                      id,
+                      showSnackbar: false,
+                    );
+                    Get.back(closeOverlays: false);
                   },
-                  child: const Text('Select'),
+                  child: Text(canUse ? 'Select' : 'Add Key'),
                 ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildModelTag(BuildContext context, String label) {
+    final isFree = label == 'FREE';
+    final color = isFree ? AppColors.success : AppColors.info;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          color: color,
+        ),
       ),
     );
   }
@@ -1252,6 +1819,36 @@ class ModelView extends GetView<ModelController> {
           color: AppColors.error,
           fontWeight: FontWeight.w500,
         ),
+      ),
+    );
+  }
+
+  Widget _buildInfoBox(BuildContext context, String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.info.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.info.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 16, color: AppColors.info),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w500,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1641,7 +2238,8 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
       template: widget.templateController.text,
       isVision: widget.isVision.value,
     );
-    if (context.mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    Navigator.of(context).pop();
   }
 
   @override

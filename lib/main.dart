@@ -82,8 +82,10 @@ void _validateLastModel() async {
   }
 
   // Validate last image model
-  final imageModelName = hive.getSetting<String>(AppConstants.keyImageModelName);
-  final imageModelPath = hive.getSetting<String>(AppConstants.keyImageModelPath);
+  final imageModelName =
+      hive.getSetting<String>(AppConstants.keyImageModelName);
+  final imageModelPath =
+      hive.getSetting<String>(AppConstants.keyImageModelPath);
   if (imageModelName != null &&
       imageModelName.isNotEmpty &&
       imageModelPath != null &&
@@ -120,14 +122,24 @@ class PrivateLMApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = Get.find<SettingsController>();
-    return Obx(() => GetMaterialApp(
-          title: 'PrivateLM',
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: settings.themeMode.value,
-          initialRoute: AppRoutes.home,
-          getPages: AppPages.pages,
-        ));
+    return Obx(() {
+      final themeMode = settings.themeMode.value;
+      final scale = settings.fontScale.value; // read here → Obx tracks it
+      return GetMaterialApp(
+        title: 'PrivateLM',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: themeMode,
+        initialRoute: AppRoutes.home,
+        getPages: AppPages.pages,
+        builder: (ctx, child) => MediaQuery(
+          data: MediaQuery.of(ctx).copyWith(
+            textScaler: TextScaler.linear(scale),
+          ),
+          child: child!,
+        ),
+      );
+    });
   }
 }
