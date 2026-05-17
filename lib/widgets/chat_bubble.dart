@@ -136,6 +136,20 @@ class ChatBubble extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (message.imageGenDurationMs != null && message.imageGenDurationMs! > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        _formatGenTime(message.imageGenDurationMs!),
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: isUser
+                              ? Colors.white.withValues(alpha: 0.55)
+                              : Theme.of(context).hintColor.withValues(alpha: 0.5),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
                   Text(
                     _formatTime(message.timestamp),
                     style: GoogleFonts.inter(
@@ -222,6 +236,14 @@ class ChatBubble extends StatelessWidget {
     final h = date.hour.toString().padLeft(2, '0');
     final m = date.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  String _formatGenTime(int ms) {
+    if (ms < 1000) return '${ms}ms';
+    if (ms < 60000) return '${(ms / 1000).toStringAsFixed(1)}s';
+    final m = ms ~/ 60000;
+    final s = (ms % 60000) ~/ 1000;
+    return s > 0 ? '${m}m ${s}s' : '${m}m';
   }
 
   String _cleanAssistantText(String text) {
