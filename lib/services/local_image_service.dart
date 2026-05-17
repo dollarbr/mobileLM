@@ -37,13 +37,15 @@ class LocalImageService extends GetxService {
     final savedBackendIndex = _hive.getSetting<int>(AppConstants.keyImageGenBackend,
         defaultValue: Backend.cpu.index);
     final savedQuantIndex = _hive.getSetting<int>(AppConstants.keyImageGenQuantization,
-        defaultValue: QuantizationType.f16.index);
+        defaultValue: QuantizationType.q4_0.index);
     if (savedBackendIndex != null && savedBackendIndex >= 0 && savedBackendIndex < Backend.values.length) {
       currentBackend.value = Backend.values[savedBackendIndex];
     }
     if (savedQuantIndex != null && savedQuantIndex >= 0 && savedQuantIndex < QuantizationType.values.length) {
       currentQuantization.value = QuantizationType.values[savedQuantIndex];
     }
+    // Force Q4_0 for speed — override any saved FP16 setting
+    currentQuantization.value = QuantizationType.q4_0;
   }
 
   Future<String> loadModel(String modelPath, {String? modelName, String? taesdPath}) async {

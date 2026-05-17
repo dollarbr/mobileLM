@@ -598,7 +598,11 @@ class ChatController extends GetxController {
               _scrollToBottom();
             },
           );
-          print('[ChatController] generateImage returned, bytes=${pngBytes?.length}');
+          // Calculate total generation time
+          final genDurationMs = imageGenStartTime.value != null
+              ? DateTime.now().difference(imageGenStartTime.value!).inMilliseconds
+              : null;
+          print('[ChatController] generateImage returned, bytes=${pngBytes?.length}, duration=${genDurationMs}ms');
 
           if (pngBytes != null) {
             rawResponse = '[IMAGE_BASE64]${base64Encode(pngBytes)}';
@@ -667,6 +671,11 @@ class ChatController extends GetxController {
         rawResponse = 'Here is your generated image:';
       }
 
+      // Calculate total generation time for image gen
+      final genDurationMs = imageGenStartTime.value != null
+          ? DateTime.now().difference(imageGenStartTime.value!).inMilliseconds
+          : null;
+
       // Display response directly (no command processing)
       final aiMsg = ChatMessage(
         id: _uuid.v4(),
@@ -676,6 +685,7 @@ class ChatController extends GetxController {
         imageBase64: outImageBase64,
         tokensPerSec: tps,
         thoughtDurationSeconds: thoughtDurationSeconds,
+        imageGenDurationMs: genDurationMs,
       );
       messages.add(aiMsg);
       _hive.saveMessage(aiMsg.id, aiMsg.toMap());
