@@ -67,6 +67,20 @@ class MainActivity : FlutterActivity() {
                         result.error("DOWNLOAD_FAILED", e.message ?: e.toString(), null)
                     }
                 }
+                "cancelDownloadToDownloads" -> {
+                    val downloadId = (call.argument<Any>("downloadId") as? Number)?.toLong()
+                    if (downloadId != null) {
+                        try {
+                            val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                            manager.remove(downloadId)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("CANCEL_FAILED", e.message ?: e.toString(), null)
+                        }
+                    } else {
+                        result.error("INVALID_DOWNLOAD_ID", "Download ID is missing.", null)
+                    }
+                }
                 "restartApp" -> {
                     restartApp()
                     result.success(null)
@@ -369,7 +383,64 @@ class MainActivity : FlutterActivity() {
             setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
         }
         val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        return manager.enqueue(request)
+        val downloadId = manager.enqueue(request)
+
+        thread(name = "download-monitor-$downloadId") {
+            var isFinished = false
+            var lastBytes = 0L
+            var lastTime = System.currentTimeMillis()
+            var lastReportedSpeed = 0.0
+
+            while (!isFinished) {
+                Thread.sleep(1000)
+                val query = DownloadManager.Query().setFilterById(downloadId)
+                manager.query(query)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                        val bytesDownloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        val bytesTotalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+
+                        if (statusIndex >= 0 && bytesDownloadedIndex >= 0 && bytesTotalIndex >= 0) {
+                            val status = cursor.getInt(statusIndex)
+                            val downloaded = cursor.getLong(bytesDownloadedIndex)
+                            val total = cursor.getLong(bytesTotalIndex)
+
+                            val now = System.currentTimeMillis()
+                            val elapsedSeconds = (now - lastTime) / 1000.0
+                            var bytesPerSecond = 0.0
+
+                            if (downloaded > lastBytes) {
+                                bytesPerSecond = if (elapsedSeconds > 0) ((downloaded - lastBytes) / elapsedSeconds) else 0.0
+                                lastBytes = downloaded
+                                lastTime = now
+                                lastReportedSpeed = bytesPerSecond
+                            } else {
+                                if (elapsedSeconds > 3.0) {
+                                    lastReportedSpeed = 0.0
+                                }
+                                bytesPerSecond = lastReportedSpeed
+                            }
+
+                            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                                isFinished = true
+                                emitProgress(safeName, total, total, 0.0, "Download complete")
+                            } else if (status == DownloadManager.STATUS_FAILED) {
+                                isFinished = true
+                                emitProgress(safeName, downloaded, total, 0.0, "Download failed")
+                            } else {
+                                emitProgress(safeName, downloaded, total, bytesPerSecond, "Downloading to phone...")
+                            }
+                        }
+                    } else {
+                        isFinished = true
+                        emitProgress(safeName, 0, 0, 0.0, "Download cancelled")
+                    }
+                } ?: run {
+                    isFinished = true
+                }
+            }
+        }
+        return downloadId
     }
 
     private fun openModelPicker() {

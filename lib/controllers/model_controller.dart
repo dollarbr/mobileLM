@@ -42,6 +42,7 @@ class ModelController extends GetxController {
   final importTotalBytes = 0.obs;
   final importBytesPerSecond = 0.0.obs;
   final sortSmallestFirst = true.obs;
+  final externalDownloadId = Rx<int?>(null);
 
   void toggleSort() {
     sortSmallestFirst.value = !sortSmallestFirst.value;
@@ -368,11 +369,47 @@ class ModelController extends GetxController {
     }
 
     try {
+      isImporting.value = true;
+      importFileName.value = model.filename;
+      importStatus.value = 'Starting download...';
+      importCopiedBytes.value = 0;
+      importTotalBytes.value = 0;
+      importBytesPerSecond.value = 0;
+
+      _androidImportChannel.setMethodCallHandler((call) async {
+        if (call.method != 'importProgress') return;
+        final data = Map<Object?, Object?>.from(call.arguments as Map);
+        importFileName.value = (data['filename'] as String?) ?? '';
+        final status = (data['status'] as String?) ?? 'Downloading...';
+        importStatus.value = status;
+        importCopiedBytes.value =
+            (data['copiedBytes'] as num?)?.toInt() ?? importCopiedBytes.value;
+        importTotalBytes.value =
+            (data['totalBytes'] as num?)?.toInt() ?? importTotalBytes.value;
+        importBytesPerSecond.value =
+            (data['bytesPerSecond'] as num?)?.toDouble() ??
+                importBytesPerSecond.value;
+
+        if (status == 'Download complete' ||
+            status == 'Download failed' ||
+            status == 'Download cancelled') {
+          Future.delayed(const Duration(seconds: 3), () {
+            if (importStatus.value == status) {
+              isImporting.value = false;
+              importFileName.value = '';
+              importStatus.value = '';
+              _androidImportChannel.setMethodCallHandler(null);
+            }
+          });
+        }
+      });
+
       final result =
           await _androidImportChannel.invokeMapMethod<String, dynamic>(
         'downloadToDownloads',
         {'url': model.url, 'filename': model.filename},
       );
+      externalDownloadId.value = result?['downloadId'] as int?;
       final filename = result?['filename'] as String? ?? model.filename;
       Get.snackbar(
         'Download Started',
@@ -380,6 +417,8 @@ class ModelController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } on PlatformException catch (e) {
+      isImporting.value = false;
+      externalDownloadId.value = null;
       Get.find<AppLogService>().error(
         'Download to Downloads failed',
         details: '${e.code}: ${e.message}',
@@ -387,10 +426,26 @@ class ModelController extends GetxController {
       Get.snackbar('Download Failed', e.message ?? e.code,
           snackPosition: SnackPosition.BOTTOM);
     } catch (e) {
+      isImporting.value = false;
+      externalDownloadId.value = null;
       Get.find<AppLogService>()
           .error('Download to Downloads failed', details: e);
       Get.snackbar('Download Failed', '$e',
           snackPosition: SnackPosition.BOTTOM);
+    }
+  }
+
+  Future<void> cancelExternalDownload() async {
+    final id = externalDownloadId.value;
+    if (id != null) {
+      try {
+        await _androidImportChannel.invokeMethod('cancelDownloadToDownloads', {'downloadId': id});
+      } catch (e) {
+        Get.find<AppLogService>().error('Cancel download failed', details: e);
+      }
+      externalDownloadId.value = null;
+      isImporting.value = false;
+      importStatus.value = 'Download cancelled';
     }
   }
 
