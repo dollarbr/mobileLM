@@ -563,7 +563,9 @@ class ModelView extends GetView<ModelController> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Importing',
+                          controller.importStatus.value.toLowerCase().contains('download') 
+                              ? 'Downloading' 
+                              : 'Importing',
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -579,6 +581,15 @@ class ModelView extends GetView<ModelController> {
                           color: AppColors.secondary,
                         ),
                       ),
+                      if (controller.externalDownloadId.value != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: InkWell(
+                            onTap: controller.cancelExternalDownload,
+                            borderRadius: BorderRadius.circular(12),
+                            child: const Icon(Icons.close, size: 20, color: AppColors.error),
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 4),
