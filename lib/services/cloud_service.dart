@@ -10,8 +10,8 @@ class CloudService extends GetxService {
   final HiveService _hive = Get.find<HiveService>();
 
   String get _provider =>
-      _hive.getSetting(AppConstants.keyCloudProvider, defaultValue: 'kimi') ??
-      'kimi';
+      _hive.getSetting(AppConstants.keyCloudProvider, defaultValue: 'openrouter') ??
+      'openrouter';
 
   String get _apiKey {
     switch (_provider) {
@@ -27,6 +27,8 @@ class CloudService extends GetxService {
         return _hive.getSetting(AppConstants.keyNvidiaKey) ?? '';
       case 'openrouter':
         return _hive.getSetting(AppConstants.keyOpenRouterKey) ?? '';
+      case 'deepseek':
+        return _hive.getSetting(AppConstants.keyDeepSeekKey) ?? '';
       case 'custom':
         return _hive.getSetting(AppConstants.keyCustomCloudKey) ?? '';
       default:
@@ -53,6 +55,9 @@ class CloudService extends GetxService {
       case 'openrouter':
         return _hive.getSetting(AppConstants.keyOpenRouterModel) ??
             'openai/gpt-4o-mini';
+      case 'deepseek':
+        return _hive.getSetting(AppConstants.keyDeepSeekModel) ??
+            'deepseek-v4-flash';
       case 'custom':
         return _hive.getSetting(AppConstants.keyCustomCloudModel) ?? '';
       default:
@@ -114,6 +119,9 @@ class CloudService extends GetxService {
         case 'openrouter':
           return await _sendOpenRouter(
               messages, imageBase64, temperature, maxTokens);
+        case 'deepseek':
+          return await _sendDeepSeek(
+              messages, imageBase64, temperature, maxTokens);
         case 'custom':
           return await _sendCustomOpenAICompatible(
               messages, imageBase64, temperature, maxTokens);
@@ -131,6 +139,7 @@ class CloudService extends GetxService {
       _provider == 'openai' ||
       _provider == 'nvidia' ||
       _provider == 'openrouter' ||
+      _provider == 'deepseek' ||
       _provider == 'custom' ||
       _provider == 'kimi';
 
@@ -140,6 +149,8 @@ class CloudService extends GetxService {
         return '${AppConstants.nvidiaEndpoint}/chat/completions';
       case 'openrouter':
         return '${AppConstants.openRouterEndpoint}/chat/completions';
+      case 'deepseek':
+        return '${AppConstants.deepSeekEndpoint}/chat/completions';
       case 'custom':
         final baseUrl =
             (_hive.getSetting(AppConstants.keyCustomCloudBaseUrl) ?? '')
@@ -159,6 +170,8 @@ class CloudService extends GetxService {
         return 'NVIDIA NIM';
       case 'openrouter':
         return 'OpenRouter';
+      case 'deepseek':
+        return 'DeepSeek';
       case 'custom':
         return _hive.getSetting(AppConstants.keyCustomCloudName) ??
             'Custom API';
@@ -457,6 +470,22 @@ class CloudService extends GetxService {
         'HTTP-Referer': 'https://ai-chat.local',
         'X-Title': 'AI Chat',
       },
+    );
+  }
+
+  Future<String> _sendDeepSeek(
+    List<Map<String, String>> messages,
+    String? imageBase64,
+    double? temperature,
+    int? maxTokens,
+  ) async {
+    return _sendOpenAICompatible(
+      endpoint: '${AppConstants.deepSeekEndpoint}/chat/completions',
+      providerLabel: 'DeepSeek',
+      messages: messages,
+      imageBase64: imageBase64,
+      temperature: temperature,
+      maxTokens: maxTokens,
     );
   }
 

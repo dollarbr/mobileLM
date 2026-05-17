@@ -9,6 +9,7 @@ import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
@@ -74,6 +75,11 @@ class ChatController extends GetxController {
   final imageGenTotal = 0.obs;
   final imageGenEstimatedSecs = 0.obs;
 
+  // Speech-to-text
+  final isListening = false.obs;
+  final sttAvailable = false.obs;
+  final _speech = stt.SpeechToText();
+
   final textController = TextEditingController();
   final scrollController = ScrollController();
   Timer? _scrollTimer;
@@ -87,6 +93,53 @@ class ChatController extends GetxController {
     scrollController.addListener(_handleUserScroll);
     _scrollListenerAttached = true;
     loadSessions();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    try {
+      sttAvailable.value = await _speech.initialize(
+        onError: (_) => isListening.value = false,
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            isListening.value = false;
+          }
+        },
+      );
+    } catch (_) {
+      sttAvailable.value = false;
+    }
+  }
+
+  Future<void> toggleListening() async {
+    try {
+      if (isListening.value) {
+        await _speech.stop();
+        isListening.value = false;
+        return;
+      }
+      if (!sttAvailable.value) {
+        try {
+          final ok = await _speech.initialize();
+          sttAvailable.value = ok;
+        } catch (_) {
+          sttAvailable.value = false;
+        }
+        if (!sttAvailable.value) return;
+      }
+      await _speech.listen(
+        onResult: (result) {
+          textController.text = result.recognizedWords;
+          inputText.value = result.recognizedWords;
+        },
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 4),
+        localeId: 'en_US',
+      );
+      isListening.value = true;
+    } catch (_) {
+      isListening.value = false;
+    }
   }
 
   @override
@@ -167,6 +220,7 @@ class ChatController extends GetxController {
       selectedFileType.value = 'image';
       selectedFileSize.value = await file.length();
       selectedFileContent.value = null;
+      _checkVisionSupport();
     }
   }
 
@@ -182,6 +236,49 @@ class ChatController extends GetxController {
     }
     if (selectedFileType.value == 'image') {
       clearFile();
+    }
+  }
+
+  void _checkVisionSupport() {
+    final s = Get.find<SettingsController>();
+    if (s.inferenceMode.value != 'cloud') return;
+    
+    final provider = s.cloudProvider.value;
+    String modelName = '';
+    switch (provider) {
+      case 'anthropic': modelName = s.anthropicModel.value; break;
+      case 'google': modelName = s.googleModel.value; break;
+      case 'kimi': modelName = s.kimiModel.value; break;
+      case 'stability': modelName = s.stabilityModel.value; break;
+      case 'nvidia': modelName = s.nvidiaModel.value; break;
+      case 'openrouter': modelName = s.openRouterModel.value; break;
+      case 'deepseek': modelName = s.deepSeekModel.value; break;
+      case 'custom': modelName = s.customCloudModel.value; break;
+      default: modelName = s.openaiModel.value; break;
+    }
+    
+    final model = modelName.toLowerCase();
+    
+    // Known vision keywords in cloud model names
+    final isVision = model.contains('vision') || 
+                     model.contains('-vl') || 
+                     model.contains('gpt-4o') || 
+                     model.contains('claude-3') || 
+                     model.contains('gemini') || 
+                     model.contains('pixtral') || 
+                     model.contains('llava') ||
+                     model.contains('omni');
+                     
+    if (!isVision) {
+      Get.snackbar(
+        'Warning: Text-Only Model',
+        'The selected model ($modelName) might not support images. If you get an error, switch to a vision model (like Gemini, GPT-4o, or Claude 3).',
+        snackPosition: SnackPosition.TOP,
+        duration: const Duration(seconds: 6),
+        backgroundColor: const Color(0xFFFF9500).withValues(alpha: 0.95), // Warning Orange
+        colorText: Colors.white,
+        margin: const EdgeInsets.all(12),
+      );
     }
   }
 
@@ -253,6 +350,7 @@ class ChatController extends GetxController {
         selectedFileContent.value = null;
         selectedImagePath.value = optimizedPath;
         selectedImageBase64.value = null;
+        _checkVisionSupport();
         return;
       }
 
@@ -387,10 +485,16 @@ class ChatController extends GetxController {
     messages.add(userMsg);
     _hive.saveMessage(userMsg.id, userMsg.toMap());
 
-    // Clear input
+    // Clear input — but first encode image to base64 BEFORE clearImage()
+    // deletes the temp file from disk (gallery picker never pre-encodes it).
     textController.clear();
     inputText.value = '';
-    final imgBase64 = imageBase64;
+    String? imgBase64 = imageBase64;
+    if (imgBase64 == null && imagePath != null && !kIsWeb) {
+      try {
+        imgBase64 = base64Encode(await File(imagePath).readAsBytes());
+      } catch (_) {}
+    }
     clearImage();
     clearFile();
     _scrollToBottom(force: true);
@@ -514,7 +618,7 @@ class ChatController extends GetxController {
         ];
         rawResponse = await cloud.sendMessage(
           messages: apiMessages,
-          imageBase64: imgBase64,
+          imageBase64: imgBase64, // already encoded before clearImage()
           onToken: (token) {
             streamingResponse.value += token;
             trackThoughtTiming();

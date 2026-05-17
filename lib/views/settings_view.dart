@@ -54,6 +54,8 @@ class SettingsView extends GetView<SettingsController> {
                     onTap: () => controller.setThemeMode(mode),
                   ),
               ]),
+              const SizedBox(height: 16),
+              Obx(() => _buildFontSizeCard(context, isDark)),
               const SizedBox(height: 24),
               _sectionLabel(context, 'DIAGNOSTICS'),
               _appleGroupedCard(context, isDark, children: [
@@ -477,6 +479,127 @@ class SettingsView extends GetView<SettingsController> {
           showDivider: i < modes.length - 1,
           onTap: () => controller.setLiteRtPerformanceMode(modes[i].value),
         ),
+    ]);
+  }
+
+  Widget _buildFontSizeCard(BuildContext context, bool isDark) {
+    const min = 0.8;
+    const max = 1.4;
+    final accent = isDark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF);
+
+    String _scaleLabel(double v) {
+      if (v <= 0.85) return 'XS';
+      if (v <= 0.95) return 'Small';
+      if (v <= 1.05) return 'Recommended';
+      if (v <= 1.15) return 'Large';
+      if (v <= 1.25) return 'XL';
+      return 'XXL';
+    }
+
+    return _appleGroupedCard(context, isDark, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.format_size_rounded, size: 16, color: accent),
+            const SizedBox(width: 8),
+            Text('Font Size',
+                style: GoogleFonts.inter(
+                    fontSize: 15, fontWeight: FontWeight.w400)),
+            const Spacer(),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6)),
+              child: Text(_scaleLabel(controller.fontScale.value),
+                  style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: accent,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text('Recommended (1.0×) is the default size',
+              style: GoogleFonts.inter(
+                  fontSize: 12, color: Theme.of(context).hintColor)),
+          Slider(
+            value: controller.fontScale.value.clamp(min, max),
+            min: min,
+            max: max,
+            divisions: 12,
+            activeColor: accent,
+            onChanged: (v) => controller.setFontScale(v),
+          ),
+          // Scale markers
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Small',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Theme.of(context).hintColor)),
+                Text('Recommended',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: controller.fontScale.value >= 0.95 &&
+                                controller.fontScale.value <= 1.05
+                            ? accent
+                            : Theme.of(context).hintColor,
+                        fontWeight:
+                            controller.fontScale.value >= 0.95 &&
+                                    controller.fontScale.value <= 1.05
+                                ? FontWeight.w600
+                                : FontWeight.w400)),
+                Text('Large',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Theme.of(context).hintColor)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Live preview
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : Colors.black.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.07)
+                      : Colors.black.withValues(alpha: 0.07)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Preview',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Theme.of(context).hintColor,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 6),
+                Text('Hello! How can I help you today?',
+                    style: GoogleFonts.inter(
+                        fontSize: 15,
+                        color: isDark ? Colors.white : Colors.black)),
+                const SizedBox(height: 2),
+                Text(
+                    'This is what messages will look like at this font size.',
+                    style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: Theme.of(context).hintColor)),
+              ],
+            ),
+          ),
+        ]),
+      ),
     ]);
   }
 

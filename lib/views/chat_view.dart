@@ -41,7 +41,8 @@ class ChatView extends GetView<ChatController> {
           _modelLoadingBar(context, isDark),
           _contextBar(context, isDark),
           Expanded(child: Obx(() {
-            if (controller.currentSessionId.value.isEmpty)
+            if (controller.currentSessionId.value.isEmpty ||
+                controller.messages.isEmpty)
               return _emptyState(context, isDark);
             final streaming = controller.isStreaming.value;
             final text = controller.streamingResponse.value;
@@ -509,34 +510,50 @@ class ChatView extends GetView<ChatController> {
                     },
                   ));
             }),
-            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              // Image picker
+            // STT listening indicator
+            Obx(() {
+              if (!controller.isListening.value) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF3B30).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    _PulsingDot(),
+                    const SizedBox(width: 8),
+                    Text('Listening… tap mic to stop',
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFFFF3B30),
+                            fontWeight: FontWeight.w500)),
+                  ]),
+                ),
+              );
+            }),
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              // Attach button (image + file) — shown for cloud & local vision
               Obx(() {
                 final s = Get.find<SettingsController>();
                 final inf = Get.find<InferenceService>();
-                if (!(s.inferenceMode.value == 'local' &&
+                final isCloud = s.inferenceMode.value == 'cloud';
+                final isLocalVision = s.inferenceMode.value == 'local' &&
                     inf.loadedModelRuntime.value == 'litert' &&
-                    inf.isVisionLoaded.value)) return const SizedBox.shrink();
-                return IconButton(
-                    icon: Icon(Icons.photo_outlined,
-                        color: Theme.of(context).hintColor, size: 22),
-                    onPressed: controller.pickImage,
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints());
-              }),
-              // File picker
-              Obx(() {
-                final s = Get.find<SettingsController>();
-                final inf = Get.find<InferenceService>();
-                if (!(s.inferenceMode.value == 'local' &&
-                    inf.loadedModelRuntime.value == 'litert' &&
-                    inf.isVisionLoaded.value)) return const SizedBox.shrink();
-                return IconButton(
-                    icon: Icon(Icons.attach_file_rounded,
-                        color: Theme.of(context).hintColor, size: 22),
-                    onPressed: controller.pickFile,
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints());
+                    inf.isVisionLoaded.value;
+                if (!isCloud && !isLocalVision)
+                  return const SizedBox.shrink();
+                return _AttachButton(
+                  isDark: isDark,
+                  isCloud: isCloud,
+                  onImage: controller.pickImage,
+                  onFile: controller.pickFile,
+                  context: context,
+                );
               }),
               // Text field
               Expanded(
@@ -568,38 +585,63 @@ class ChatView extends GetView<ChatController> {
                 ),
               )),
               const SizedBox(width: 6),
-              // Send / Stop
+              // Unified mic / send / stop button
               Obx(() {
-                if (controller.isLoading.value) {
-                  return GestureDetector(
-                    onTap: controller.stopGenerating,
-                    child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: const BoxDecoration(
-                            color: Color(0xFFFF3B30), shape: BoxShape.circle),
-                        child: const Icon(Icons.stop_rounded,
-                            color: Colors.white, size: 18)),
-                  );
-                }
-                final can = controller.inputText.value.isNotEmpty ||
+                final loading = controller.isLoading.value;
+                final listening = controller.isListening.value;
+                final hasContent = controller.inputText.value.isNotEmpty ||
                     controller.selectedFileName.value != null ||
                     controller.selectedImagePath.value != null;
+
+                // Determine state
+                final Color bgColor;
+                final IconData iconData;
+                final VoidCallback? onTap;
+
+                if (loading) {
+                  // AI generating → red stop
+                  bgColor = const Color(0xFFFF3B30);
+                  iconData = Icons.stop_rounded;
+                  onTap = controller.stopGenerating;
+                } else if (listening) {
+                  // STT active → red stop
+                  bgColor = const Color(0xFFFF3B30);
+                  iconData = Icons.stop_rounded;
+                  onTap = controller.toggleListening;
+                } else if (hasContent) {
+                  // Has text or attachment → blue send
+                  bgColor = _appleBlue(context);
+                  iconData = Icons.arrow_upward_rounded;
+                  onTap = controller.sendMessage;
+                } else {
+                  // Empty → grey mic
+                  bgColor = isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.black.withValues(alpha: 0.06);
+                  iconData = Icons.mic_none_rounded;
+                  onTap = controller.toggleListening;
+                }
+
                 return GestureDetector(
-                  onTap: can ? controller.sendMessage : null,
-                  child: Container(
+                  onTap: onTap,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
                     width: 34,
                     height: 34,
                     decoration: BoxDecoration(
-                        color: can
-                            ? _appleBlue(context)
-                            : (isDark
-                                ? Colors.white.withValues(alpha: 0.08)
-                                : Colors.black.withValues(alpha: 0.06)),
-                        shape: BoxShape.circle),
-                    child: Icon(Icons.arrow_upward_rounded,
-                        color: can ? Colors.white : Theme.of(context).hintColor,
-                        size: 20),
+                        color: bgColor, shape: BoxShape.circle),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim, child: child),
+                      child: Icon(iconData,
+                          key: ValueKey(iconData),
+                          color: (loading || listening || hasContent)
+                              ? Colors.white
+                              : Theme.of(context).hintColor,
+                          size: iconData == Icons.mic_none_rounded ? 18 : 20),
+                    ),
                   ),
                 );
               }),
@@ -769,6 +811,229 @@ class ChatView extends GetView<ChatController> {
       : v >= 1000
           ? '${(v / 1000).toStringAsFixed(1)}K'
           : v.toString();
+}
+
+// ── Attach Button ──
+class _AttachButton extends StatelessWidget {
+  final bool isDark;
+  final bool isCloud;
+  final VoidCallback onImage;
+  final VoidCallback onFile;
+  final BuildContext context;
+
+  const _AttachButton({
+    required this.isDark,
+    required this.isCloud,
+    required this.onImage,
+    required this.onFile,
+    required this.context,
+  });
+
+  @override
+  Widget build(BuildContext buildContext) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 2),
+      child: GestureDetector(
+        onTap: () => _showSheet(buildContext),
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.06),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.add_rounded,
+              color: Theme.of(buildContext).hintColor, size: 20),
+        ),
+      ),
+    );
+  }
+
+  void _showSheet(BuildContext ctx) {
+    final isDarkSheet = Theme.of(ctx).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor:
+          isDarkSheet ? const Color(0xFF1C1C1E) : Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // Handle
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: isDarkSheet
+                        ? Colors.white.withValues(alpha: 0.2)
+                        : Colors.black.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 16),
+              Text('Add Attachment',
+                  style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: isDarkSheet ? Colors.white : Colors.black)),
+              if (isCloud)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('Cloud models support images & text files',
+                      style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: isDarkSheet
+                              ? Colors.white54
+                              : Colors.black45)),
+                ),
+              const SizedBox(height: 20),
+              Row(children: [
+                _SheetTile(
+                  icon: Icons.photo_library_rounded,
+                  color: const Color(0xFF30D158),
+                  label: 'Photo',
+                  sub: 'From gallery',
+                  isDark: isDarkSheet,
+                  onTap: () {
+                    Navigator.pop(_);
+                    onImage();
+                  },
+                ),
+                const SizedBox(width: 12),
+                _SheetTile(
+                  icon: Icons.attach_file_rounded,
+                  color: const Color(0xFF0A84FF),
+                  label: 'File',
+                  sub: isCloud
+                      ? 'PDF, DOCX, text…'
+                      : 'PDF, DOCX, text…',
+                  isDark: isDarkSheet,
+                  onTap: () {
+                    Navigator.pop(_);
+                    onFile();
+                  },
+                ),
+              ]),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SheetTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String sub;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _SheetTile({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.sub,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(height: 10),
+              Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black)),
+              const SizedBox(height: 2),
+              Text(sub,
+                  style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: isDark ? Colors.white54 : Colors.black45)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Pulsing Dot (STT indicator) ──
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot();
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _c;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.7, end: 1.3)
+        .animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scale,
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+            color: Color(0xFFFF3B30), shape: BoxShape.circle),
+      ),
+    );
+  }
 }
 
 // ── Image Generation Indicator ──

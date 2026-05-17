@@ -22,6 +22,17 @@ set(SD_BUILD_EXAMPLES OFF CACHE BOOL "Disable SD examples")
 set(SD_BUILD_SHARED_LIBS OFF CACHE BOOL "Build SD as static")
 add_subdirectory(src/main/cpp/stable-diffusion.cpp)
 
+# ggml-base is linked as a standalone shared object and contains C++ sources.
+# On Android/NDK it must explicitly link libc++ or symbols such as operator new
+# and std::runtime_error stay unresolved during the native build.
+if(ANDROID)
+    foreach(target ggml-base ggml stable-diffusion)
+        if(TARGET ${target})
+            target_link_libraries(${target} PRIVATE c++_shared)
+        endif()
+    endforeach()
+endif()
+
 # JNI wrapper library
 add_library(sd_jni SHARED
     src/main/cpp/sd_jni_wrapper.cpp
@@ -29,6 +40,7 @@ add_library(sd_jni SHARED
 
 target_link_libraries(sd_jni
     stable-diffusion
+    c++_shared
     android
     log
 )
