@@ -88,10 +88,10 @@ class LocalImageService extends GetxService {
         } catch (e) {
           print('[LocalImageService] GPU detection failed: $e');
         }
-        // Adreno GPUs are blacklisted due to known GGML Vulkan shader compiler crashes
+        // Adreno: Vulkan blacklisted (GGML shader compiler crashes), but OpenCL works on 7xx+
         if (vendor == 'adreno') {
-          useGpu = false;
-          print('[LocalImageService] Adreno detected — forcing CPU fallback');
+          // Don't disable GPU entirely — let OpenCL try
+          print('[LocalImageService] Adreno detected — Vulkan disabled, OpenCL allowed');
         }
       }
       // Check user override to force CPU

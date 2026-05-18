@@ -6,18 +6,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Aggressive optimizations for CPU inference speed
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -ffast-math -funroll-loops")
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -DNDEBUG -ffast-math -funroll-loops")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -ffast-math -fno-finite-math-only -funroll-loops")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -DNDEBUG -ffast-math -fno-finite-math-only -funroll-loops")
 
 # Android 15 16KB page size compliance
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=16384 -Wl,--unresolved-symbols=ignore-all")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384 -Wl,--unresolved-symbols=ignore-all")
 
 # Vulkan is enabled on Android with runtime Adreno detection and CPU fallback.
 # Adreno GPUs are blacklisted due to known GGML shader compiler crashes.
 # NOTE: Building with SD_VULKAN=ON on Windows requires a host C++ compiler
 # (Visual Studio, MinGW, or LLVM) to build the vulkan-shaders-gen tool.
-set(SD_VULKAN OFF CACHE BOOL "Enable Vulkan backend" FORCE)
+set(SD_VULKAN OFF CACHE BOOL "Enable Vulkan backend")
 
 # Use custom FindVulkan that works with Android NDK cross-compilation
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -29,7 +29,7 @@ endif()
 
 # OpenMP is now enabled — libomp.so is bundled in jniLibs/arm64-v8a/
 # This gives 2-4x CPU speedup for matrix operations in ggml
-set(GGML_OPENMP ON CACHE BOOL "Enable OpenMP for CPU parallelization" FORCE)
+set(GGML_OPENMP ON CACHE BOOL "Enable OpenMP for CPU parallelization")
 
 # Add stable-diffusion.cpp
 set(SD_BUILD_EXAMPLES OFF CACHE BOOL "Disable SD examples")
