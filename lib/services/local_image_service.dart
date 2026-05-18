@@ -30,6 +30,41 @@ class LocalImageService extends GetxService {
   String? get lastModelName =>
       _hive.getSetting<String>(AppConstants.keyImageModelName);
 
+  /// Pick the best GPU backend for a detected vendor.
+  /// Returns null if no GPU backend is suitable.
+  Backend? _pickBestBackend(String vendor) {
+    switch (vendor) {
+      case 'adreno':
+        // Adreno: OpenCL is best — Vulkan is blacklisted due to GGML shader compiler crashes
+        if (Backend.opencl.isAvailable) return Backend.opencl;
+        return Backend.cpu;
+      case 'mali':
+        // Mali: Vulkan is generally more stable and faster than OpenCL
+        if (Backend.vulkan.isAvailable) return Backend.vulkan;
+        return Backend.cpu;
+      case 'powervr':
+      case 'imagination':
+        // PowerVR / Imagination: try Vulkan
+        if (Backend.vulkan.isAvailable) return Backend.vulkan;
+        return Backend.cpu;
+      case 'nvidia':
+        // NVIDIA Tegra: Vulkan preferred, OpenCL fallback
+        if (Backend.vulkan.isAvailable) return Backend.vulkan;
+        if (Backend.opencl.isAvailable) return Backend.opencl;
+        return Backend.cpu;
+      case 'intel':
+        if (Backend.vulkan.isAvailable) return Backend.vulkan;
+        if (Backend.opencl.isAvailable) return Backend.opencl;
+        return Backend.cpu;
+      case 'amd':
+        if (Backend.vulkan.isAvailable) return Backend.vulkan;
+        if (Backend.opencl.isAvailable) return Backend.opencl;
+        return Backend.cpu;
+      default:
+        return Backend.cpu;
+    }
+  }
+
   @override
   void onInit() {
     super.onInit();
@@ -107,6 +142,13 @@ class LocalImageService extends GetxService {
       Backend backend = currentBackend.value;
       if (!useGpu && backend != Backend.cpu) {
         backend = Backend.cpu;
+      } else if (backend == Backend.cpu && useGpu) {
+        // User hasn't explicitly chosen a GPU backend — auto-detect best one
+        final autoBackend = _pickBestBackend(vendor);
+        if (autoBackend != null && autoBackend != Backend.cpu) {
+          backend = autoBackend;
+          print('[LocalImageService] Auto-selected backend: ${backend.displayName} for $vendor');
+        }
       }
       // If the chosen backend library isn't built yet, SdFfiBindings falls back to CPU
       currentBackend.value = backend;
