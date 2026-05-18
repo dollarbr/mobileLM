@@ -71,7 +71,7 @@ class AppConstants {
   static const bool defaultImageGenForceCpu = true;
   static const int defaultImageGenGpuGuardMb = 1843; // 1.8 GB
   static const int defaultImageGenSize = 0; // 0 = Auto recommended
-  static const double defaultFontScale = 1.0; // "Recommended" default
+  static const double defaultFontScale = 0.95; // 4th slider stop, "Small" default
 
   // System Prompt (compact for small context models)
   static const String systemPrompt =

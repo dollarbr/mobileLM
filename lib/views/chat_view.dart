@@ -560,36 +560,76 @@ class ChatView extends GetView<ChatController> {
                   : const Color(0xFF34C759);
               return Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: accent.withValues(alpha: 0.24),
-                        width: 0.5,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.24),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.auto_awesome_rounded,
+                                size: 13, color: accent),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Image gen · $steps ${steps == 1 ? "step" : "steps"} · $sizeLabel · $backendLabel',
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                    const SizedBox(width: 8),
+                    Container(
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.black.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: _sep(context), width: 0.5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.auto_awesome_rounded,
-                            size: 13, color: accent),
-                        const SizedBox(width: 6),
+                          _StepButton(
+                            icon: Icons.remove_rounded,
+                            enabled: steps > 1,
+                            onTap: () => settings.setImageSteps(steps - 1),
+                          ),
                         Text(
-                          'Image gen · $steps ${steps == 1 ? "step" : "steps"} · $sizeLabel · $backendLabel',
+                            steps.toString(),
                           style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: accent,
+                              fontSize: 12,
+                              color: isDark ? Colors.white : Colors.black,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
+                          _StepButton(
+                            icon: Icons.add_rounded,
+                            enabled: steps < 20,
+                            onTap: () => settings.setImageSteps(steps + 1),
+                          ),
                       ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               );
             }),
@@ -1088,6 +1128,34 @@ class _PulsingDotState extends State<_PulsingDot>
         height: 8,
         decoration: const BoxDecoration(
             color: Color(0xFFFF3B30), shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _StepButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = enabled
+        ? _appleBlue(context)
+        : Theme.of(context).hintColor.withValues(alpha: 0.35);
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 30,
+        height: 30,
+        child: Icon(icon, size: 16, color: color),
       ),
     );
   }

@@ -149,44 +149,9 @@ class SettingsView extends GetView<SettingsController> {
               _sectionLabel(context, 'MODEL PARAMETERS'),
               _buildLiteRtCard(context, isDark),
               const SizedBox(height: 10),
-              _buildSlider(context, isDark,
-                  label: 'Temperature',
-                  value: controller.temperature.value,
-                  min: 0.0,
-                  max: 2.0,
-                  divisions: 20,
-                  safeMax: 1.0,
-                  onChanged: (v) => controller.setTemperature(v),
-                  icon: Icons.thermostat_rounded,
-                  warning: 'High temperature = unpredictable output!'),
-              const SizedBox(height: 10),
-              _buildSlider(context, isDark,
-                  label: 'Max Tokens',
-                  value: controller.maxTokens.value.toDouble(),
-                  min: 64,
-                  max: 4096,
-                  divisions: 63,
-                  safeMax:
-                      Get.find<DeviceInfoService>().maxSafeTokens.toDouble(),
-                  onChanged: (v) => controller.setMaxTokens(v.toInt()),
-                  displayValue: controller.maxTokens.value.toString(),
-                  icon: Icons.tag_rounded,
-                  warning: 'Your phone may crash with this value!'),
-              const SizedBox(height: 10),
-              _buildSlider(context, isDark,
-                  label: 'Context Size',
-                  value: controller.contextSize.value.toDouble(),
-                  min: 512,
-                  max: 8192,
-                  divisions: 15,
-                  safeMax: Get.find<DeviceInfoService>()
-                      .maxSafeContextSize
-                      .toDouble(),
-                  onChanged: (v) => controller.setContextSize(v.toInt()),
-                  displayValue: controller.contextSize.value.toString(),
-                  icon: Icons.memory_rounded,
-                  warning: 'Context this large will eat all your RAM!'),
-              const SizedBox(height: 10),
+              _buildModelParametersCard(context, isDark),
+              const SizedBox(height: 24),
+              _sectionLabel(context, 'IMAGE GENERATION PARAMETERS'),
               _buildImageGenerationCard(context, isDark),
               const SizedBox(height: 24),
               _sectionLabel(context, 'ABOUT'),
@@ -470,6 +435,54 @@ class SettingsView extends GetView<SettingsController> {
           showDivider: i < modes.length - 1,
           onTap: () => controller.setLiteRtPerformanceMode(modes[i].value),
         ),
+    ]);
+  }
+
+  Widget _buildModelParametersCard(BuildContext context, bool isDark) {
+    return _appleGroupedCard(context, isDark, children: [
+      _modelParameterSlider(
+        context,
+        isDark,
+        label: 'Temperature',
+        value: controller.temperature.value,
+        min: 0.0,
+        max: 2.0,
+        divisions: 20,
+        safeMax: 1.0,
+        onChanged: (v) => controller.setTemperature(v),
+        icon: Icons.thermostat_rounded,
+        warning: 'High temperature = unpredictable output!',
+      ),
+      _parameterDivider(isDark),
+      _modelParameterSlider(
+        context,
+        isDark,
+        label: 'Max Tokens',
+        value: controller.maxTokens.value.toDouble(),
+        min: 64,
+        max: 4096,
+        divisions: 63,
+        safeMax: Get.find<DeviceInfoService>().maxSafeTokens.toDouble(),
+        onChanged: (v) => controller.setMaxTokens(v.toInt()),
+        displayValue: controller.maxTokens.value.toString(),
+        icon: Icons.tag_rounded,
+        warning: 'Your phone may crash with this value!',
+      ),
+      _parameterDivider(isDark),
+      _modelParameterSlider(
+        context,
+        isDark,
+        label: 'Context Size',
+        value: controller.contextSize.value.toDouble(),
+        min: 512,
+        max: 8192,
+        divisions: 15,
+        safeMax: Get.find<DeviceInfoService>().maxSafeContextSize.toDouble(),
+        onChanged: (v) => controller.setContextSize(v.toInt()),
+        displayValue: controller.contextSize.value.toString(),
+        icon: Icons.memory_rounded,
+        warning: 'Context this large will eat all your RAM!',
+      ),
     ]);
   }
 
@@ -817,7 +830,7 @@ class SettingsView extends GetView<SettingsController> {
             ),
           ]),
           const SizedBox(height: 4),
-          Text('Recommended (1.0×) is the default size',
+          Text('Small (0.95x) is the default size',
               style: GoogleFonts.inter(
                   fontSize: 12, color: Theme.of(context).hintColor)),
           Slider(
@@ -834,18 +847,18 @@ class SettingsView extends GetView<SettingsController> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Small',
+                Text('XS',
                     style: GoogleFonts.inter(
                         fontSize: 11, color: Theme.of(context).hintColor)),
-                Text('Recommended',
+                Text('Small',
                     style: GoogleFonts.inter(
                         fontSize: 11,
-                        color: controller.fontScale.value >= 0.95 &&
-                                controller.fontScale.value <= 1.05
+                        color: controller.fontScale.value >= 0.9 &&
+                                controller.fontScale.value <= 0.95
                             ? accent
                             : Theme.of(context).hintColor,
-                        fontWeight: controller.fontScale.value >= 0.95 &&
-                                controller.fontScale.value <= 1.05
+                        fontWeight: controller.fontScale.value >= 0.9 &&
+                                controller.fontScale.value <= 0.95
                             ? FontWeight.w600
                             : FontWeight.w400)),
                 Text('Large',
@@ -854,44 +867,112 @@ class SettingsView extends GetView<SettingsController> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          // Live preview
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : Colors.black.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.07)
-                      : Colors.black.withValues(alpha: 0.07)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Preview',
-                    style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Theme.of(context).hintColor,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 6),
-                Text('Hello! How can I help you today?',
-                    style: GoogleFonts.inter(
-                        fontSize: 15,
-                        color: isDark ? Colors.white : Colors.black)),
-                const SizedBox(height: 2),
-                Text('This is what messages will look like at this font size.',
-                    style: GoogleFonts.inter(
-                        fontSize: 13, color: Theme.of(context).hintColor)),
-              ],
-            ),
-          ),
         ]),
       ),
     ]);
+  }
+
+  Widget _parameterDivider(bool isDark) {
+    return Divider(
+      height: 1,
+      indent: 16,
+      endIndent: 16,
+      color: isDark
+          ? Colors.white.withValues(alpha: 0.06)
+          : Colors.black.withValues(alpha: 0.06),
+    );
+  }
+
+  Widget _modelParameterSlider(
+    BuildContext context,
+    bool isDark, {
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required double safeMax,
+    required ValueChanged<double> onChanged,
+    required IconData icon,
+    required String warning,
+    String? displayValue,
+  }) {
+    final isOver = value > safeMax;
+    final danger = safeMax < max
+        ? ((value - safeMax) / (max - safeMax)).clamp(0.0, 1.0)
+        : 0.0;
+    final accent = isOver
+        ? Color.lerp(AppColors.warning, AppColors.error, danger)!
+        : (isDark ? const Color(0xFF0A84FF) : AppColors.primary);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, size: 16, color: accent),
+          const SizedBox(width: 8),
+          Text(label,
+              style: GoogleFonts.inter(
+                  fontSize: 15, fontWeight: FontWeight.w400)),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6)),
+            child: Text(displayValue ?? value.toStringAsFixed(2),
+                style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: accent,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ]),
+        if (safeMax < max)
+          Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                  'Recommended max: ${safeMax.toInt() > 0 ? safeMax.toInt().toString() : safeMax.toStringAsFixed(1)}',
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: Theme.of(context).hintColor))),
+        Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            divisions: divisions,
+            activeColor: accent,
+            onChanged: (v) {
+              if (v > safeMax && value <= safeMax) {
+                HapticFeedback.heavyImpact();
+                Get.snackbar('âš ï¸ Warning', warning,
+                    snackPosition: SnackPosition.BOTTOM,
+                    backgroundColor: AppColors.error.withValues(alpha: 0.9),
+                    colorText: Colors.white,
+                    duration: const Duration(seconds: 3),
+                    margin: const EdgeInsets.all(12));
+              } else if (v > safeMax) {
+                HapticFeedback.mediumImpact();
+              }
+              onChanged(v);
+            }),
+        if (isOver)
+          Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8)),
+              child: Row(children: [
+                Icon(Icons.warning_amber_rounded, size: 14, color: accent),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: Text(warning,
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: accent,
+                            fontWeight: FontWeight.w400))),
+              ])),
+      ]),
+    );
   }
 
   Widget _buildSlider(

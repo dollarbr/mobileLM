@@ -132,10 +132,8 @@ extension BackendExtension on Backend {
       DynamicLibrary.open(libraryName);
       // Don't keep it open here; just verify it exists
       // (DynamicLibrary doesn't have a close() method in Dart FFI)
-      print('[SdFfiBindings] Backend availability OK: $libraryName');
       return true;
     } catch (e) {
-      print('[SdFfiBindings] Backend availability failed for $libraryName: $e');
       return false;
     }
   }
