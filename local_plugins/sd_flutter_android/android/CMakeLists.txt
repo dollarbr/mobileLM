@@ -57,6 +57,8 @@ target_link_libraries(sd_jni PRIVATE
     c++_shared
     android
     log
+    EGL
+    GLESv2
 )
 
 if(SD_VULKAN)

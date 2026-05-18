@@ -1,10 +1,13 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <android/log.h>
 #ifdef SD_JNI_HAVE_VULKAN
 #include <vulkan/vulkan.h>
 #endif
+#include <EGL/egl.h>
+#include <GLES2/gl2.h>
 #include <stdlib.h>
 #include "stable-diffusion.h"
 
@@ -84,11 +87,92 @@ void sd_progress_cb(int step, int steps, float time, void* data) {
     env->DeleteLocalRef(clazz);
 }
 
+// ---------------------------------------------------------------------------
+// Universal GPU vendor detection via EGL/GLES2 (works on all Android GPUs)
+// ---------------------------------------------------------------------------
+static std::string detectGpuViaEGL() {
+    EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (display == EGL_NO_DISPLAY) {
+        return "";
+    }
+    if (eglInitialize(display, nullptr, nullptr) == EGL_FALSE) {
+        return "";
+    }
+
+    EGLint attribs[] = {
+        EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+        EGL_NONE
+    };
+    EGLConfig config;
+    EGLint numConfigs = 0;
+    if (eglChooseConfig(display, attribs, &config, 1, &numConfigs) == EGL_FALSE || numConfigs == 0) {
+        eglTerminate(display);
+        return "";
+    }
+
+    EGLint contextAttribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+    EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttribs);
+    if (context == EGL_NO_CONTEXT) {
+        eglTerminate(display);
+        return "";
+    }
+
+    EGLint pbufferAttribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
+    EGLSurface pbuffer = eglCreatePbufferSurface(display, config, pbufferAttribs);
+    if (pbuffer == EGL_NO_SURFACE) {
+        eglDestroyContext(display, context);
+        eglTerminate(display);
+        return "";
+    }
+
+    if (eglMakeCurrent(display, pbuffer, pbuffer, context) == EGL_FALSE) {
+        eglDestroySurface(display, pbuffer);
+        eglDestroyContext(display, context);
+        eglTerminate(display);
+        return "";
+    }
+
+    const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+    std::string result = renderer ? renderer : "";
+
+    eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    eglDestroySurface(display, pbuffer);
+    eglDestroyContext(display, context);
+    eglTerminate(display);
+
+    return result;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_sd_1flutter_1android_SdFlutterAndroidPlugin_detectGpuVendorNative(
     JNIEnv* env, jobject thiz) {
 
+    // 1. Try EGL first — works on every Android device regardless of backend build flags
+    std::string eglRenderer = detectGpuViaEGL();
+    if (!eglRenderer.empty()) {
+        std::string lower = eglRenderer;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        const char* vendor = "unknown";
+        if (lower.find("adreno") != std::string::npos) {
+            vendor = "adreno";
+        } else if (lower.find("mali") != std::string::npos) {
+            vendor = "mali";
+        } else if (lower.find("powervr") != std::string::npos || lower.find("imagination") != std::string::npos) {
+            vendor = "powervr";
+        } else if (lower.find("nvidia") != std::string::npos || lower.find("tegra") != std::string::npos) {
+            vendor = "nvidia";
+        } else if (lower.find("intel") != std::string::npos) {
+            vendor = "intel";
+        } else if (lower.find("amd") != std::string::npos || lower.find("radeon") != std::string::npos) {
+            vendor = "amd";
+        }
+        LOGI("GPU vendor detected via EGL: %s (renderer: %s)", vendor, eglRenderer.c_str());
+        return env->NewStringUTF(vendor);
+    }
+
 #ifdef SD_JNI_HAVE_VULKAN
+    // 2. Fallback to Vulkan if compiled in
     VkInstance instance = VK_NULL_HANDLE;
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -126,7 +210,7 @@ Java_com_example_sd_1flutter_1android_SdFlutterAndroidPlugin_detectGpuVendorNati
         vendor = "amd";
     }
 
-    LOGI("GPU vendor detected: %s (device: %s)", vendor, deviceName.c_str());
+    LOGI("GPU vendor detected via Vulkan: %s (device: %s)", vendor, deviceName.c_str());
     vkDestroyInstance(instance, nullptr);
     return env->NewStringUTF(vendor);
 #else
