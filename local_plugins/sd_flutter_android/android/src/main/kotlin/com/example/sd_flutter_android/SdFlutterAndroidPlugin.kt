@@ -63,9 +63,12 @@ class SdFlutterAndroidPlugin: FlutterPlugin, MethodCallHandler {
 
     // 3. Hardware heuristic fallback
     val hw = Build.HARDWARE.lowercase()
+    val board = Build.BOARD.lowercase()
+    val hardwareText = "$hw $board"
     return when {
-      hw.contains("qcom") || hw.contains("sdm") || hw.contains("sm8") || hw.contains("sm7") -> "adreno"
-      hw.contains("exynos") || hw.contains("gs1") || hw.contains("mt6") || hw.contains("unisoc") -> "mali"
+      hardwareText.contains("qcom") || hardwareText.contains("sdm") || hardwareText.contains("sm8") || hardwareText.contains("sm7") -> "adreno"
+      hardwareText.contains("exynos") || hardwareText.contains("s5e") -> "xclipse"
+      hardwareText.contains("gs1") || hardwareText.contains("mt6") || hardwareText.contains("mt") || hardwareText.contains("unisoc") -> "mali"
       else -> "unknown"
     }
   }
@@ -103,6 +106,19 @@ class SdFlutterAndroidPlugin: FlutterPlugin, MethodCallHandler {
             am?.getMemoryInfo(memInfo)
             val totalMb = (memInfo.totalMem / (1024 * 1024)).toInt()
             withContext(Dispatchers.Main) { result.success(totalMb) }
+          } catch (e: Exception) {
+            withContext(Dispatchers.Main) { result.error("MEMORY_FAILED", e.message, null) }
+          }
+        }
+      }
+      "getAvailableMemory" -> {
+        scope.launch {
+          try {
+            val memInfo = ActivityManager.MemoryInfo()
+            val am = context?.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            am?.getMemoryInfo(memInfo)
+            val availableMb = (memInfo.availMem / (1024 * 1024)).toInt()
+            withContext(Dispatchers.Main) { result.success(availableMb) }
           } catch (e: Exception) {
             withContext(Dispatchers.Main) { result.error("MEMORY_FAILED", e.message, null) }
           }

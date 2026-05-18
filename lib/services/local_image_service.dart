@@ -32,60 +32,107 @@ class LocalImageService extends GetxService {
 
   /// Pick the best GPU backend for a detected vendor.
   /// Returns null if no GPU backend is suitable.
-  Backend? _pickBestBackend(String vendor) {
+  List<Backend> _backendPreference(String vendor) {
     switch (vendor) {
       case 'adreno':
         // Adreno: OpenCL is best — Vulkan is blacklisted due to GGML shader compiler crashes
-        if (Backend.opencl.isAvailable) return Backend.opencl;
-        return Backend.cpu;
+        return [Backend.opencl, Backend.cpu];
       case 'mali':
-        // Mali: Vulkan is generally more stable and faster than OpenCL
-        if (Backend.vulkan.isAvailable) return Backend.vulkan;
-        return Backend.cpu;
+      // Mali: Vulkan is generally more stable and faster than OpenCL
+      case 'xclipse':
+        return [Backend.vulkan, Backend.cpu];
       case 'powervr':
       case 'imagination':
         // PowerVR / Imagination: try Vulkan
-        if (Backend.vulkan.isAvailable) return Backend.vulkan;
-        return Backend.cpu;
+        return [Backend.vulkan, Backend.cpu];
       case 'nvidia':
         // NVIDIA Tegra: Vulkan preferred, OpenCL fallback
-        if (Backend.vulkan.isAvailable) return Backend.vulkan;
-        if (Backend.opencl.isAvailable) return Backend.opencl;
-        return Backend.cpu;
+        return [Backend.vulkan, Backend.opencl, Backend.cpu];
       case 'intel':
-        if (Backend.vulkan.isAvailable) return Backend.vulkan;
-        if (Backend.opencl.isAvailable) return Backend.opencl;
-        return Backend.cpu;
+        return [Backend.vulkan, Backend.opencl, Backend.cpu];
       case 'amd':
-        if (Backend.vulkan.isAvailable) return Backend.vulkan;
-        if (Backend.opencl.isAvailable) return Backend.opencl;
-        return Backend.cpu;
+        return [Backend.vulkan, Backend.opencl, Backend.cpu];
       default:
-        return Backend.cpu;
+        return [Backend.vulkan, Backend.opencl, Backend.cpu];
     }
+  }
+
+  List<Backend> _availableBackendsFor(String vendor, bool useGpu) {
+    if (!useGpu) return [Backend.cpu];
+    final available = <Backend>[];
+    for (final backend in _backendPreference(vendor)) {
+      if (backend == Backend.cpu || backend.isAvailable) {
+        available.add(backend);
+      }
+    }
+    if (!available.contains(Backend.cpu)) available.add(Backend.cpu);
+    return available;
+  }
+
+  Future<bool> _tryLoadWithBackend({
+    required Backend backend,
+    required String modelPath,
+    required String? taesdPath,
+    required double maxVramGb,
+  }) async {
+    final isGpuBackend = backend != Backend.cpu;
+    print(
+        '[LocalImageService] Creating SdIsolateProcessor (backend=${backend.displayName}, quant=${currentQuantization.value.displayName})...');
+    _processor = SdIsolateProcessor(
+      modelPath: modelPath,
+      nThreads: 0,
+      flashAttn: !isGpuBackend,
+      vaeTiling: true,
+      taesdPath: taesdPath,
+      backend: backend,
+      quantizationType: currentQuantization.value,
+      offloadParamsToCpu: isGpuBackend,
+      enableMmap: true,
+      keepVaeOnCpu: isGpuBackend,
+      maxVram: maxVramGb,
+    );
+
+    _processor!.logStream.listen((log) {
+      latestLog.value = log.message;
+    });
+
+    final modelLoaded = await _processor!.modelLoaded
+        .timeout(const Duration(seconds: 120), onTimeout: () => false);
+    if (!modelLoaded) {
+      await _processor?.dispose();
+      _processor = null;
+    }
+    return modelLoaded;
   }
 
   @override
   void onInit() {
     super.onInit();
     // Restore saved backend / quantization preferences
-    final savedBackendIndex = _hive.getSetting<int>(AppConstants.keyImageGenBackend,
+    final savedBackendIndex = _hive.getSetting<int>(
+        AppConstants.keyImageGenBackend,
         defaultValue: Backend.cpu.index);
-    final savedQuantIndex = _hive.getSetting<int>(AppConstants.keyImageGenQuantization,
+    final savedQuantIndex = _hive.getSetting<int>(
+        AppConstants.keyImageGenQuantization,
         defaultValue: QuantizationType.q4_0.index);
-    if (savedBackendIndex != null && savedBackendIndex >= 0 && savedBackendIndex < Backend.values.length) {
+    if (savedBackendIndex != null &&
+        savedBackendIndex >= 0 &&
+        savedBackendIndex < Backend.values.length) {
       currentBackend.value = Backend.values[savedBackendIndex];
     }
-    if (savedQuantIndex != null && savedQuantIndex >= 0 && savedQuantIndex < QuantizationType.values.length) {
+    if (savedQuantIndex != null &&
+        savedQuantIndex >= 0 &&
+        savedQuantIndex < QuantizationType.values.length) {
       currentQuantization.value = QuantizationType.values[savedQuantIndex];
     }
     // Force Q4_0 for speed — override any saved FP16 setting
     currentQuantization.value = QuantizationType.q4_0;
   }
 
-  Future<String> loadModel(String modelPath, {String? modelName, String? taesdPath}) async {
+  Future<String> loadModel(String modelPath,
+      {String? modelName, String? taesdPath}) async {
     if (isLoadingModel.value) return 'ERROR: Model is already loading.';
-    
+
     try {
       if (isModelLoaded.value) {
         await unloadModel();
@@ -99,20 +146,20 @@ class LocalImageService extends GetxService {
         print('[LocalImageService] TAESD path: $taesdPath');
       }
 
-      // Debug: check file existence and size from Dart side
+      int modelSizeMb = 0;
       try {
         final file = File(modelPath);
         final exists = await file.exists();
         print('[LocalImageService] File exists: $exists');
         if (exists) {
           final length = await file.length();
+          modelSizeMb = (length / (1024 * 1024)).round();
           print('[LocalImageService] File size: $length bytes');
         }
       } catch (e) {
         print('[LocalImageService] File check error: $e');
       }
 
-      // Detect GPU vendor and decide backend
       String vendor = 'unknown';
       bool useGpu = true;
       if (Platform.isAndroid) {
@@ -123,37 +170,33 @@ class LocalImageService extends GetxService {
         } catch (e) {
           print('[LocalImageService] GPU detection failed: $e');
         }
-        // Adreno: Vulkan blacklisted (GGML shader compiler crashes), but OpenCL works on 7xx+
-        if (vendor == 'adreno') {
-          // Don't disable GPU entirely — let OpenCL try
-          print('[LocalImageService] Adreno detected — Vulkan disabled, OpenCL allowed');
-        }
       }
-      // Check user override to force CPU
+
       final forceCpu = _hive.getSetting<bool>(AppConstants.keyImageGenForceCpu,
-          defaultValue: false) ?? false;
+              defaultValue: false) ??
+          false;
       if (forceCpu) {
         useGpu = false;
-        print('[LocalImageService] User override — forcing CPU');
+        print('[LocalImageService] User override - forcing CPU');
       }
-      isUsingGpu.value = useGpu;
 
-      // Determine backend: user saved > auto-detect > CPU fallback
-      Backend backend = currentBackend.value;
-      if (!useGpu && backend != Backend.cpu) {
-        backend = Backend.cpu;
-      } else if (backend == Backend.cpu && useGpu) {
-        // User hasn't explicitly chosen a GPU backend — auto-detect best one
-        final autoBackend = _pickBestBackend(vendor);
-        if (autoBackend != null && autoBackend != Backend.cpu) {
-          backend = autoBackend;
-          print('[LocalImageService] Auto-selected backend: ${backend.displayName} for $vendor');
-        }
+      if (useGpu && vendor == 'adreno' && modelSizeMb >= 1536) {
+        useGpu = false;
+        print(
+            '[LocalImageService] Large FP16 image model detected (${modelSizeMb}MB) on Adreno; using CPU for stability');
       }
-      // If the chosen backend library isn't built yet, SdFfiBindings falls back to CPU
-      currentBackend.value = backend;
 
-      // Detect device RAM and set VRAM limit (prevent OOM on low-RAM devices)
+      final requestedBackend = currentBackend.value;
+      if (!useGpu && requestedBackend != Backend.cpu) {
+        print(
+            '[LocalImageService] Ignoring saved GPU backend ${requestedBackend.displayName} for this model/device');
+      }
+      final candidateBackends = requestedBackend == Backend.cpu || !useGpu
+          ? _availableBackendsFor(vendor, useGpu)
+          : <Backend>[requestedBackend, Backend.cpu];
+      print(
+          '[LocalImageService] Backend candidates for $vendor: ${candidateBackends.map((b) => b.displayName).join(' -> ')}');
+
       int totalRamMb = 4096;
       if (Platform.isAndroid) {
         try {
@@ -163,53 +206,48 @@ class LocalImageService extends GetxService {
           print('[LocalImageService] Memory detection failed: $e');
         }
       }
-      // Cap VRAM at 70% of total RAM to leave headroom for OS + app
-      final maxVram = (totalRamMb * 0.7).clamp(1024.0, 8192.0);
-      print('[LocalImageService] Max VRAM limit: ${maxVram.toStringAsFixed(0)}MB');
+      final maxVramGb = candidateBackends.first == Backend.cpu
+          ? 0.0
+          : (totalRamMb / 1024 * 0.22).clamp(0.75, 1.75);
+      print(
+          '[LocalImageService] Max graph VRAM limit: ${maxVramGb.toStringAsFixed(2)}GB');
 
-      // Create isolate processor
-      print('[LocalImageService] Creating SdIsolateProcessor (backend=${backend.displayName}, quant=${currentQuantization.value.displayName})...');
-      _processor = SdIsolateProcessor(
-        modelPath: modelPath,
-        nThreads: 0, // auto
-        flashAttn: true, // reduces memory, speeds up attention
-        vaeTiling: true, // crucial for mobile VAE decode
-        taesdPath: taesdPath,
-        backend: backend,
-        quantizationType: currentQuantization.value,
-        enableMmap: true, // memory-map model file instead of loading into RAM
-        maxVram: maxVram,
-      );
+      for (final backend in candidateBackends) {
+        print('[LocalImageService] Trying backend: ${backend.displayName}');
+        final modelLoaded = await _tryLoadWithBackend(
+          backend: backend,
+          modelPath: modelPath,
+          taesdPath: taesdPath,
+          maxVramGb: backend == Backend.cpu ? 0.0 : maxVramGb,
+        );
+        if (!modelLoaded) {
+          print(
+              '[LocalImageService] Backend failed: ${backend.displayName}; trying fallback');
+          continue;
+        }
 
-      // Pipe logs to latestLog observable
-      _processor!.logStream.listen((log) {
-        latestLog.value = log.message;
-      });
-
-      // Wait for model to load in isolate
-      final modelLoaded = await _processor!.modelLoaded
-          .timeout(const Duration(seconds: 120), onTimeout: () => false);
-
-      if (modelLoaded) {
+        currentBackend.value = backend;
+        isUsingGpu.value = backend != Backend.cpu;
         isModelLoaded.value = true;
         isLoadingModel.value = false;
         loadedModelName.value = modelName ?? modelPath.split('/').last;
         await _hive.setSetting(AppConstants.keyImageModelPath, modelPath);
-        await _hive.setSetting(AppConstants.keyImageModelName, loadedModelName.value);
-        await _hive.setSetting(AppConstants.keyImageGenBackend, currentBackend.value.index);
-        await _hive.setSetting(AppConstants.keyImageGenQuantization, currentQuantization.value.index);
+        await _hive.setSetting(
+            AppConstants.keyImageModelName, loadedModelName.value);
+        await _hive.setSetting(
+            AppConstants.keyImageGenBackend, currentBackend.value.index);
+        await _hive.setSetting(AppConstants.keyImageGenQuantization,
+            currentQuantization.value.index);
         return 'Image model loaded successfully.';
-      } else {
-        await _processor?.dispose();
-        _processor = null;
-        isModelLoaded.value = false;
-        isLoadingModel.value = false;
-        return 'Could not load this model. Try CyberRealistic, Realistic Vision, or AbsoluteReality — these work reliably on most devices.\n\nTechnical detail: Model initialization timed out or failed in isolate.';
       }
+
+      isModelLoaded.value = false;
+      isLoadingModel.value = false;
+      return 'Could not load this model. Try CyberRealistic, Realistic Vision, or AbsoluteReality - these work reliably on most devices.\n\nTechnical detail: All backend candidates failed.';
     } catch (e) {
       isModelLoaded.value = false;
       isLoadingModel.value = false;
-      return 'Could not load this model. Try CyberRealistic, Realistic Vision, or AbsoluteReality — these work reliably on most devices.\n\nTechnical detail: $e';
+      return 'Could not load this model. Try CyberRealistic, Realistic Vision, or AbsoluteReality - these work reliably on most devices.\n\nTechnical detail: $e';
     }
   }
 
@@ -257,15 +295,33 @@ class LocalImageService extends GetxService {
     StreamSubscription? logSub;
 
     try {
-      final steps = _hive.getSetting<int>(AppConstants.keyImageSteps,
-          defaultValue: AppConstants.defaultImageSteps) ??
+      final requestedSteps = _hive.getSetting<int>(AppConstants.keyImageSteps,
+              defaultValue: AppConstants.defaultImageSteps) ??
           AppConstants.defaultImageSteps;
+      final effectiveSteps = currentBackend.value == Backend.cpu
+          ? requestedSteps.clamp(1, 20).toInt()
+          : requestedSteps.clamp(1, 8).toInt();
 
-      print('[LocalImageService] generateImage start: prompt="$prompt", steps=$steps');
+      int availableRamMb = 0;
+      if (Platform.isAndroid) {
+        try {
+          availableRamMb = await SdFlutterAndroid.getAvailableMemory();
+        } catch (e) {
+          print('[LocalImageService] Available memory check failed: $e');
+        }
+      }
+
+      final imageSize = currentBackend.value == Backend.cpu
+          ? (availableRamMb > 0 && availableRamMb < 1800 ? 320 : 384)
+          : (availableRamMb > 0 && availableRamMb < 1800 ? 256 : 320);
+
+      print(
+          '[LocalImageService] generateImage start: prompt="$prompt", backend=${currentBackend.value.displayName}, size=${imageSize}x$imageSize, steps=$effectiveSteps, availableRam=${availableRamMb}MB');
 
       // Subscribe to progress and log streams
       progressSub = _processor!.progressStream.listen((update) {
-        print('[LocalImageService] Progress: step ${update.step}/${update.totalSteps}');
+        print(
+            '[LocalImageService] Progress: step ${update.step}/${update.totalSteps}');
         onProgress?.call(update.step, update.totalSteps);
       });
       logSub = _processor!.logStream.listen((log) {
@@ -273,16 +329,23 @@ class LocalImageService extends GetxService {
         latestLog.value = log.message;
       });
 
-      final result = await _processor!.generate(
+      final result = await _processor!
+          .generate(
         prompt: prompt,
-        steps: steps,
+        width: imageSize,
+        height: imageSize,
+        steps: effectiveSteps,
         // Future: expose width, height, seed, cfg, negativePrompt, sampleMethod from settings
-      );
+      )
+          .timeout(const Duration(minutes: 5), onTimeout: () {
+        return GenerationResult(error: 'Generation timed out');
+      });
 
       await progressSub.cancel();
       await logSub.cancel();
 
-      print('[LocalImageService] Generation result: error=${result.error}, bytes=${result.rgbBytes?.length}, ${result.width}x${result.height}');
+      print(
+          '[LocalImageService] Generation result: error=${result.error}, bytes=${result.rgbBytes?.length}, ${result.width}x${result.height}');
 
       if (result.error != null || result.rgbBytes == null) {
         print('[LocalImageService] Generation failed: ${result.error}');
@@ -292,7 +355,8 @@ class LocalImageService extends GetxService {
 
       // Convert raw RGB to PNG
       // TODO: switch to ui.decodeImageFromPixels for GPU-accelerated decode
-      print('[LocalImageService] Encoding ${result.width}x${result.height} RGB to PNG...');
+      print(
+          '[LocalImageService] Encoding ${result.width}x${result.height} RGB to PNG...');
       final image = img.Image.fromBytes(
         width: result.width,
         height: result.height,

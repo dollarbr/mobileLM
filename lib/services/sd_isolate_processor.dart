@@ -25,7 +25,8 @@ class GenerationResult {
   final int width;
   final int height;
   final String? error;
-  GenerationResult({this.rgbBytes, this.width = 0, this.height = 0, this.error});
+  GenerationResult(
+      {this.rgbBytes, this.width = 0, this.height = 0, this.error});
 }
 
 /// Isolate-based Stable Diffusion processor.
@@ -153,7 +154,8 @@ class SdIsolateProcessor {
     final bytes = message['bytes'] as Uint8List?;
     final width = (message['width'] as num?)?.toInt() ?? 0;
     final height = (message['height'] as num?)?.toInt() ?? 0;
-    print('[MainIsolate] _handleResult: completing with image ${width}x$height, ${bytes?.length} bytes');
+    print(
+        '[MainIsolate] _handleResult: completing with image ${width}x$height, ${bytes?.length} bytes');
     completer.complete(GenerationResult(
       rgbBytes: bytes,
       width: width,
@@ -162,6 +164,9 @@ class SdIsolateProcessor {
   }
 
   void _handleError(String error) {
+    if (!_modelLoadedCompleter.isCompleted) {
+      _modelLoadedCompleter.complete(false);
+    }
     final completer = _activeCompleter;
     if (completer != null && !completer.isCompleted) {
       completer.complete(GenerationResult(error: error));
@@ -242,7 +247,15 @@ class SdIsolateProcessor {
     final backend = Backend.values[backendIndex];
 
     // Initialize FFI inside the isolate with selected backend
-    SdFfiBindings.initialize(backend);
+    try {
+      SdFfiBindings.initialize(backend);
+    } catch (e) {
+      mainSendPort.send({
+        'type': 'error',
+        'message': 'Failed to load ${backend.displayName}: $e',
+      });
+      return;
+    }
 
     // Setup callbacks that post back to main isolate
     final isolateReceivePort = ReceivePort();
@@ -298,10 +311,19 @@ class SdIsolateProcessor {
         : nullptr;
     try {
       final newCtx = SdFfiBindings.initEx(
-        pathPtr, nThreads, flashAttn, vaeTiling,
-        taesdPtr, vaePtr, clipLPtr,
-        wtype, backendIndex,
-        offloadParamsToCpu, enableMmap, keepVaeOnCpu, maxVram,
+        pathPtr,
+        nThreads,
+        flashAttn,
+        vaeTiling,
+        taesdPtr,
+        vaePtr,
+        clipLPtr,
+        wtype,
+        backendIndex,
+        offloadParamsToCpu,
+        enableMmap,
+        keepVaeOnCpu,
+        maxVram,
       );
       if (newCtx.address == 0) {
         ctx = null;
@@ -313,6 +335,12 @@ class SdIsolateProcessor {
         ctx = newCtx;
         mainSendPort.send({'type': 'modelLoaded'});
       }
+    } catch (e) {
+      ctx = null;
+      mainSendPort.send({
+        'type': 'error',
+        'message': 'Failed to initialize ${backend.displayName}: $e',
+      });
     } finally {
       calloc.free(pathPtr);
       if (taesdPtr != nullptr) calloc.free(taesdPtr);
@@ -346,7 +374,8 @@ class SdIsolateProcessor {
     final schedule = message['schedule'] as int;
     final vaeTiling = message['vaeTiling'] as bool;
 
-    print('[Isolate] _runGeneration started: prompt="$prompt", ${width}x$height, steps=$steps, seed=$seed');
+    print(
+        '[Isolate] _runGeneration started: prompt="$prompt", ${width}x$height, steps=$steps, seed=$seed');
 
     final promptPtr = prompt.toNativeUtf8();
     final negPtr = negativePrompt.toNativeUtf8();
@@ -368,7 +397,8 @@ class SdIsolateProcessor {
         vaeTiling,
         outSizePtr,
       );
-      print('[Isolate] FFI generate() returned, resultPtr=${resultPtr.address}');
+      print(
+          '[Isolate] FFI generate() returned, resultPtr=${resultPtr.address}');
 
       final outSize = outSizePtr.value;
       print('[Isolate] outSize=$outSize');

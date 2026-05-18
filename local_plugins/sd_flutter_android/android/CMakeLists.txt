@@ -4,6 +4,7 @@ project(sd_jni)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(SD_JNI_OUTPUT_NAME "sd_jni" CACHE STRING "Output name for the SD JNI shared library")
 
 # Aggressive optimizations for CPU inference speed
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -ffast-math -fno-finite-math-only -funroll-loops")
@@ -52,6 +53,10 @@ add_library(sd_jni SHARED
     src/main/cpp/sd_jni_wrapper.cpp
 )
 
+set_target_properties(sd_jni PROPERTIES
+    OUTPUT_NAME "${SD_JNI_OUTPUT_NAME}"
+)
+
 target_link_libraries(sd_jni PRIVATE
     stable-diffusion
     c++_shared
@@ -63,6 +68,10 @@ target_link_libraries(sd_jni PRIVATE
 
 if(SD_VULKAN)
     target_link_libraries(sd_jni PRIVATE Vulkan::Vulkan)
+endif()
+
+if(SD_OPENCL AND OpenCL_LIBRARIES)
+    target_link_libraries(sd_jni PRIVATE ${OpenCL_LIBRARIES})
 endif()
 
 target_include_directories(sd_jni PRIVATE
