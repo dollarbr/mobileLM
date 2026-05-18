@@ -8,6 +8,9 @@ build/
 *.dll
 *.dylib
 
+# Allow prebuilt native libraries in jniLibs (needed for GPU backends)
+!**/jniLibs/**/*.so
+
 # IDE
 .idea/
 *.iml
