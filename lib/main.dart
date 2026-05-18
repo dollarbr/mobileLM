@@ -42,6 +42,8 @@ void main() {
     }
     appLogBuffer.clear();
 
+    appLog.info('App started');
+
     // Initialize Firebase before any Firebase-dependent services
     try {
       await Firebase.initializeApp(
@@ -181,7 +183,7 @@ void _autoConfigureForDevice() {
   hive.setSetting(AppConstants.keyTemperature, 0.3);
   hive.setSetting('device_auto_configured', true);
 
-  print('[AutoConfig] Set context=${device.recommendedContextSize}, '
+  Get.find<AppLogService>().info('[AutoConfig] Set context=${device.recommendedContextSize}, '
       'maxTokens=${device.recommendedMaxTokens} for ${device.totalRamGB.value.toStringAsFixed(1)}GB RAM');
 }
 
