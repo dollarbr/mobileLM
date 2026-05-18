@@ -7,6 +7,9 @@ import 'package:http/http.dart' as http;
 import '../core/constants.dart';
 import '../services/hive_service.dart';
 import '../services/app_log_service.dart';
+import '../services/local_image_service.dart';
+import '../ffi/sd_ffi_bindings.dart';
+import 'package:sd_flutter_android/sd_flutter_android.dart';
 
 class SettingsController extends GetxController {
   final HiveService _hive = Get.find<HiveService>();
@@ -44,6 +47,8 @@ class SettingsController extends GetxController {
   final liteRtPerformanceMode = AppConstants.defaultLiteRtPerformanceMode.obs;
   final imageSteps = 4.obs;
   final imageGenForceCpu = false.obs;
+  final imageGenBackend = Backend.cpu.obs;
+  final imageGpuVendor = 'detecting'.obs;
   final fontScale = AppConstants.defaultFontScale.obs;
 
   // Persistent text controllers for settings fields
@@ -113,9 +118,9 @@ class SettingsController extends GetxController {
     inferenceMode.value = _hive.getSetting(AppConstants.keyInferenceMode,
             defaultValue: 'local') ??
         'local';
-    cloudProvider.value =
-        _hive.getSetting(AppConstants.keyCloudProvider, defaultValue: 'openrouter') ??
-            'openrouter';
+    cloudProvider.value = _hive.getSetting(AppConstants.keyCloudProvider,
+            defaultValue: 'openrouter') ??
+        'openrouter';
     openaiKey.value = _hive.getSetting(AppConstants.keyOpenaiKey) ?? '';
     anthropicKey.value = _hive.getSetting(AppConstants.keyAnthropicKey) ?? '';
     googleKey.value = _hive.getSetting(AppConstants.keyGoogleKey) ?? '';
@@ -181,6 +186,18 @@ class SettingsController extends GetxController {
     imageGenForceCpu.value = _hive.getSetting(AppConstants.keyImageGenForceCpu,
             defaultValue: false) ??
         false;
+    final savedImageBackend = _hive.getSetting<int>(
+        AppConstants.keyImageGenBackend,
+        defaultValue: Backend.cpu.index);
+    if (savedImageBackend != null &&
+        savedImageBackend >= 0 &&
+        savedImageBackend < Backend.values.length &&
+        !imageGenForceCpu.value) {
+      imageGenBackend.value = Backend.values[savedImageBackend];
+    } else {
+      imageGenBackend.value = Backend.cpu;
+    }
+    _detectImageGpu();
     fontScale.value = _hive.getSetting(AppConstants.keyFontScale,
             defaultValue: AppConstants.defaultFontScale) ??
         AppConstants.defaultFontScale;
@@ -442,7 +459,8 @@ class SettingsController extends GetxController {
     customCloudKeyController.clear();
     customCloudModelController.clear();
 
-    await _hive.setSetting(AppConstants.keyCustomCloudName, customCloudName.value);
+    await _hive.setSetting(
+        AppConstants.keyCustomCloudName, customCloudName.value);
     await _hive.setSetting(AppConstants.keyCustomCloudBaseUrl, '');
     await _hive.setSetting(AppConstants.keyCustomCloudKey, '');
     await _hive.setSetting(AppConstants.keyCustomCloudModel, '');
@@ -543,6 +561,52 @@ class SettingsController extends GetxController {
   Future<void> setImageGenForceCpu(bool value) async {
     imageGenForceCpu.value = value;
     await _hive.setSetting(AppConstants.keyImageGenForceCpu, value);
+  }
+
+  Future<void> _detectImageGpu() async {
+    try {
+      imageGpuVendor.value = await SdFlutterAndroid.detectGpuVendor();
+    } catch (_) {
+      imageGpuVendor.value = 'unknown';
+    }
+  }
+
+  Backend recommendedImageGpuBackend() {
+    final vendor = imageGpuVendor.value;
+    final preferred = switch (vendor) {
+      'adreno' => Backend.opencl,
+      'mali' || 'xclipse' || 'powervr' || 'imagination' => Backend.vulkan,
+      _ => Backend.vulkan,
+    };
+    if (preferred.isAvailable) return preferred;
+    if (Backend.opencl.isAvailable) return Backend.opencl;
+    if (Backend.vulkan.isAvailable) return Backend.vulkan;
+    return Backend.cpu;
+  }
+
+  String imageGpuLabel() {
+    final vendor = imageGpuVendor.value;
+    final backend = recommendedImageGpuBackend();
+    final vendorLabel = vendor == 'detecting'
+        ? 'Detecting'
+        : vendor == 'unknown'
+            ? 'Unknown GPU'
+            : vendor.toUpperCase();
+    return backend == Backend.cpu
+        ? '$vendorLabel - GPU unavailable'
+        : '$vendorLabel - ${backend.displayName}';
+  }
+
+  Future<void> setImageBackendMode(bool useGpu) async {
+    final backend = useGpu ? recommendedImageGpuBackend() : Backend.cpu;
+    imageGenBackend.value = backend;
+    imageGenForceCpu.value = !useGpu || backend == Backend.cpu;
+    await _hive.setSetting(AppConstants.keyImageGenBackend, backend.index);
+    await _hive.setSetting(
+        AppConstants.keyImageGenForceCpu, imageGenForceCpu.value);
+    if (Get.isRegistered<LocalImageService>()) {
+      Get.find<LocalImageService>().setBackend(backend);
+    }
   }
 
   Future<void> setFontScale(double value) async {

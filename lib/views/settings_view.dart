@@ -9,6 +9,7 @@ import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
 import '../services/device_info_service.dart';
 import '../services/device_info_native.dart' as platform_info;
+import '../ffi/sd_ffi_bindings.dart';
 import 'log_view.dart';
 
 class SettingsView extends GetView<SettingsController> {
@@ -186,36 +187,7 @@ class SettingsView extends GetView<SettingsController> {
                   icon: Icons.memory_rounded,
                   warning: 'Context this large will eat all your RAM!'),
               const SizedBox(height: 10),
-              _buildSlider(context, isDark,
-                  label: 'Image Gen Steps',
-                  value: controller.imageSteps.value.toDouble(),
-                  min: 1,
-                  max: 20,
-                  divisions: 19,
-                  safeMax: 8,
-                  onChanged: (v) => controller.setImageSteps(v.toInt()),
-                  displayValue: controller.imageSteps.value.toString(),
-                  icon: Icons.image_rounded,
-                  warning: 'More steps = better quality but MUCH slower!'),
-              const SizedBox(height: 10),
-              _appleGroupedCard(context, isDark, children: [
-                Obx(() => _appleListTile(
-                      context,
-                      isDark,
-                      leading: _iconBox(
-                          isDark ? const Color(0xFF0A84FF) : AppColors.primary,
-                          Icons.memory_rounded),
-                      title: 'Force CPU for Image Generation',
-                      subtitle: 'Automatically disabled for Adreno GPUs to prevent crashes',
-                      trailing: Switch(
-                        value: controller.imageGenForceCpu.value,
-                        onChanged: (v) => controller.setImageGenForceCpu(v),
-                        activeColor:
-                            isDark ? const Color(0xFF0A84FF) : AppColors.primary,
-                      ),
-                      showDivider: false,
-                    )),
-              ]),
+              _buildImageGenerationCard(context, isDark),
               const SizedBox(height: 24),
               _sectionLabel(context, 'ABOUT'),
               _appleGroupedCard(context, isDark, children: [
@@ -501,6 +473,125 @@ class SettingsView extends GetView<SettingsController> {
     ]);
   }
 
+  Widget _buildImageGenerationCard(BuildContext context, bool isDark) {
+    final stepsValue = controller.imageSteps.value.toDouble();
+    const safeMax = 8.0;
+    final isOver = stepsValue > safeMax;
+    final accent = isOver
+        ? AppColors.warning
+        : (isDark ? const Color(0xFF0A84FF) : AppColors.primary);
+    final selectedBackend = controller.imageGenBackend.value;
+    final gpuBackend = controller.recommendedImageGpuBackend();
+    final gpuAvailable = gpuBackend != Backend.cpu;
+
+    return _appleGroupedCard(context, isDark, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.image_rounded, size: 16, color: accent),
+            const SizedBox(width: 8),
+            Text('Image Gen Steps',
+                style: GoogleFonts.inter(
+                    fontSize: 15, fontWeight: FontWeight.w400)),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6)),
+              child: Text(controller.imageSteps.value.toString(),
+                  style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: accent,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ]),
+          Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Recommended max: 8',
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: Theme.of(context).hintColor))),
+          Slider(
+              value: stepsValue.clamp(1, 20),
+              min: 1,
+              max: 20,
+              divisions: 19,
+              activeColor: accent,
+              onChanged: (v) => controller.setImageSteps(v.toInt())),
+          if (isOver)
+            Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Row(children: [
+                  Icon(Icons.warning_amber_rounded, size: 14, color: accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                      child: Text(
+                          'More steps = better quality but MUCH slower!',
+                          style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: accent,
+                              fontWeight: FontWeight.w400))),
+                ])),
+        ]),
+      ),
+      const Divider(height: 1, indent: 16, endIndent: 16),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        child: Row(children: [
+          _iconBox(
+              isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+              selectedBackend == Backend.cpu
+                  ? Icons.memory_rounded
+                  : Icons.bolt_rounded),
+          const SizedBox(width: 14),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Image Backend',
+                  style: GoogleFonts.inter(
+                      fontSize: 15, fontWeight: FontWeight.w400)),
+              const SizedBox(height: 3),
+              Text(controller.imageGpuLabel(),
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: Theme.of(context).hintColor)),
+            ]),
+          ),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.memory_rounded, size: 16),
+                  label: Text('CPU')),
+              ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.bolt_rounded, size: 16),
+                  label: Text('GPU')),
+            ],
+            selected: {selectedBackend != Backend.cpu},
+            onSelectionChanged: (values) {
+              final useGpu = values.first;
+              if (useGpu && !gpuAvailable) return;
+              controller.setImageBackendMode(useGpu);
+            },
+            showSelectedIcon: false,
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: WidgetStatePropertyAll(
+                  GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500)),
+            ),
+          ),
+        ]),
+      ),
+    ]);
+  }
+
   Widget _buildFontSizeCard(BuildContext context, bool isDark) {
     const min = 0.8;
     const max = 1.4;
@@ -527,8 +618,7 @@ class SettingsView extends GetView<SettingsController> {
                     fontSize: 15, fontWeight: FontWeight.w400)),
             const Spacer(),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6)),
@@ -559,8 +649,7 @@ class SettingsView extends GetView<SettingsController> {
               children: [
                 Text('Small',
                     style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Theme.of(context).hintColor)),
+                        fontSize: 11, color: Theme.of(context).hintColor)),
                 Text('Recommended',
                     style: GoogleFonts.inter(
                         fontSize: 11,
@@ -568,15 +657,13 @@ class SettingsView extends GetView<SettingsController> {
                                 controller.fontScale.value <= 1.05
                             ? accent
                             : Theme.of(context).hintColor,
-                        fontWeight:
-                            controller.fontScale.value >= 0.95 &&
-                                    controller.fontScale.value <= 1.05
-                                ? FontWeight.w600
-                                : FontWeight.w400)),
+                        fontWeight: controller.fontScale.value >= 0.95 &&
+                                controller.fontScale.value <= 1.05
+                            ? FontWeight.w600
+                            : FontWeight.w400)),
                 Text('Large',
                     style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Theme.of(context).hintColor)),
+                        fontSize: 11, color: Theme.of(context).hintColor)),
               ],
             ),
           ),
@@ -609,11 +696,9 @@ class SettingsView extends GetView<SettingsController> {
                         fontSize: 15,
                         color: isDark ? Colors.white : Colors.black)),
                 const SizedBox(height: 2),
-                Text(
-                    'This is what messages will look like at this font size.',
+                Text('This is what messages will look like at this font size.',
                     style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: Theme.of(context).hintColor)),
+                        fontSize: 13, color: Theme.of(context).hintColor)),
               ],
             ),
           ),

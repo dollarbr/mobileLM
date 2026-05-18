@@ -46,6 +46,71 @@ echo "Out:   $OUT_DIR"
 
 mkdir -p "$OUT_DIR"
 
+OPENCL_STUB_DIR="$BUILD_BASE/opencl-stub"
+OPENCL_STUB_LIB="$OPENCL_STUB_DIR/libOpenCL.so"
+
+build_opencl_stub() {
+    mkdir -p "$OPENCL_STUB_DIR"
+    cat > "$OPENCL_STUB_DIR/opencl_stub.c" <<'EOF'
+#include <stdint.h>
+
+typedef void * cl_platform_id;
+typedef void * cl_device_id;
+typedef void * cl_context;
+typedef void * cl_command_queue;
+typedef void * cl_mem;
+typedef void * cl_program;
+typedef void * cl_kernel;
+typedef void * cl_event;
+typedef int32_t cl_int;
+typedef uint32_t cl_uint;
+typedef uint64_t cl_ulong;
+typedef uintptr_t cl_bitfield;
+typedef cl_bitfield cl_mem_flags;
+typedef cl_bitfield cl_command_queue_properties;
+typedef intptr_t cl_context_properties;
+typedef intptr_t cl_mem_properties;
+typedef intptr_t cl_device_type;
+typedef uint32_t cl_bool;
+
+cl_int clBuildProgram(cl_program p, cl_uint n, const cl_device_id *d, const char *o, void (*cb)(cl_program, void *), void *u) { return 0; }
+cl_mem clCreateBuffer(cl_context c, cl_mem_flags f, uintptr_t s, void *h, cl_int *e) { return 0; }
+cl_mem clCreateBufferWithProperties(cl_context c, const cl_mem_properties *p, cl_mem_flags f, uintptr_t s, void *h, cl_int *e) { return 0; }
+cl_command_queue clCreateCommandQueue(cl_context c, cl_device_id d, cl_command_queue_properties p, cl_int *e) { return 0; }
+cl_context clCreateContext(const cl_context_properties *p, cl_uint n, const cl_device_id *d, void (*cb)(const char *, const void *, uintptr_t, void *), void *u, cl_int *e) { return 0; }
+cl_mem clCreateImage(cl_context c, cl_mem_flags f, const void *fmt, const void *desc, void *h, cl_int *e) { return 0; }
+cl_kernel clCreateKernel(cl_program p, const char *n, cl_int *e) { return 0; }
+cl_program clCreateProgramWithSource(cl_context c, cl_uint n, const char **s, const uintptr_t *l, cl_int *e) { return 0; }
+cl_mem clCreateSubBuffer(cl_mem b, cl_mem_flags f, cl_uint t, const void *i, cl_int *e) { return 0; }
+cl_int clEnqueueBarrierWithWaitList(cl_command_queue q, cl_uint n, const cl_event *w, cl_event *e) { return 0; }
+cl_int clEnqueueCopyBuffer(cl_command_queue q, cl_mem s, cl_mem d, uintptr_t so, uintptr_t dof, uintptr_t cb, cl_uint n, const cl_event *w, cl_event *e) { return 0; }
+cl_int clEnqueueFillBuffer(cl_command_queue q, cl_mem b, const void *p, uintptr_t ps, uintptr_t o, uintptr_t s, cl_uint n, const cl_event *w, cl_event *e) { return 0; }
+cl_int clEnqueueMarkerWithWaitList(cl_command_queue q, cl_uint n, const cl_event *w, cl_event *e) { return 0; }
+cl_int clEnqueueNDRangeKernel(cl_command_queue q, cl_kernel k, cl_uint wd, const uintptr_t *gwo, const uintptr_t *gws, const uintptr_t *lws, cl_uint n, const cl_event *w, cl_event *e) { return 0; }
+cl_int clEnqueueReadBuffer(cl_command_queue q, cl_mem b, cl_bool block, uintptr_t o, uintptr_t s, void *p, cl_uint n, const cl_event *w, cl_event *e) { return 0; }
+cl_int clEnqueueWriteBuffer(cl_command_queue q, cl_mem b, cl_bool block, uintptr_t o, uintptr_t s, const void *p, cl_uint n, const cl_event *w, cl_event *e) { return 0; }
+cl_int clFinish(cl_command_queue q) { return 0; }
+cl_int clFlush(cl_command_queue q) { return 0; }
+cl_int clGetDeviceIDs(cl_platform_id p, cl_device_type t, cl_uint n, cl_device_id *d, cl_uint *c) { return 0; }
+cl_int clGetDeviceInfo(cl_device_id d, cl_uint p, uintptr_t s, void *v, uintptr_t *r) { return 0; }
+cl_int clGetKernelWorkGroupInfo(cl_kernel k, cl_device_id d, cl_uint p, uintptr_t s, void *v, uintptr_t *r) { return 0; }
+cl_int clGetPlatformIDs(cl_uint n, cl_platform_id *p, cl_uint *c) { return 0; }
+cl_int clGetPlatformInfo(cl_platform_id p, cl_uint name, uintptr_t s, void *v, uintptr_t *r) { return 0; }
+cl_int clGetProgramBuildInfo(cl_program p, cl_device_id d, cl_uint name, uintptr_t s, void *v, uintptr_t *r) { return 0; }
+cl_int clReleaseContext(cl_context c) { return 0; }
+cl_int clReleaseEvent(cl_event e) { return 0; }
+cl_int clReleaseMemObject(cl_mem m) { return 0; }
+cl_int clReleaseProgram(cl_program p) { return 0; }
+cl_int clSetKernelArg(cl_kernel k, cl_uint i, uintptr_t s, const void *v) { return 0; }
+cl_int clWaitForEvents(cl_uint n, const cl_event *e) { return 0; }
+EOF
+    "$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang" \
+        -shared \
+        -Wl,-soname,libOpenCL.so \
+        -o "$OPENCL_STUB_LIB" \
+        "$OPENCL_STUB_DIR/opencl_stub.c"
+}
+
 COMMON_ARGS=(
     -G Ninja
     -DCMAKE_MAKE_PROGRAM="$NINJA"
@@ -81,9 +146,9 @@ VULKAN_BUILD="$BUILD_BASE/vulkan"
 rm -rf "$VULKAN_BUILD"
 mkdir -p "$VULKAN_BUILD"
 cd "$VULKAN_BUILD"
-"$CMAKE" "${COMMON_ARGS[@]}" -DSD_VULKAN=ON -DSD_OPENCL=OFF "$SRC"
+"$CMAKE" "${COMMON_ARGS[@]}" -DSD_VULKAN=ON -DSD_OPENCL=OFF -DSD_JNI_OUTPUT_NAME=sd_jni_vulkan "$SRC"
 "$NINJA" -j"$(nproc)" sd_jni
-cp "$VULKAN_BUILD/libsd_jni.so" "$OUT_DIR/libsd_jni_vulkan.so"
+cp "$VULKAN_BUILD/libsd_jni_vulkan.so" "$OUT_DIR/libsd_jni_vulkan.so"
 echo "Vulkan OK"
 
 # ------------------------------------------------------------------
@@ -91,15 +156,18 @@ echo "Vulkan OK"
 # ------------------------------------------------------------------
 echo ""
 echo "=== [3/3] Building OpenCL variant ==="
+build_opencl_stub
 OPENCL_BUILD="$BUILD_BASE/opencl"
 rm -rf "$OPENCL_BUILD"
 mkdir -p "$OPENCL_BUILD"
 cd "$OPENCL_BUILD"
 "$CMAKE" "${COMMON_ARGS[@]}" -DSD_VULKAN=OFF -DSD_OPENCL=ON \
+    -DSD_JNI_OUTPUT_NAME=sd_jni_opencl \
     -DOpenCL_INCLUDE_DIRS="$HOME/tools/opencl-headers/OpenCL-Headers-2024.10.24" \
+    -DOpenCL_LIBRARIES="$OPENCL_STUB_LIB" \
     "$SRC"
 "$NINJA" -j"$(nproc)" sd_jni
-cp "$OPENCL_BUILD/libsd_jni.so" "$OUT_DIR/libsd_jni_opencl.so"
+cp "$OPENCL_BUILD/libsd_jni_opencl.so" "$OUT_DIR/libsd_jni_opencl.so"
 echo "OpenCL OK"
 
 # ------------------------------------------------------------------
@@ -119,6 +187,14 @@ STRIP="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
 for f in "$OUT_DIR"/libsd_jni.so "$OUT_DIR"/libsd_jni_vulkan.so "$OUT_DIR"/libsd_jni_opencl.so "$OUT_DIR"/libomp.so; do
     "$STRIP" --strip-debug "$f"
 done
+
+echo ""
+echo "=== Verifying variant SONAMEs ==="
+READELF="$(command -v readelf)"
+"$READELF" -d "$OUT_DIR/libsd_jni.so" | grep 'SONAME.*libsd_jni.so'
+"$READELF" -d "$OUT_DIR/libsd_jni_vulkan.so" | grep 'SONAME.*libsd_jni_vulkan.so'
+"$READELF" -d "$OUT_DIR/libsd_jni_opencl.so" | grep 'SONAME.*libsd_jni_opencl.so'
+"$READELF" -d "$OUT_DIR/libsd_jni_opencl.so" | grep 'NEEDED.*libOpenCL.so'
 
 echo ""
 echo "=== All builds completed ==="

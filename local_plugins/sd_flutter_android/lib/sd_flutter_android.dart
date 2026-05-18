@@ -1,10 +1,7 @@
-import 'dart:async';
 import 'package:flutter/services.dart';
 
 class SdFlutterAndroid {
   static const MethodChannel _channel = MethodChannel('sd_flutter_android');
-
-  static StreamController<Map<String, int>>? _progressController;
 
   Future<String?> getPlatformVersion() {
     return _channel.invokeMethod<String>('getPlatformVersion');
@@ -18,6 +15,11 @@ class SdFlutterAndroid {
   static Future<int> getDeviceMemory() async {
     final result = await _channel.invokeMethod<int>('getDeviceMemory');
     return result ?? 4096; // fallback: assume 4GB
+  }
+
+  static Future<int> getAvailableMemory() async {
+    final result = await _channel.invokeMethod<int>('getAvailableMemory');
+    return result ?? 0;
   }
 
   static Future<dynamic> initModelRaw(String path, {bool useGpu = true}) async {
@@ -51,7 +53,11 @@ class SdFlutterAndroid {
     });
   }
 
-  static Future<Uint8List?> generateImage(String prompt, {int steps = 20, Function(int step, int total)? onProgress}) async {
+  static Future<Uint8List?> generateImage(
+    String prompt, {
+    int steps = 20,
+    Function(int step, int total)? onProgress,
+  }) async {
     _ensureInitialized();
     _onProgress = onProgress;
 

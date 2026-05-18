@@ -164,6 +164,8 @@ Java_com_example_sd_1flutter_1android_SdFlutterAndroidPlugin_detectGpuVendorNati
             vendor = "nvidia";
         } else if (lower.find("intel") != std::string::npos) {
             vendor = "intel";
+        } else if (lower.find("xclipse") != std::string::npos) {
+            vendor = "xclipse";
         } else if (lower.find("amd") != std::string::npos || lower.find("radeon") != std::string::npos) {
             vendor = "amd";
         }
