@@ -56,6 +56,7 @@ class InferenceService extends GetxService {
     String modelPath, {
     String? modelName,
     String? modelRuntime,
+    bool enableLiteRtVision = false,
   }) async {
     if (!supportsLocalInference) {
       return 'ERROR: Local inference is not available on this platform. Use Cloud mode.';
@@ -124,6 +125,7 @@ class InferenceService extends GetxService {
         forceLiteRtCpu: forceLiteRtCpu,
         clearLiteRtCache: hadPendingGpuLoad || (isLiteRt && gpuCrashDetected),
         markLiteRtGpuPending: shouldTryLiteRtGpu,
+        enableLiteRtVision: enableLiteRtVision,
       );
 
       if (!result.success &&
@@ -408,6 +410,7 @@ class InferenceService extends GetxService {
     required bool forceLiteRtCpu,
     required bool clearLiteRtCache,
     required bool markLiteRtGpuPending,
+    required bool enableLiteRtVision,
   }) async {
     var gpuLoadFailed = false;
     try {
@@ -423,6 +426,7 @@ class InferenceService extends GetxService {
         liteRtPerformanceMode: liteRtPerformanceMode,
         forceLiteRtCpu: forceLiteRtCpu,
         clearLiteRtCache: clearLiteRtCache,
+        enableLiteRtVision: enableLiteRtVision,
         onProgress: (p) => modelLoadProgress.value = _normalizeProgress(p),
       );
     } catch (e) {
@@ -440,6 +444,7 @@ class InferenceService extends GetxService {
             liteRtPerformanceMode: liteRtPerformanceMode,
             forceLiteRtCpu: true,
             clearLiteRtCache: true,
+            enableLiteRtVision: enableLiteRtVision,
             onProgress: (p) => modelLoadProgress.value = _normalizeProgress(p),
           );
         } catch (cpuError) {

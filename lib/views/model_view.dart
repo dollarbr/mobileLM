@@ -2292,6 +2292,17 @@ class ModelView extends GetView<ModelController> {
                             child: const Text('Get',
                                 style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
+                          TextButton.icon(
+                            onPressed: disableActions
+                                ? null
+                                : () => controller.importModelFromStorage(),
+                            icon: const Icon(Icons.upload_file, size: 16),
+                            label: const Text('Import'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.secondary,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
                           if (model.url.trim().isNotEmpty)
                             IconButton(
                               tooltip: 'Download to phone Downloads folder',
