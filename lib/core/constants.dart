@@ -132,6 +132,7 @@ class AppConstants {
       'description': 'Strong general chat LiteRT-LM model from Google Gemma',
       'template': 'litert',
       'runtime': 'litert',
+      'vision': 'true',
     },
     {
       'name': 'Gemma 4 E4B Instruct (LiteRT-LM)',
@@ -142,6 +143,7 @@ class AppConstants {
       'description': 'Highest quality LiteRT-LM option; needs about 5 GB RAM',
       'template': 'litert',
       'runtime': 'litert',
+      'vision': 'true',
     },
     {
       'name': 'Kimi Moonlight 16B-A3B (Q3_K_S)',

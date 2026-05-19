@@ -206,7 +206,7 @@ class ModelController extends GetxController {
     }
     final expectedBytes = _declaredModelBytes(model);
     if (expectedBytes <= 0) return false;
-    return fileBytes < (expectedBytes * 0.8).round();
+    return fileBytes < (expectedBytes * 0.95).round();
   }
 
   bool get isDownloading => _download.isDownloadingAny;
@@ -420,6 +420,14 @@ class ModelController extends GetxController {
         if (status == 'Download complete' ||
             status == 'Download failed' ||
             status == 'Download cancelled') {
+          if (status == 'Download complete') {
+            Get.snackbar(
+              'Saved to Downloads',
+              'Import this file to use it in the app.',
+              snackPosition: SnackPosition.BOTTOM,
+              duration: const Duration(seconds: 5),
+            );
+          }
           Future.delayed(const Duration(seconds: 3), () {
             if (importStatus.value == status) {
               isImporting.value = false;
@@ -533,6 +541,33 @@ class ModelController extends GetxController {
       );
       return;
     }
+    if (filename.toLowerCase().endsWith('.safetensors') &&
+        !await _hasValidSafetensorsHeader(path)) {
+      Get.find<AppLogService>().error(
+        'Corrupt safetensors file blocked',
+        details: '$filename failed safetensors header validation',
+      );
+      Get.snackbar(
+        'Corrupt Model File',
+        '$filename did not download correctly. Delete it and download again.',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 6),
+      );
+      return;
+    }
+    if (isLiteRt && !await _hasLikelyValidLiteRtFile(path, fileBytes)) {
+      Get.find<AppLogService>().error(
+        'Corrupt LiteRT model file blocked',
+        details: '$filename failed LiteRT file validation; size=$fileBytes',
+      );
+      Get.snackbar(
+        'Corrupt Model File',
+        '$filename is not a valid LiteRT-LM file. Delete it and download again.',
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 6),
+      );
+      return;
+    }
     final loadAction = await _confirmModelLoadSafety(
       filename: filename,
       fileBytes: fileBytes,
@@ -595,6 +630,7 @@ class ModelController extends GetxController {
         path,
         modelName: filename,
         modelRuntime: model?.runtime,
+        enableLiteRtVision: model == null ? false : isVisionModel(model),
       );
       if (_inference.isModelLoaded.value) {
         _inference.isVisionLoaded.value =
@@ -697,6 +733,69 @@ class ModelController extends GetxController {
       return bytes;
     } catch (_) {
       return model == null ? 0 : _knownModelBytes(model);
+    }
+  }
+
+  Future<bool> _hasValidSafetensorsHeader(String path) async {
+    RandomAccessFile? raf;
+    try {
+      final file = File(path);
+      final length = await file.length();
+      if (length < 16) return false;
+      raf = await file.open();
+      final bytes = await raf.read(16);
+      if (bytes.length < 16) return false;
+
+      var headerLength = 0;
+      for (var i = 0; i < 8; i++) {
+        headerLength += bytes[i] << (8 * i);
+      }
+
+      if (headerLength <= 2 || headerLength > length - 8) return false;
+      if (headerLength > 64 * 1024 * 1024) return false;
+      return bytes[8] == 0x7B;
+    } catch (_) {
+      return false;
+    } finally {
+      await raf?.close();
+    }
+  }
+
+  Future<bool> _hasLikelyValidLiteRtFile(String path, int fileBytes) async {
+    RandomAccessFile? raf;
+    try {
+      final file = File(path);
+      final length = fileBytes > 0 ? fileBytes : await file.length();
+      if (length < 50 * 1024 * 1024) return false;
+
+      raf = await file.open();
+      final bytes = await raf.read(512);
+      if (bytes.length < 16) return false;
+
+      final firstText = String.fromCharCodes(
+        bytes.where((b) => b == 9 || b == 10 || b == 13 || (b >= 32 && b < 127)),
+      ).toLowerCase();
+      if (firstText.contains('<html') ||
+          firstText.contains('<!doctype') ||
+          firstText.contains('version https://git-lfs.github.com/spec') ||
+          firstText.contains('access denied') ||
+          firstText.contains('not found')) {
+        return false;
+      }
+
+      if (bytes[0] == 0x7B || bytes[0] == 0x5B) return false;
+      if (bytes.length >= 4 &&
+          bytes[0] == 0x47 &&
+          bytes[1] == 0x47 &&
+          bytes[2] == 0x55 &&
+          bytes[3] == 0x46) {
+        return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      await raf?.close();
     }
   }
 

@@ -56,22 +56,23 @@ Future<String> downloadModel({
   String? authToken,
   void Function(int received, int total)? onProgress,
 }) async {
-  final tempPath = '$savePath.tmp';
+  final tempPath = '$savePath.part';
   final cancelToken = CancelToken();
   final filename = savePath.split('/').last;
   _cancelTokens[filename] = cancelToken;
+  var expectedTotalBytes = 0;
 
   try {
-    int startByte = 0;
     final tempFile = File(tempPath);
+    final oldTempFile = File('$savePath.tmp');
+    if (await oldTempFile.exists()) {
+      await oldTempFile.delete();
+    }
     if (await tempFile.exists()) {
-      startByte = await tempFile.length();
+      await tempFile.delete();
     }
 
     final headers = <String, dynamic>{};
-    if (startByte > 0) {
-      headers['Range'] = 'bytes=$startByte-';
-    }
     if (authToken != null && authToken.isNotEmpty) {
       headers['Authorization'] = 'Bearer $authToken';
     }
@@ -84,19 +85,33 @@ Future<String> downloadModel({
       options: Options(
         headers: headers,
         responseType: ResponseType.stream,
+        followRedirects: true,
       ),
       onReceiveProgress: (received, total) {
-        final actualReceived = received + startByte;
-        final actualTotal = total > 0 ? total + startByte : 0;
-        onProgress?.call(actualReceived, actualTotal);
+        if (total > 0) {
+          expectedTotalBytes = total;
+        }
+        onProgress?.call(received, total > 0 ? total : 0);
       },
     );
 
+    final downloadedBytes = await tempFile.length();
+    if (expectedTotalBytes > 0 && downloadedBytes < expectedTotalBytes) {
+      await tempFile.delete();
+      throw Exception(
+        'Downloaded file is incomplete: $downloadedBytes of $expectedTotalBytes bytes.',
+      );
+    }
+    final finalFile = File(savePath);
+    if (await finalFile.exists()) {
+      await finalFile.delete();
+    }
     await tempFile.rename(savePath);
     _cancelTokens.remove(filename);
     return savePath;
   } on DioException catch (e) {
     if (e.type == DioExceptionType.cancel) {
+      _cancelTokens.remove(filename);
       return 'PAUSED';
     }
     _cancelTokens.remove(filename);
@@ -114,6 +129,8 @@ void pauseDownload(String filename) {
 Future<void> deleteModel(String path) async {
   final file = File(path);
   if (await file.exists()) await file.delete();
+  final partFile = File('$path.part');
+  if (await partFile.exists()) await partFile.delete();
   final tempFile = File('$path.tmp');
   if (await tempFile.exists()) await tempFile.delete();
 }

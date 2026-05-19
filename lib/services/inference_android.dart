@@ -50,6 +50,7 @@ class InferenceEngine {
     String liteRtPerformanceMode = 'auto_fast',
     bool forceLiteRtCpu = false,
     bool clearLiteRtCache = false,
+    bool enableLiteRtVision = false,
     void Function(double)? onProgress,
   }) async {
     _disposed = false;
@@ -60,6 +61,7 @@ class InferenceEngine {
         performanceMode: liteRtPerformanceMode,
         forceCpu: forceLiteRtCpu,
         clearCache: clearLiteRtCache,
+        enableVision: enableLiteRtVision,
         onProgress: onProgress,
       );
     }
@@ -163,6 +165,7 @@ class InferenceEngine {
     required String performanceMode,
     required bool forceCpu,
     required bool clearCache,
+    required bool enableVision,
     void Function(double)? onProgress,
   }) async {
     if (!Platform.isAndroid) {
@@ -194,6 +197,7 @@ class InferenceEngine {
         modelPath: modelPath,
         cacheDir: cacheDir.path,
         backend: backend,
+        enableVision: enableVision,
       );
       _hasLoadedModel = true;
       onProgress?.call(0.92);
@@ -209,6 +213,13 @@ class InferenceEngine {
     } catch (error) {
       print('[Inference] LiteRT-LM load failed: $error');
       final errorStr = error.toString();
+      if (errorStr.contains('TF_LITE_VISION_ENCODER')) {
+        return LoadResult(
+          success: false,
+          message:
+              'This LiteRT-LM file is text-only, but it was loaded as a vision model. Turn off Vision for this model or re-import it as a normal chat model.',
+        );
+      }
       if (errorStr.contains('exactly one signature but got')) {
         return LoadResult(
           success: false,
@@ -223,14 +234,15 @@ class InferenceEngine {
     required String modelPath,
     required String cacheDir,
     required LiteLmBackend backend,
+    required bool enableVision,
   }) {
     return LiteLmEngine.create(
       LiteLmEngineConfig(
         modelPath: modelPath,
         backend: backend,
         cacheDir: cacheDir,
-        visionBackend: backend,
-        audioBackend: LiteLmBackend.cpu,
+        visionBackend: enableVision ? backend : null,
+        audioBackend: null,
       ),
     );
   }
