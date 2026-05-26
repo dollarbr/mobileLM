@@ -22,6 +22,9 @@ dependencies:
   sd_flutter_android:
     path: local_plugins/sd_flutter_android
 
+  # FFI for native library interop
+  ffi: ^2.1.2
+
   # Networking
   dio: ^5.7.0
   http: ^1.2.0
@@ -56,6 +59,10 @@ dependencies:
     path: local_plugins/flutter_litert_lm
   gal: ^2.3.2
   syncfusion_flutter_pdf: ^33.2.6
+  speech_to_text: ^7.0.0
+  firebase_crashlytics: ^4.3.10
+  package_info_plus: ^9.0.1
+  device_info_plus: ^12.4.0
 
 dev_dependencies:
   flutter_test:

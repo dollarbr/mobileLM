@@ -7,6 +7,9 @@ import 'package:http/http.dart' as http;
 import '../core/constants.dart';
 import '../services/hive_service.dart';
 import '../services/app_log_service.dart';
+import '../services/local_image_service.dart';
+import '../ffi/sd_ffi_bindings.dart';
+import 'package:sd_flutter_android/sd_flutter_android.dart';
 
 class SettingsController extends GetxController {
   final HiveService _hive = Get.find<HiveService>();
@@ -14,7 +17,7 @@ class SettingsController extends GetxController {
   // Observable settings
   final themeMode = ThemeMode.system.obs;
   final inferenceMode = 'local'.obs; // 'local' or 'cloud'
-  final cloudProvider = 'kimi'.obs;
+  final cloudProvider = 'openrouter'.obs;
   final openaiKey = ''.obs;
   final anthropicKey = ''.obs;
   final googleKey = ''.obs;
@@ -22,6 +25,7 @@ class SettingsController extends GetxController {
   final stabilityKey = ''.obs;
   final nvidiaKey = ''.obs;
   final openRouterKey = ''.obs;
+  final deepSeekKey = ''.obs;
   final customCloudName = 'Custom API'.obs;
   final customCloudBaseUrl = ''.obs;
   final customCloudKey = ''.obs;
@@ -32,6 +36,7 @@ class SettingsController extends GetxController {
   final stabilityModel = 'sd3.5-flash'.obs;
   final nvidiaModel = 'meta/llama-3.1-8b-instruct'.obs;
   final openRouterModel = 'openai/gpt-4o-mini'.obs;
+  final deepSeekModel = 'deepseek-v4-flash'.obs;
   final customCloudModel = ''.obs;
   final globalSystemPrompt = AppConstants.systemPrompt.obs;
   final nvidiaModels = <String>[].obs;
@@ -40,7 +45,13 @@ class SettingsController extends GetxController {
   final maxTokens = 512.obs;
   final contextSize = 2048.obs;
   final liteRtPerformanceMode = AppConstants.defaultLiteRtPerformanceMode.obs;
-  final imageSteps = 4.obs;
+  final imageSteps = 1.obs;
+  final imageGenForceCpu = AppConstants.defaultImageGenForceCpu.obs;
+  final imageGenBackend = Backend.cpu.obs;
+  final imageGpuVendor = 'detecting'.obs;
+  final imageGenGpuGuardMb = AppConstants.defaultImageGenGpuGuardMb.obs;
+  final imageGenSize = AppConstants.defaultImageGenSize.obs;
+  final fontScale = AppConstants.defaultFontScale.obs;
 
   // Persistent text controllers for settings fields
   final openaiKeyController = TextEditingController();
@@ -50,6 +61,7 @@ class SettingsController extends GetxController {
   final stabilityKeyController = TextEditingController();
   final nvidiaKeyController = TextEditingController();
   final openRouterKeyController = TextEditingController();
+  final deepSeekKeyController = TextEditingController();
   final customCloudNameController = TextEditingController();
   final customCloudBaseUrlController = TextEditingController();
   final customCloudKeyController = TextEditingController();
@@ -62,6 +74,7 @@ class SettingsController extends GetxController {
   final stabilityModelController = TextEditingController();
   final nvidiaModelController = TextEditingController();
   final openRouterModelController = TextEditingController();
+  final deepSeekModelController = TextEditingController();
   final customCloudModelController = TextEditingController();
 
   Timer? _apiKeyDebounceTimer;
@@ -82,6 +95,7 @@ class SettingsController extends GetxController {
     stabilityKeyController.dispose();
     nvidiaKeyController.dispose();
     openRouterKeyController.dispose();
+    deepSeekKeyController.dispose();
     customCloudNameController.dispose();
     customCloudBaseUrlController.dispose();
     customCloudKeyController.dispose();
@@ -93,6 +107,7 @@ class SettingsController extends GetxController {
     stabilityModelController.dispose();
     nvidiaModelController.dispose();
     openRouterModelController.dispose();
+    deepSeekModelController.dispose();
     customCloudModelController.dispose();
     _apiKeyDebounceTimer?.cancel();
     _modelDebounceTimer?.cancel();
@@ -105,9 +120,9 @@ class SettingsController extends GetxController {
     inferenceMode.value = _hive.getSetting(AppConstants.keyInferenceMode,
             defaultValue: 'local') ??
         'local';
-    cloudProvider.value =
-        _hive.getSetting(AppConstants.keyCloudProvider, defaultValue: 'kimi') ??
-            'kimi';
+    cloudProvider.value = _hive.getSetting(AppConstants.keyCloudProvider,
+            defaultValue: 'openrouter') ??
+        'openrouter';
     openaiKey.value = _hive.getSetting(AppConstants.keyOpenaiKey) ?? '';
     anthropicKey.value = _hive.getSetting(AppConstants.keyAnthropicKey) ?? '';
     googleKey.value = _hive.getSetting(AppConstants.keyGoogleKey) ?? '';
@@ -115,6 +130,7 @@ class SettingsController extends GetxController {
     stabilityKey.value = _hive.getSetting(AppConstants.keyStabilityKey) ?? '';
     nvidiaKey.value = _hive.getSetting(AppConstants.keyNvidiaKey) ?? '';
     openRouterKey.value = _hive.getSetting(AppConstants.keyOpenRouterKey) ?? '';
+    deepSeekKey.value = _hive.getSetting(AppConstants.keyDeepSeekKey) ?? '';
     customCloudName.value = _hive.getSetting(AppConstants.keyCustomCloudName,
             defaultValue: 'Custom API') ??
         'Custom API';
@@ -143,6 +159,9 @@ class SettingsController extends GetxController {
     openRouterModel.value = _hive.getSetting(AppConstants.keyOpenRouterModel,
             defaultValue: 'openai/gpt-4o-mini') ??
         'openai/gpt-4o-mini';
+    deepSeekModel.value = _hive.getSetting(AppConstants.keyDeepSeekModel,
+            defaultValue: 'deepseek-v4-flash') ??
+        'deepseek-v4-flash';
     customCloudModel.value =
         _hive.getSetting(AppConstants.keyCustomCloudModel) ?? '';
     globalSystemPrompt.value = _hive.getSetting(
@@ -166,6 +185,32 @@ class SettingsController extends GetxController {
     imageSteps.value = _hive.getSetting(AppConstants.keyImageSteps,
             defaultValue: AppConstants.defaultImageSteps) ??
         AppConstants.defaultImageSteps;
+    imageGenForceCpu.value = _hive.getSetting(
+            AppConstants.keyImageGenForceCpu,
+            defaultValue: AppConstants.defaultImageGenForceCpu) ??
+        AppConstants.defaultImageGenForceCpu;
+    imageGenGpuGuardMb.value = _hive.getSetting(
+            AppConstants.keyImageGenGpuGuardMb,
+            defaultValue: AppConstants.defaultImageGenGpuGuardMb) ??
+        AppConstants.defaultImageGenGpuGuardMb;
+    imageGenSize.value = _hive.getSetting(AppConstants.keyImageGenSize,
+            defaultValue: AppConstants.defaultImageGenSize) ??
+        AppConstants.defaultImageGenSize;
+    final savedImageBackend = _hive.getSetting<int>(
+        AppConstants.keyImageGenBackend,
+        defaultValue: Backend.cpu.index);
+    if (savedImageBackend != null &&
+        savedImageBackend >= 0 &&
+        savedImageBackend < Backend.values.length &&
+        !imageGenForceCpu.value) {
+      imageGenBackend.value = Backend.values[savedImageBackend];
+    } else {
+      imageGenBackend.value = Backend.cpu;
+    }
+    _detectImageGpu();
+    fontScale.value = _hive.getSetting(AppConstants.keyFontScale,
+            defaultValue: AppConstants.defaultFontScale) ??
+        AppConstants.defaultFontScale;
 
     // Sync controllers with loaded values
     openaiKeyController.text = openaiKey.value;
@@ -175,6 +220,7 @@ class SettingsController extends GetxController {
     stabilityKeyController.text = stabilityKey.value;
     nvidiaKeyController.text = nvidiaKey.value;
     openRouterKeyController.text = openRouterKey.value;
+    deepSeekKeyController.text = deepSeekKey.value;
     customCloudNameController.text = customCloudName.value;
     customCloudBaseUrlController.text = customCloudBaseUrl.value;
     customCloudKeyController.text = customCloudKey.value;
@@ -187,6 +233,7 @@ class SettingsController extends GetxController {
     stabilityModelController.text = stabilityModel.value;
     nvidiaModelController.text = nvidiaModel.value;
     openRouterModelController.text = openRouterModel.value;
+    deepSeekModelController.text = deepSeekModel.value;
     customCloudModelController.text = customCloudModel.value;
   }
 
@@ -204,6 +251,8 @@ class SettingsController extends GetxController {
         return nvidiaKeyController;
       case 'openrouter':
         return openRouterKeyController;
+      case 'deepseek':
+        return deepSeekKeyController;
       case 'custom':
         return customCloudKeyController;
       default:
@@ -225,6 +274,8 @@ class SettingsController extends GetxController {
         return nvidiaModelController;
       case 'openrouter':
         return openRouterModelController;
+      case 'deepseek':
+        return deepSeekModelController;
       case 'custom':
         return customCloudModelController;
       default:
@@ -246,6 +297,8 @@ class SettingsController extends GetxController {
         return nvidiaModel.value;
       case 'openrouter':
         return openRouterModel.value;
+      case 'deepseek':
+        return deepSeekModel.value;
       case 'custom':
         return customCloudModel.value;
       default:
@@ -301,6 +354,11 @@ class SettingsController extends GetxController {
         openRouterKey.value = trimmed;
         openRouterKeyController.text = trimmed;
         await _hive.setSetting(AppConstants.keyOpenRouterKey, trimmed);
+        break;
+      case 'deepseek':
+        deepSeekKey.value = trimmed;
+        deepSeekKeyController.text = trimmed;
+        await _hive.setSetting(AppConstants.keyDeepSeekKey, trimmed);
         break;
       case 'custom':
         customCloudKey.value = trimmed;
@@ -358,6 +416,11 @@ class SettingsController extends GetxController {
         openRouterModelController.text = model;
         await _hive.setSetting(AppConstants.keyOpenRouterModel, model);
         break;
+      case 'deepseek':
+        deepSeekModel.value = model;
+        deepSeekModelController.text = model;
+        await _hive.setSetting(AppConstants.keyDeepSeekModel, model);
+        break;
       case 'custom':
         customCloudModel.value = model;
         customCloudModelController.text = model;
@@ -393,6 +456,24 @@ class SettingsController extends GetxController {
         AppConstants.keyCustomCloudKey, customCloudKey.value);
     await _hive.setSetting(
         AppConstants.keyCustomCloudModel, customCloudModel.value);
+  }
+
+  Future<void> clearCustomCloudConfig() async {
+    customCloudName.value = 'Custom API';
+    customCloudBaseUrl.value = '';
+    customCloudKey.value = '';
+    customCloudModel.value = '';
+
+    customCloudNameController.text = customCloudName.value;
+    customCloudBaseUrlController.clear();
+    customCloudKeyController.clear();
+    customCloudModelController.clear();
+
+    await _hive.setSetting(
+        AppConstants.keyCustomCloudName, customCloudName.value);
+    await _hive.setSetting(AppConstants.keyCustomCloudBaseUrl, '');
+    await _hive.setSetting(AppConstants.keyCustomCloudKey, '');
+    await _hive.setSetting(AppConstants.keyCustomCloudModel, '');
   }
 
   Future<void> setGlobalSystemPrompt(String prompt) async {
@@ -487,6 +568,76 @@ class SettingsController extends GetxController {
     await _hive.setSetting(AppConstants.keyImageSteps, value);
   }
 
+  Future<void> setImageGenForceCpu(bool value) async {
+    imageGenForceCpu.value = value;
+    await _hive.setSetting(AppConstants.keyImageGenForceCpu, value);
+  }
+
+  Future<void> setImageGenGpuGuardMb(int value) async {
+    imageGenGpuGuardMb.value = value;
+    await _hive.setSetting(AppConstants.keyImageGenGpuGuardMb, value);
+  }
+
+  Future<void> setImageGenSize(int value) async {
+    final allowed =
+        value == 0 || value == 256 || value == 320 || value == 384 || value == 512;
+    final normalized = allowed ? value : AppConstants.defaultImageGenSize;
+    imageGenSize.value = normalized;
+    await _hive.setSetting(AppConstants.keyImageGenSize, normalized);
+  }
+
+  Future<void> _detectImageGpu() async {
+    try {
+      imageGpuVendor.value = await SdFlutterAndroid.detectGpuVendor();
+    } catch (_) {
+      imageGpuVendor.value = 'unknown';
+    }
+  }
+
+  Backend recommendedImageGpuBackend() {
+    final vendor = imageGpuVendor.value;
+    final preferred = switch (vendor) {
+      'adreno' => Backend.opencl,
+      'mali' || 'xclipse' || 'powervr' || 'imagination' => Backend.vulkan,
+      _ => Backend.vulkan,
+    };
+    if (preferred.isAvailable) return preferred;
+    if (Backend.opencl.isAvailable) return Backend.opencl;
+    if (Backend.vulkan.isAvailable) return Backend.vulkan;
+    return Backend.cpu;
+  }
+
+  String imageGpuLabel() {
+    final vendor = imageGpuVendor.value;
+    final backend = recommendedImageGpuBackend();
+    final vendorLabel = vendor == 'detecting'
+        ? 'Detecting'
+        : vendor == 'unknown'
+            ? 'Unknown GPU'
+            : vendor.toUpperCase();
+    return backend == Backend.cpu
+        ? '$vendorLabel - GPU unavailable'
+        : '$vendorLabel - ${backend.displayName}';
+  }
+
+  Future<void> setImageBackendMode(bool useGpu) async {
+    final backend = useGpu ? recommendedImageGpuBackend() : Backend.cpu;
+    imageGenBackend.value = backend;
+    imageGenForceCpu.value = !useGpu || backend == Backend.cpu;
+    await _hive.setSetting(AppConstants.keyImageGenBackend, backend.index);
+    await _hive.setSetting(
+        AppConstants.keyImageGenForceCpu, imageGenForceCpu.value);
+    if (Get.isRegistered<LocalImageService>()) {
+      Get.find<LocalImageService>().setBackend(backend);
+    }
+  }
+
+  Future<void> setFontScale(double value) async {
+    final clamped = value.clamp(0.8, 1.4);
+    fontScale.value = clamped;
+    await _hive.setSetting(AppConstants.keyFontScale, clamped);
+  }
+
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode.value = mode;
     await _hive.setSetting('theme_mode', mode.name);
@@ -501,8 +652,7 @@ class SettingsController extends GetxController {
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-      systemNavigationBarColor:
-          isDark ? Colors.black : Colors.white,
+      systemNavigationBarColor: isDark ? Colors.black : Colors.white,
       systemNavigationBarIconBrightness:
           isDark ? Brightness.light : Brightness.dark,
     ));

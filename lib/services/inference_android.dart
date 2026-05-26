@@ -50,6 +50,7 @@ class InferenceEngine {
     String liteRtPerformanceMode = 'auto_fast',
     bool forceLiteRtCpu = false,
     bool clearLiteRtCache = false,
+    bool enableLiteRtVision = false,
     void Function(double)? onProgress,
   }) async {
     _disposed = false;
@@ -57,9 +58,11 @@ class InferenceEngine {
     if (runtime == 'litert') {
       return _loadLiteRtModel(
         modelPath,
+        contextSize: contextSize,
         performanceMode: liteRtPerformanceMode,
         forceCpu: forceLiteRtCpu,
         clearCache: clearLiteRtCache,
+        enableVision: enableLiteRtVision,
         onProgress: onProgress,
       );
     }
@@ -122,7 +125,8 @@ class InferenceEngine {
     final modelName = modelPath.toLowerCase();
     if (isTensorSoC && modelName.contains('gemma')) {
       threads = 1;
-      print('[Inference] Tensor SoC + Gemma detected — forcing single-threaded inference');
+      print(
+          '[Inference] Tensor SoC + Gemma detected — forcing single-threaded inference');
     }
 
     // ── Load Progress ──
@@ -160,9 +164,11 @@ class InferenceEngine {
 
   Future<LoadResult> _loadLiteRtModel(
     String modelPath, {
+    required int contextSize,
     required String performanceMode,
     required bool forceCpu,
     required bool clearCache,
+    required bool enableVision,
     void Function(double)? onProgress,
   }) async {
     if (!Platform.isAndroid) {
@@ -173,10 +179,15 @@ class InferenceEngine {
     _isLiteRt = true;
     _controller = null;
 
+    final tempDir = await getTemporaryDirectory();
+    final cacheDir = Directory('${tempDir.path}/litert_cache');
+    final backend = forceCpu || performanceMode == 'cpu_safe'
+        ? LiteLmBackend.cpu
+        : LiteLmBackend.gpu;
+    final backendLabel = backend == LiteLmBackend.gpu ? 'GPU' : 'CPU';
+
     try {
       onProgress?.call(0.05);
-      final tempDir = await getTemporaryDirectory();
-      final cacheDir = Directory('${tempDir.path}/litert_cache');
       if (clearCache && await cacheDir.exists()) {
         try {
           await cacheDir.delete(recursive: true);
@@ -185,19 +196,17 @@ class InferenceEngine {
       await cacheDir.create(recursive: true);
       onProgress?.call(0.18);
 
-      final backend = forceCpu || performanceMode == 'cpu_safe'
-          ? LiteLmBackend.cpu
-          : LiteLmBackend.gpu;
-      final backendLabel = backend == LiteLmBackend.gpu ? 'GPU' : 'CPU';
-
       _liteEngine = await _createLiteRtEngine(
         modelPath: modelPath,
+        contextSize: contextSize,
         cacheDir: cacheDir.path,
         backend: backend,
+        enableVision: enableVision,
       );
       _hasLoadedModel = true;
       onProgress?.call(0.92);
-      print('[Inference] LiteRT-LM loaded with $backendLabel backend');
+      print(
+          '[Inference] LiteRT-LM loaded with $backendLabel backend, ctx=$contextSize');
       return LoadResult(
         success: true,
         message: 'LiteRT-LM model loaded ($backendLabel backend).',
@@ -208,22 +217,70 @@ class InferenceEngine {
       );
     } catch (error) {
       print('[Inference] LiteRT-LM load failed: $error');
+      final errorStr = error.toString();
+      if (errorStr.contains('TF_LITE_VISION_ENCODER')) {
+        return LoadResult(
+          success: false,
+          message:
+              'This LiteRT-LM file is text-only, but it was loaded as a vision model. Turn off Vision for this model or re-import it as a normal chat model.',
+        );
+      }
+      if (enableVision && errorStr.contains('exactly one signature but got')) {
+        print(
+            '[Inference] Vision encoder signature mismatch. Falling back to text-only mode.');
+        try {
+          _liteEngine = await _createLiteRtEngine(
+            modelPath: modelPath,
+            contextSize: contextSize,
+            cacheDir: cacheDir.path,
+            backend: backend,
+            enableVision: false,
+          );
+          _hasLoadedModel = true;
+          onProgress?.call(0.92);
+          return LoadResult(
+            success: true,
+            message:
+                'Model loaded in text-only mode. Its vision features are incompatible with the LiteRT engine (expected 1 signature, found multiple).',
+            gpuName: backend == LiteLmBackend.gpu ? 'LiteRT GPU' : '',
+            gpuLayers: backend == LiteLmBackend.gpu ? 1 : 0,
+            runtime: 'litert',
+            backend: backend.name,
+          );
+        } catch (fallbackError) {
+          print('[Inference] LiteRT-LM fallback load failed: $fallbackError');
+          return LoadResult(
+            success: false,
+            message: 'LiteRT load failed: $fallbackError',
+          );
+        }
+      }
+      if (errorStr.contains('exactly one signature but got')) {
+        return LoadResult(
+          success: false,
+          message:
+              'This vision model is incompatible with the LiteRT engine (expected 1 signature, found multiple). Please try a standard GGUF model or a text-only LiteRT model instead.',
+        );
+      }
       rethrow;
     }
   }
 
   Future<LiteLmEngine> _createLiteRtEngine({
     required String modelPath,
+    required int contextSize,
     required String cacheDir,
     required LiteLmBackend backend,
+    required bool enableVision,
   }) {
     return LiteLmEngine.create(
       LiteLmEngineConfig(
         modelPath: modelPath,
         backend: backend,
         cacheDir: cacheDir,
-        visionBackend: backend,
-        audioBackend: LiteLmBackend.cpu,
+        visionBackend: enableVision ? LiteLmBackend.cpu : null,
+        audioBackend: null,
+        maxNumTokens: contextSize,
       ),
     );
   }
@@ -437,13 +494,15 @@ class InferenceEngine {
           onToken?.call(text);
           _idleTimer?.cancel();
           _idleTimer = Timer(const Duration(seconds: 8), () {
-            print('[Inference] LiteRT-LM multimodal idle timeout - $tokenCount chunks');
+            print(
+                '[Inference] LiteRT-LM multimodal idle timeout - $tokenCount chunks');
             finish(buffer.toString());
           });
         },
         onDone: () {
           _liteConversationHasMessages = true;
-          print('[Inference] LiteRT-LM multimodal stream done - $tokenCount chunks');
+          print(
+              '[Inference] LiteRT-LM multimodal stream done - $tokenCount chunks');
           finish(buffer.toString());
         },
         onError: (error) {

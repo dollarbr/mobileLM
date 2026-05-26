@@ -53,6 +53,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17", "-O3", "-fvisibility=hidden"
+                arguments "-DANDROID_STL=c++_shared"
             }
         }
     }
@@ -61,6 +62,7 @@ android {
         cmake {
             path "CMakeLists.txt"
             version "3.22.1"
+            buildStagingDirectory file("C:/tmp/cxx_sd")
         }
     }
 

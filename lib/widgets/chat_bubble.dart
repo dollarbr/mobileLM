@@ -51,7 +51,7 @@ class ChatBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Image attachment
-              if (message.imageBase64 != null)
+              if (message.decodedImageBytes != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: GestureDetector(
@@ -59,11 +59,13 @@ class ChatBubble extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: Image.memory(
-                        base64Decode(message.imageBase64!),
+                        message.decodedImageBytes!,
                         width: double.infinity,
                         height: 200,
                         fit: BoxFit.cover,
+                        gaplessPlayback: true,
                         errorBuilder: (_, __, ___) => Container(
+
                           height: 100,
                           decoration: BoxDecoration(
                             color: isDark
@@ -127,6 +129,20 @@ class ChatBubble extends StatelessWidget {
                       padding: const EdgeInsets.only(right: 8),
                       child: Text(
                         '${message.tokensPerSec!.toStringAsFixed(1)} tok/s',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: isUser
+                              ? Colors.white.withValues(alpha: 0.55)
+                              : Theme.of(context).hintColor.withValues(alpha: 0.5),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  if (message.imageGenDurationMs != null && message.imageGenDurationMs! > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        _formatGenTime(message.imageGenDurationMs!),
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           color: isUser
@@ -222,6 +238,14 @@ class ChatBubble extends StatelessWidget {
     final h = date.hour.toString().padLeft(2, '0');
     final m = date.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  String _formatGenTime(int ms) {
+    if (ms < 1000) return '${ms}ms';
+    if (ms < 60000) return '${(ms / 1000).toStringAsFixed(1)}s';
+    final m = ms ~/ 60000;
+    final s = (ms % 60000) ~/ 1000;
+    return s > 0 ? '${m}m ${s}s' : '${m}m';
   }
 
   String _cleanAssistantText(String text) {
