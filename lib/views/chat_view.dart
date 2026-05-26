@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -9,6 +10,7 @@ import '../controllers/model_controller.dart';
 import '../controllers/home_controller.dart';
 import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
+import '../ffi/sd_ffi_bindings.dart';
 import '../utils/thought_parser.dart';
 import '../widgets/attachment_preview.dart';
 import '../widgets/chat_bubble.dart';
@@ -41,7 +43,8 @@ class ChatView extends GetView<ChatController> {
           _modelLoadingBar(context, isDark),
           _contextBar(context, isDark),
           Expanded(child: Obx(() {
-            if (controller.currentSessionId.value.isEmpty)
+            if (controller.currentSessionId.value.isEmpty ||
+                controller.messages.isEmpty)
               return _emptyState(context, isDark);
             final streaming = controller.isStreaming.value;
             final text = controller.streamingResponse.value;
@@ -62,7 +65,7 @@ class ChatView extends GetView<ChatController> {
                 itemCount: n + (streaming ? 1 : 0),
                 itemBuilder: (_, i) {
                   if (i == n && streaming)
-                    return _streamBubble(context, text, isDark);
+                    return Obx(() => _streamBubble(context, text, isDark));
                   return ChatBubble(message: controller.messages[i]);
                 },
               ),
@@ -98,9 +101,12 @@ class ChatView extends GetView<ChatController> {
                 .replaceAll('.gguf', '')
                 .replaceAll('.GGUF', '');
           } else if (localImage.isModelLoaded.value) {
-            model = localImage.loadedModelName.value
+            final backend = localImage.currentBackend.value;
+            final backendEmoji = backend == Backend.cpu ? '🖥' : '⚡';
+            final backendName = backend.displayName.split(' ').first;
+            model = '$backendEmoji $backendName · ${localImage.loadedModelName.value
                 .replaceAll('.gguf', '')
-                .replaceAll('.GGUF', '');
+                .replaceAll('.GGUF', '')}';
           } else {
             model = 'No model loaded';
           }
@@ -509,34 +515,142 @@ class ChatView extends GetView<ChatController> {
                     },
                   ));
             }),
-            Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              // Image picker
+            // STT listening indicator
+            Obx(() {
+              if (!controller.isListening.value) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF3B30).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const _PulsingDot(),
+                    const SizedBox(width: 8),
+                    Text('Listening… tap mic to stop',
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFFFF3B30),
+                            fontWeight: FontWeight.w500)),
+                  ]),
+                ),
+              );
+            }),
+            Obx(() {
+              final settings = Get.find<SettingsController>();
+              final localImage = Get.find<LocalImageService>();
+              if (settings.inferenceMode.value != 'local' ||
+                  !localImage.isModelLoaded.value) {
+                return const SizedBox.shrink();
+              }
+              final steps = settings.imageSteps.value;
+              final size = settings.imageGenSize.value;
+              final sizeLabel = size == 0 ? 'Auto' : '${size}px';
+              final backend = localImage.currentBackend.value;
+              final backendLabel = backend == Backend.cpu
+                  ? 'CPU'
+                  : backend.displayName.split(' ').first.toUpperCase();
+              final accent = backend == Backend.cpu
+                  ? const Color(0xFFFF9500)
+                  : const Color(0xFF34C759);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: accent.withValues(alpha: 0.24),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.auto_awesome_rounded,
+                                size: 13, color: accent),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Image gen · $steps ${steps == 1 ? "step" : "steps"} · $sizeLabel · $backendLabel',
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.black.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: _sep(context), width: 0.5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                      children: [
+                          _StepButton(
+                            icon: Icons.remove_rounded,
+                            enabled: steps > 1,
+                            onTap: () => settings.setImageSteps(steps - 1),
+                          ),
+                        Text(
+                            steps.toString(),
+                          style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: isDark ? Colors.white : Colors.black,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                          _StepButton(
+                            icon: Icons.add_rounded,
+                            enabled: steps < 20,
+                            onTap: () => settings.setImageSteps(steps + 1),
+                          ),
+                      ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              // Attach button (image + file) — shown for cloud & local vision
               Obx(() {
                 final s = Get.find<SettingsController>();
                 final inf = Get.find<InferenceService>();
-                if (!(s.inferenceMode.value == 'local' &&
+                final isCloud = s.inferenceMode.value == 'cloud';
+                final isLocalVision = s.inferenceMode.value == 'local' &&
                     inf.loadedModelRuntime.value == 'litert' &&
-                    inf.isVisionLoaded.value)) return const SizedBox.shrink();
-                return IconButton(
-                    icon: Icon(Icons.photo_outlined,
-                        color: Theme.of(context).hintColor, size: 22),
-                    onPressed: controller.pickImage,
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints());
-              }),
-              // File picker
-              Obx(() {
-                final s = Get.find<SettingsController>();
-                final inf = Get.find<InferenceService>();
-                if (!(s.inferenceMode.value == 'local' &&
-                    inf.loadedModelRuntime.value == 'litert' &&
-                    inf.isVisionLoaded.value)) return const SizedBox.shrink();
-                return IconButton(
-                    icon: Icon(Icons.attach_file_rounded,
-                        color: Theme.of(context).hintColor, size: 22),
-                    onPressed: controller.pickFile,
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints());
+                    inf.isVisionLoaded.value;
+                if (!isCloud && !isLocalVision)
+                  return const SizedBox.shrink();
+                return _AttachButton(
+                  isDark: isDark,
+                  isCloud: isCloud,
+                  onImage: controller.pickImage,
+                  onFile: controller.pickFile,
+                  context: context,
+                );
               }),
               // Text field
               Expanded(
@@ -568,38 +682,63 @@ class ChatView extends GetView<ChatController> {
                 ),
               )),
               const SizedBox(width: 6),
-              // Send / Stop
+              // Unified mic / send / stop button
               Obx(() {
-                if (controller.isLoading.value) {
-                  return GestureDetector(
-                    onTap: controller.stopGenerating,
-                    child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: const BoxDecoration(
-                            color: Color(0xFFFF3B30), shape: BoxShape.circle),
-                        child: const Icon(Icons.stop_rounded,
-                            color: Colors.white, size: 18)),
-                  );
-                }
-                final can = controller.inputText.value.isNotEmpty ||
+                final loading = controller.isLoading.value;
+                final listening = controller.isListening.value;
+                final hasContent = controller.inputText.value.isNotEmpty ||
                     controller.selectedFileName.value != null ||
                     controller.selectedImagePath.value != null;
+
+                // Determine state
+                final Color bgColor;
+                final IconData iconData;
+                final VoidCallback? onTap;
+
+                if (loading) {
+                  // AI generating → red stop
+                  bgColor = const Color(0xFFFF3B30);
+                  iconData = Icons.stop_rounded;
+                  onTap = controller.stopGenerating;
+                } else if (listening) {
+                  // STT active → red stop
+                  bgColor = const Color(0xFFFF3B30);
+                  iconData = Icons.stop_rounded;
+                  onTap = controller.toggleListening;
+                } else if (hasContent) {
+                  // Has text or attachment → blue send
+                  bgColor = _appleBlue(context);
+                  iconData = Icons.arrow_upward_rounded;
+                  onTap = controller.sendMessage;
+                } else {
+                  // Empty → grey mic
+                  bgColor = isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.black.withValues(alpha: 0.06);
+                  iconData = Icons.mic_none_rounded;
+                  onTap = controller.toggleListening;
+                }
+
                 return GestureDetector(
-                  onTap: can ? controller.sendMessage : null,
-                  child: Container(
+                  onTap: onTap,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
                     width: 34,
                     height: 34,
                     decoration: BoxDecoration(
-                        color: can
-                            ? _appleBlue(context)
-                            : (isDark
-                                ? Colors.white.withValues(alpha: 0.08)
-                                : Colors.black.withValues(alpha: 0.06)),
-                        shape: BoxShape.circle),
-                    child: Icon(Icons.arrow_upward_rounded,
-                        color: can ? Colors.white : Theme.of(context).hintColor,
-                        size: 20),
+                        color: bgColor, shape: BoxShape.circle),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      transitionBuilder: (child, anim) => ScaleTransition(
+                          scale: anim, child: child),
+                      child: Icon(iconData,
+                          key: ValueKey(iconData),
+                          color: (loading || listening || hasContent)
+                              ? Colors.white
+                              : Theme.of(context).hintColor,
+                          size: iconData == Icons.mic_none_rounded ? 18 : 20),
+                    ),
                   ),
                 );
               }),
@@ -771,6 +910,257 @@ class ChatView extends GetView<ChatController> {
           : v.toString();
 }
 
+// ── Attach Button ──
+class _AttachButton extends StatelessWidget {
+  final bool isDark;
+  final bool isCloud;
+  final VoidCallback onImage;
+  final VoidCallback onFile;
+  final BuildContext context;
+
+  const _AttachButton({
+    required this.isDark,
+    required this.isCloud,
+    required this.onImage,
+    required this.onFile,
+    required this.context,
+  });
+
+  @override
+  Widget build(BuildContext buildContext) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 2),
+      child: GestureDetector(
+        onTap: () => _showSheet(buildContext),
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.06),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.add_rounded,
+              color: Theme.of(buildContext).hintColor, size: 20),
+        ),
+      ),
+    );
+  }
+
+  void _showSheet(BuildContext ctx) {
+    final isDarkSheet = Theme.of(ctx).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor:
+          isDarkSheet ? const Color(0xFF1C1C1E) : Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // Handle
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: isDarkSheet
+                        ? Colors.white.withValues(alpha: 0.2)
+                        : Colors.black.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 16),
+              Text('Add Attachment',
+                  style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: isDarkSheet ? Colors.white : Colors.black)),
+              if (isCloud)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('Cloud models support images & text files',
+                      style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: isDarkSheet
+                              ? Colors.white54
+                              : Colors.black45)),
+                ),
+              const SizedBox(height: 20),
+              Row(children: [
+                _SheetTile(
+                  icon: Icons.photo_library_rounded,
+                  color: const Color(0xFF30D158),
+                  label: 'Photo',
+                  sub: 'From gallery',
+                  isDark: isDarkSheet,
+                  onTap: () {
+                    Navigator.pop(_);
+                    onImage();
+                  },
+                ),
+                const SizedBox(width: 12),
+                _SheetTile(
+                  icon: Icons.attach_file_rounded,
+                  color: const Color(0xFF0A84FF),
+                  label: 'File',
+                  sub: isCloud
+                      ? 'PDF, DOCX, text…'
+                      : 'PDF, DOCX, text…',
+                  isDark: isDarkSheet,
+                  onTap: () {
+                    Navigator.pop(_);
+                    onFile();
+                  },
+                ),
+              ]),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SheetTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String sub;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _SheetTile({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.sub,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.04),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(height: 10),
+              Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white : Colors.black)),
+              const SizedBox(height: 2),
+              Text(sub,
+                  style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: isDark ? Colors.white54 : Colors.black45)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Pulsing Dot (STT indicator) ──
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot();
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _c;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.7, end: 1.3)
+        .animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scale,
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+            color: Color(0xFFFF3B30), shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _StepButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = enabled
+        ? _appleBlue(context)
+        : Theme.of(context).hintColor.withValues(alpha: 0.35);
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 30,
+        height: 30,
+        child: Icon(icon, size: 16, color: color),
+      ),
+    );
+  }
+}
+
 // ── Image Generation Indicator ──
 class _ImageGenIndicator extends StatefulWidget {
   final ChatController controller;
@@ -784,6 +1174,8 @@ class _ImageGenIndicator extends StatefulWidget {
 class _ImageGenIndicatorState extends State<_ImageGenIndicator>
     with SingleTickerProviderStateMixin {
   late AnimationController _c;
+  late Timer _timer;
+  int _elapsedSeconds = 0;
 
   @override
   void initState() {
@@ -792,10 +1184,19 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final start = widget.controller.imageGenStartTime.value;
+      if (start != null) {
+        setState(() {
+          _elapsedSeconds = DateTime.now().difference(start).inSeconds;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _timer.cancel();
     _c.dispose();
     super.dispose();
   }
@@ -806,6 +1207,38 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return s > 0 ? '~$m m $s s remaining' : '~$m m remaining';
+  }
+
+  String _fmtElapsed(int seconds) {
+    if (seconds < 60) return '${seconds}s';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return s > 0 ? '${m}m ${s}s' : '${m}m';
+  }
+
+  Widget _backendChip(BuildContext context) {
+    final localImage = Get.find<LocalImageService>();
+    final backend = localImage.currentBackend.value;
+    final isCpu = backend == Backend.cpu;
+    final color = isCpu
+        ? const Color(0xFFFF9500) // Orange for CPU
+        : const Color(0xFF34C759); // Green for GPU
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
+      ),
+      child: Text(
+        isCpu ? 'CPU · Slow' : backend.displayName.split(' ').first.toUpperCase(),
+        style: GoogleFonts.inter(
+          fontSize: 9,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
   }
 
   @override
@@ -841,8 +1274,10 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
           final step = widget.controller.imageGenStep.value;
           final total = widget.controller.imageGenTotal.value;
           final eta = widget.controller.imageGenEstimatedSecs.value;
-          final hasProgress = total > 0 && step > 0;
+          final decoding = widget.controller.imageGenDecoding.value;
+          final hasProgress = total > 0;
           final pct = hasProgress ? (step / total).clamp(0.0, 1.0) : 0.0;
+          final isDone = decoding || (hasProgress && step >= total);
 
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -851,7 +1286,7 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
               dots,
               const SizedBox(height: 10),
               Text(
-                'Generating image',
+                isDone ? 'Decoding image' : 'Generating image',
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   color: Theme.of(context).hintColor,
@@ -860,7 +1295,7 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
               ),
               if (hasProgress) ...[
                 const SizedBox(height: 10),
-                // Progress bar
+                // Progress bar (pulse at 100% during decode)
                 Container(
                   width: 160,
                   height: 4,
@@ -871,7 +1306,7 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
                   ),
                   child: FractionallySizedBox(
                     alignment: Alignment.centerLeft,
-                    widthFactor: pct,
+                    widthFactor: isDone ? 1.0 : pct,
                     child: Container(
                       decoration: BoxDecoration(
                         color: _appleBlue(context),
@@ -881,17 +1316,31 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Percentage + steps
+                // Percentage + steps / decoding message
                 Text(
-                  '${(pct * 100).toStringAsFixed(0)}% · Step $step of $total',
+                  isDone
+                      ? 'VAE decode in progress…'
+                      : '${(pct * 100).toStringAsFixed(0)}% · Step $step of $total',
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     color: Theme.of(context).hintColor.withValues(alpha: 0.6),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                // ETA (only if we have a real estimate)
-                if (eta > 0 && step >= 2) ...[
+                // Backend badge
+                const SizedBox(height: 5),
+                _backendChip(context),
+                // Elapsed time
+                const SizedBox(height: 3),
+                Text(
+                  'Elapsed: ${_fmtElapsed(_elapsedSeconds)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: Theme.of(context).hintColor.withValues(alpha: 0.45),
+                  ),
+                ),
+                // ETA (only if we have a real estimate and not done)
+                if (eta > 0 && step >= 2 && !isDone) ...[
                   const SizedBox(height: 3),
                   Text(
                     _fmtEta(eta),
@@ -901,6 +1350,34 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
                     ),
                   ),
                 ],
+                const SizedBox(height: 10),
+                // Cancel button
+                GestureDetector(
+                  onTap: widget.controller.stopGenerating,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF3B30).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.stop_rounded,
+                            size: 12, color: const Color(0xFFFF3B30)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: const Color(0xFFFF3B30),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ],
           );

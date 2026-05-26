@@ -9,16 +9,19 @@ import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
 import '../models/chat_message.dart';
 import '../models/chat_session.dart';
+import '../ffi/sd_ffi_bindings.dart';
 import '../services/hive_service.dart';
 import '../services/inference_service.dart';
 import '../services/cloud_service.dart';
 import '../services/local_image_service.dart';
 import '../services/app_log_service.dart';
+import '../services/image_generation_notification_service.dart';
 import '../services/document_extractor_service.dart';
 import '../utils/thought_parser.dart';
 
@@ -73,6 +76,13 @@ class ChatController extends GetxController {
   final imageGenStep = 0.obs;
   final imageGenTotal = 0.obs;
   final imageGenEstimatedSecs = 0.obs;
+  final imageGenStartTime = Rxn<DateTime>();
+  final imageGenDecoding = false.obs;
+
+  // Speech-to-text
+  final isListening = false.obs;
+  final sttAvailable = false.obs;
+  final _speech = stt.SpeechToText();
 
   final textController = TextEditingController();
   final scrollController = ScrollController();
@@ -87,6 +97,53 @@ class ChatController extends GetxController {
     scrollController.addListener(_handleUserScroll);
     _scrollListenerAttached = true;
     loadSessions();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    try {
+      sttAvailable.value = await _speech.initialize(
+        onError: (_) => isListening.value = false,
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            isListening.value = false;
+          }
+        },
+      );
+    } catch (_) {
+      sttAvailable.value = false;
+    }
+  }
+
+  Future<void> toggleListening() async {
+    try {
+      if (isListening.value) {
+        await _speech.stop();
+        isListening.value = false;
+        return;
+      }
+      if (!sttAvailable.value) {
+        try {
+          final ok = await _speech.initialize();
+          sttAvailable.value = ok;
+        } catch (_) {
+          sttAvailable.value = false;
+        }
+        if (!sttAvailable.value) return;
+      }
+      await _speech.listen(
+        onResult: (result) {
+          textController.text = result.recognizedWords;
+          inputText.value = result.recognizedWords;
+        },
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 4),
+        localeId: 'en_US',
+      );
+      isListening.value = true;
+    } catch (_) {
+      isListening.value = false;
+    }
   }
 
   @override
@@ -167,14 +224,15 @@ class ChatController extends GetxController {
       selectedFileType.value = 'image';
       selectedFileSize.value = await file.length();
       selectedFileContent.value = null;
+      _checkVisionSupport();
     }
   }
 
-  void clearImage() {
+  void clearImage({bool deleteFile = true}) {
     final path = selectedImagePath.value;
     selectedImagePath.value = null;
     selectedImageBase64.value = null;
-    if (path != null && path.isNotEmpty) {
+    if (deleteFile && path != null && path.isNotEmpty) {
       try {
         final f = File(path);
         if (f.existsSync()) f.deleteSync();
@@ -182,6 +240,49 @@ class ChatController extends GetxController {
     }
     if (selectedFileType.value == 'image') {
       clearFile();
+    }
+  }
+
+  void _checkVisionSupport() {
+    final s = Get.find<SettingsController>();
+    if (s.inferenceMode.value != 'cloud') return;
+    
+    final provider = s.cloudProvider.value;
+    String modelName = '';
+    switch (provider) {
+      case 'anthropic': modelName = s.anthropicModel.value; break;
+      case 'google': modelName = s.googleModel.value; break;
+      case 'kimi': modelName = s.kimiModel.value; break;
+      case 'stability': modelName = s.stabilityModel.value; break;
+      case 'nvidia': modelName = s.nvidiaModel.value; break;
+      case 'openrouter': modelName = s.openRouterModel.value; break;
+      case 'deepseek': modelName = s.deepSeekModel.value; break;
+      case 'custom': modelName = s.customCloudModel.value; break;
+      default: modelName = s.openaiModel.value; break;
+    }
+    
+    final model = modelName.toLowerCase();
+    
+    // Known vision keywords in cloud model names
+    final isVision = model.contains('vision') || 
+                     model.contains('-vl') || 
+                     model.contains('gpt-4o') || 
+                     model.contains('claude-3') || 
+                     model.contains('gemini') || 
+                     model.contains('pixtral') || 
+                     model.contains('llava') ||
+                     model.contains('omni');
+                     
+    if (!isVision) {
+      Get.snackbar(
+        'Warning: Text-Only Model',
+        'The selected model ($modelName) might not support images. If you get an error, switch to a vision model (like Gemini, GPT-4o, or Claude 3).',
+        snackPosition: SnackPosition.TOP,
+        duration: const Duration(seconds: 6),
+        backgroundColor: const Color(0xFFFF9500).withValues(alpha: 0.95), // Warning Orange
+        colorText: Colors.white,
+        margin: const EdgeInsets.all(12),
+      );
     }
   }
 
@@ -253,6 +354,7 @@ class ChatController extends GetxController {
         selectedFileContent.value = null;
         selectedImagePath.value = optimizedPath;
         selectedImageBase64.value = null;
+        _checkVisionSupport();
         return;
       }
 
@@ -370,13 +472,22 @@ class ChatController extends GetxController {
       createNewChat();
     }
 
+    // Encode image to base64 if it's not already pre-encoded, so the message
+    // saved in history contains the image bytes and is 100% stable.
+    String? imgBase64 = imageBase64;
+    if (imgBase64 == null && imagePath != null && !kIsWeb) {
+      try {
+        imgBase64 = base64Encode(await File(imagePath).readAsBytes());
+      } catch (_) {}
+    }
+
     // Add user message
     final userMsg = ChatMessage(
       id: _uuid.v4(),
       chatId: currentSessionId.value,
       role: 'user',
       content: effectiveText,
-      imageBase64: imageBase64,
+      imageBase64: imgBase64, // Always save the encoded base64 string
       imagePath: imagePath,
       fileName: fileName,
       fileContent: fileContent,
@@ -387,11 +498,11 @@ class ChatController extends GetxController {
     messages.add(userMsg);
     _hive.saveMessage(userMsg.id, userMsg.toMap());
 
-    // Clear input
+    // Clear input preview UI state — but KEEP the physical file on disk 
+    // because the native inference engine needs to read it during generation.
     textController.clear();
     inputText.value = '';
-    final imgBase64 = imageBase64;
-    clearImage();
+    clearImage(deleteFile: false); // Reset visual fields, do NOT delete file!
     clearFile();
     _scrollToBottom(force: true);
 
@@ -460,29 +571,78 @@ class ChatController extends GetxController {
 
         if (localImage.isModelLoaded.value) {
           // Local image generation
+          final settings = Get.find<SettingsController>();
+          final imageNotifications =
+              Get.find<ImageGenerationNotificationService>();
+          final steps = _hive.getSetting<int>(AppConstants.keyImageSteps,
+              defaultValue: AppConstants.defaultImageSteps) ??
+              AppConstants.defaultImageSteps;
+          final sizeSetting = settings.imageGenSize.value;
+          final sizeLabel =
+              sizeSetting == 0 ? 'Auto size' : '${sizeSetting}x$sizeSetting';
+          final backendLabel = localImage.currentBackend.value == Backend.cpu
+              ? 'CPU'
+              : localImage.currentBackend.value.displayName
+                  .split(' ')
+                  .first
+                  .toUpperCase();
           imageGenStep.value = 0;
-          imageGenTotal.value = 0;
+          imageGenTotal.value = steps;
           imageGenEstimatedSecs.value = 0;
-          final genStart = DateTime.now();
+          imageGenStartTime.value = DateTime.now();
+          imageGenDecoding.value = false;
+          await imageNotifications.start(
+            modelName: localImage.loadedModelName.value,
+            backend: backendLabel,
+            steps: steps,
+            sizeLabel: sizeLabel,
+          );
+          print('[ChatController] Starting image generation for: $text');
           final pngBytes = await localImage.generateImage(
             prompt: text,
             onProgress: (step, total) {
+              print('[ChatController] Progress callback: step=$step, total=$total');
               imageGenStep.value = step;
               imageGenTotal.value = total;
-              if (step > 0 && total > 0) {
-                final elapsed = DateTime.now().difference(genStart).inMilliseconds;
-                final avgMsPerStep = elapsed / step;
-                final remainingSteps = total - step;
-                imageGenEstimatedSecs.value =
-                    (avgMsPerStep * remainingSteps / 1000).ceil();
+              if (step >= total && total > 0) {
+                imageGenDecoding.value = true;
+                print('[ChatController] Sampling complete, VAE decode in progress');
+                imageNotifications.decoding();
               }
+              if (step > 0 && total > 0 && step < total) {
+                final start = imageGenStartTime.value;
+                if (start != null) {
+                  final elapsed = DateTime.now().difference(start).inMilliseconds;
+                  final avgMsPerStep = elapsed / step;
+                  final remainingSteps = total - step;
+                  imageGenEstimatedSecs.value =
+                      (avgMsPerStep * remainingSteps / 1000).ceil();
+                }
+              }
+              imageNotifications.update(
+                step: step,
+                total: total,
+                etaSeconds: imageGenEstimatedSecs.value,
+                elapsedSeconds: imageGenStartTime.value == null
+                    ? 0
+                    : DateTime.now()
+                        .difference(imageGenStartTime.value!)
+                        .inSeconds,
+              );
               _scrollToBottom();
             },
           );
+          // Calculate total generation time
+          final genDurationMs = imageGenStartTime.value != null
+              ? DateTime.now().difference(imageGenStartTime.value!).inMilliseconds
+              : null;
+          print('[ChatController] generateImage returned, bytes=${pngBytes?.length}, duration=${genDurationMs}ms');
 
           if (pngBytes != null) {
+            await imageNotifications.complete(durationMs: genDurationMs ?? 0);
             rawResponse = '[IMAGE_BASE64]${base64Encode(pngBytes)}';
           } else {
+            await imageNotifications.failed();
             rawResponse = '❌ Local image generation failed.';
           }
         } else {
@@ -514,7 +674,7 @@ class ChatController extends GetxController {
         ];
         rawResponse = await cloud.sendMessage(
           messages: apiMessages,
-          imageBase64: imgBase64,
+          imageBase64: imgBase64, // already encoded before clearImage()
           onToken: (token) {
             streamingResponse.value += token;
             trackThoughtTiming();
@@ -539,12 +699,18 @@ class ChatController extends GetxController {
       streamingResponse.value = '';
       imageGenStep.value = 0;
       imageGenTotal.value = 0;
+      imageGenDecoding.value = false;
 
       String? outImageBase64;
       if (rawResponse.startsWith('[IMAGE_BASE64]')) {
         outImageBase64 = rawResponse.substring('[IMAGE_BASE64]'.length);
         rawResponse = 'Here is your generated image:';
       }
+
+      // Calculate total generation time for image gen
+      final genDurationMs = imageGenStartTime.value != null
+          ? DateTime.now().difference(imageGenStartTime.value!).inMilliseconds
+          : null;
 
       // Display response directly (no command processing)
       final aiMsg = ChatMessage(
@@ -555,9 +721,11 @@ class ChatController extends GetxController {
         imageBase64: outImageBase64,
         tokensPerSec: tps,
         thoughtDurationSeconds: thoughtDurationSeconds,
+        imageGenDurationMs: genDurationMs,
       );
       messages.add(aiMsg);
       _hive.saveMessage(aiMsg.id, aiMsg.toMap());
+      imageGenStartTime.value = null;
 
       // Update session
       final session =
@@ -575,6 +743,11 @@ class ChatController extends GetxController {
       streamingResponse.value = '';
       imageGenStep.value = 0;
       imageGenTotal.value = 0;
+      imageGenDecoding.value = false;
+      if (imageGenStartTime.value != null) {
+        await Get.find<ImageGenerationNotificationService>().failed();
+      }
+      imageGenStartTime.value = null;
       Get.find<AppLogService>().error('Chat response failed', details: e);
       final errorMsg = ChatMessage(
         id: _uuid.v4(),
@@ -607,7 +780,14 @@ class ChatController extends GetxController {
     isStreaming.value = false;
     streamingAttachmentType.value = null;
     streamingResponse.value = '';
+    Get.find<ImageGenerationNotificationService>().cancel();
+    imageGenStep.value = 0;
+    imageGenTotal.value = 0;
+    imageGenEstimatedSecs.value = 0;
+    imageGenStartTime.value = null;
+    imageGenDecoding.value = false;
     unawaited(Get.find<InferenceService>().stopGeneration());
+    Get.find<LocalImageService>().cancelGeneration();
   }
 
   void _saveAssistantMessage({

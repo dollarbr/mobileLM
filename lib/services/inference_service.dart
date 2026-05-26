@@ -56,6 +56,7 @@ class InferenceService extends GetxService {
     String modelPath, {
     String? modelName,
     String? modelRuntime,
+    bool enableLiteRtVision = false,
   }) async {
     if (!supportsLocalInference) {
       return 'ERROR: Local inference is not available on this platform. Use Cloud mode.';
@@ -109,6 +110,11 @@ class InferenceService extends GetxService {
           ) ??
           AppConstants.defaultContextSize;
 
+      final finalContextSize = isLiteRt ? contextSize.clamp(512, 4096) : contextSize;
+
+      final lastLoadedContext = _hive.getSetting<int>('last_loaded_context_size') ?? 0;
+      final contextChanged = isLiteRt && lastLoadedContext != finalContextSize;
+
       final deviceTier = _getDeviceTier();
       final isTensorSoC = _getIsTensorSoC();
 
@@ -117,13 +123,14 @@ class InferenceService extends GetxService {
       var result = await _loadModelOnEngine(
         modelPath: modelPath,
         modelRuntime: modelRuntime,
-        contextSize: contextSize,
+        contextSize: finalContextSize,
         deviceTier: deviceTier,
         isTensorSoC: isTensorSoC,
         liteRtPerformanceMode: liteRtMode,
         forceLiteRtCpu: forceLiteRtCpu,
-        clearLiteRtCache: hadPendingGpuLoad || (isLiteRt && gpuCrashDetected),
+        clearLiteRtCache: hadPendingGpuLoad || (isLiteRt && gpuCrashDetected) || contextChanged,
         markLiteRtGpuPending: shouldTryLiteRtGpu,
+        enableLiteRtVision: enableLiteRtVision,
       );
 
       if (!result.success &&
@@ -157,6 +164,11 @@ class InferenceService extends GetxService {
         gpuName.value = '';
         gpuLayersUsed.value = 0;
         isGpuAccelerated.value = false;
+        Get.find<AppLogService>().error(
+          'Local model load failed',
+          details:
+              'model=$requestedModelName, runtime=$runtime, backend=${result.backend}, message=${result.message}',
+        );
         return result.message;
       }
 
@@ -177,7 +189,7 @@ class InferenceService extends GetxService {
         await _hive.setSetting(AppConstants.keyLiteRtGpuCrashDetected, false);
       }
       contextTokensUsed.value = 0;
-      contextTokensTotal.value = contextSize;
+      contextTokensTotal.value = finalContextSize;
 
       await _hive.setSetting(AppConstants.keyLocalModelPath, modelPath);
       await _hive.setSetting(
@@ -186,6 +198,10 @@ class InferenceService extends GetxService {
           AppConstants.keyLocalModelRuntime, loadedModelRuntime.value);
       await _hive.setSetting(
           AppConstants.keyLocalModelBackend, loadedBackend.value);
+
+      if (isLiteRt) {
+        await _hive.setSetting('last_loaded_context_size', finalContextSize);
+      }
 
       return result.message;
     } catch (e) {
@@ -403,6 +419,7 @@ class InferenceService extends GetxService {
     required bool forceLiteRtCpu,
     required bool clearLiteRtCache,
     required bool markLiteRtGpuPending,
+    required bool enableLiteRtVision,
   }) async {
     var gpuLoadFailed = false;
     try {
@@ -418,6 +435,7 @@ class InferenceService extends GetxService {
         liteRtPerformanceMode: liteRtPerformanceMode,
         forceLiteRtCpu: forceLiteRtCpu,
         clearLiteRtCache: clearLiteRtCache,
+        enableLiteRtVision: enableLiteRtVision,
         onProgress: (p) => modelLoadProgress.value = _normalizeProgress(p),
       );
     } catch (e) {
@@ -435,6 +453,7 @@ class InferenceService extends GetxService {
             liteRtPerformanceMode: liteRtPerformanceMode,
             forceLiteRtCpu: true,
             clearLiteRtCache: true,
+            enableLiteRtVision: enableLiteRtVision,
             onProgress: (p) => modelLoadProgress.value = _normalizeProgress(p),
           );
         } catch (cpuError) {

@@ -33,6 +33,44 @@ class CloudModelController extends GetxController {
 
   static const _cachePrefix = 'cloud_model_cache_';
   static const _cacheTimePrefix = 'cloud_model_cache_time_';
+  static const _defaultModelsByProvider = <String, List<String>>{
+    'openrouter': [
+      'openai/gpt-4o-mini',
+      'openai/gpt-4o',
+      'anthropic/claude-3.5-sonnet',
+      'google/gemini-2.5-flash',
+      'deepseek/deepseek-chat',
+      'meta-llama/llama-3.1-8b-instruct',
+    ],
+    'openai': [
+      'gpt-5.2',
+      'gpt-5.1',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'gpt-4o',
+      'gpt-4o-mini',
+    ],
+    'deepseek': [
+      'deepseek-v4-flash',
+      'deepseek-v4-pro',
+      'deepseek-chat',
+      'deepseek-reasoner',
+    ],
+    'google': [
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+    ],
+    'nvidia': [
+      'meta/llama-3.1-8b-instruct',
+      'meta/llama-3.1-70b-instruct',
+      'meta/llama-3.3-70b-instruct',
+      'mistralai/mixtral-8x7b-instruct-v0.1',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+    ],
+  };
 
   final providers = const [
     CloudProviderInfo(
@@ -40,13 +78,18 @@ class CloudModelController extends GetxController {
       name: 'OpenRouter',
       description: 'Free model list · OpenAI compatible',
       icon: Icons.hub_outlined,
-      requiresKeyForList: false,
     ),
     CloudProviderInfo(
       id: 'openai',
       name: 'OpenAI',
       description: 'Native OpenAI chat models',
       icon: Icons.auto_awesome,
+    ),
+    CloudProviderInfo(
+      id: 'deepseek',
+      name: 'DeepSeek',
+      description: 'OpenAI compatible V4 models',
+      icon: Icons.psychology_alt_outlined,
     ),
     CloudProviderInfo(
       id: 'google',
@@ -74,6 +117,9 @@ class CloudModelController extends GetxController {
   final isLoadingProvider = <String, bool>{}.obs;
   final errorByProvider = <String, String>{}.obs;
   final searchByProvider = <String, String>{}.obs;
+  final freeFirstByProvider = <String, bool>{}.obs;
+  final modelTagsByProvider = <String, Map<String, List<String>>>{}.obs;
+  final customProviderError = ''.obs;
 
   final customNameController = TextEditingController();
   final customBaseUrlController = TextEditingController();
@@ -88,6 +134,7 @@ class CloudModelController extends GetxController {
     }
     for (final provider in providers) {
       _loadCachedModels(provider.id);
+      ensureDefaultModels(provider.id);
     }
     _syncCustomControllers();
   }
@@ -107,6 +154,8 @@ class CloudModelController extends GetxController {
     switch (provider) {
       case 'openrouter':
         return _settings.openRouterModel.value;
+      case 'deepseek':
+        return _settings.deepSeekModel.value;
       case 'google':
         return _settings.googleModel.value;
       case 'nvidia':
@@ -122,6 +171,8 @@ class CloudModelController extends GetxController {
     switch (provider) {
       case 'openrouter':
         return _settings.openRouterKey.value;
+      case 'deepseek':
+        return _settings.deepSeekKey.value;
       case 'google':
         return _settings.googleKey.value;
       case 'nvidia':
@@ -138,10 +189,6 @@ class CloudModelController extends GetxController {
   }
 
   bool isConfigured(String provider) {
-    final info = providers.firstWhere((p) => p.id == provider);
-    if (!info.requiresKeyForList && provider == 'openrouter') {
-      return true;
-    }
     if (provider == 'custom') {
       return _settings.customCloudBaseUrl.value.isNotEmpty &&
           _settings.customCloudModel.value.isNotEmpty &&
@@ -151,9 +198,6 @@ class CloudModelController extends GetxController {
   }
 
   String statusLabel(String provider) {
-    if (provider == 'openrouter') {
-      return apiKeyFor(provider).isEmpty ? 'List Ready' : 'Connected';
-    }
     return isConfigured(provider) ? 'Connected' : 'Needs Key';
   }
 
@@ -167,9 +211,15 @@ class CloudModelController extends GetxController {
     final filtered = query.isEmpty
         ? source
         : source.where((id) => id.toLowerCase().contains(query)).toList();
+    final freeFirst = freeFirstByProvider[provider] == true;
     filtered.sort((a, b) {
       if (a == active) return -1;
       if (b == active) return 1;
+      if (freeFirst) {
+        final aFree = isFreeModel(provider, a);
+        final bFree = isFreeModel(provider, b);
+        if (aFree != bFree) return aFree ? -1 : 1;
+      }
       return a.toLowerCase().compareTo(b.toLowerCase());
     });
     return filtered;
@@ -177,6 +227,10 @@ class CloudModelController extends GetxController {
 
   String fetchedLabel(String provider) {
     final fetchedAt = fetchedAtByProvider[provider];
+    if (fetchedAt == null &&
+        (modelsByProvider[provider] ?? const <String>[]).isNotEmpty) {
+      return 'Built-in list';
+    }
     if (fetchedAt == null) return 'Not fetched yet';
     final diff = DateTime.now().difference(fetchedAt);
     if (diff.inMinutes < 1) return 'Updated just now';
@@ -185,35 +239,121 @@ class CloudModelController extends GetxController {
     return 'Updated ${diff.inDays}d ago';
   }
 
+  List<String> modelTagsFor(String provider, String modelId) {
+    final normalized =
+        provider == 'google' ? modelId.replaceFirst('models/', '') : modelId;
+    if (provider == 'nvidia') return const ['NIM'];
+    return modelTagsByProvider[provider]?[normalized] ??
+        modelTagsByProvider[provider]?[modelId] ??
+        const <String>[];
+  }
+
+  bool isFreeModel(String provider, String modelId) {
+    return modelTagsFor(provider, modelId).contains('FREE') ||
+        modelId.toLowerCase().contains(':free');
+  }
+
+  int freeModelCountFor(String provider) {
+    return (modelsByProvider[provider] ?? const <String>[])
+        .where((id) => isFreeModel(provider, id))
+        .length;
+  }
+
+  void toggleFreeFirst(String provider) {
+    freeFirstByProvider[provider] = !(freeFirstByProvider[provider] ?? false);
+  }
+
   Future<void> saveApiKey(String provider, String value) async {
     await _settings.setApiKey(provider, value);
   }
 
-  Future<void> selectModel(String provider, String modelId) async {
+  void ensureDefaultModels(String provider) {
+    final defaults = _defaultModelsByProvider[provider];
+    if (defaults == null || defaults.isEmpty) return;
+
+    final existing = modelsByProvider[provider] ?? const <String>[];
+    if (existing.isNotEmpty) return;
+
+    modelsByProvider[provider] = [...defaults];
+  }
+
+  bool canFetchModels(String provider) {
+    if (provider == 'custom') return false;
+    return apiKeyFor(provider).isNotEmpty;
+  }
+
+  bool canSelectModel(String provider) {
+    if (provider == 'custom') {
+      return _settings.customCloudBaseUrl.value.isNotEmpty &&
+          _settings.customCloudKey.value.isNotEmpty;
+    }
+    return apiKeyFor(provider).isNotEmpty;
+  }
+
+  Future<void> selectModel(
+    String provider,
+    String modelId, {
+    bool showSnackbar = true,
+  }) async {
     final normalized =
         provider == 'google' ? modelId.replaceFirst('models/', '') : modelId;
     await _settings.setCloudProvider(provider);
     await _settings.setCloudModel(provider, normalized);
     await _settings.setInferenceMode('cloud');
+    if (!showSnackbar) return;
     Get.snackbar('Cloud Model Active', '$provider · $normalized',
         snackPosition: SnackPosition.BOTTOM);
   }
 
   Future<void> saveCustomProvider() async {
+    final validationError = validateCustomProvider();
+    if (validationError != null) {
+      customProviderError.value = validationError;
+      return;
+    }
+    customProviderError.value = '';
     await _settings.setCustomCloudConfig(
       name: customNameController.text,
       baseUrl: customBaseUrlController.text,
       apiKey: customApiKeyController.text,
       model: customModelController.text,
     );
-    await selectModel('custom', _settings.customCloudModel.value);
+    await selectModel(
+      'custom',
+      _settings.customCloudModel.value,
+      showSnackbar: false,
+    );
+  }
+
+  Future<void> clearCustomProvider() async {
+    await _settings.clearCustomCloudConfig();
+    customProviderError.value = '';
+    _syncCustomControllers();
+  }
+
+  String? validateCustomProvider() {
+    final baseUrl = customBaseUrlController.text.trim();
+    final apiKey = customApiKeyController.text.trim();
+    final model = customModelController.text.trim();
+
+    if (baseUrl.isEmpty) return 'Base URL is required.';
+    final uri = Uri.tryParse(baseUrl);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.host.isEmpty) {
+      return 'Enter a valid OpenAI-compatible base URL.';
+    }
+    if (apiKey.isEmpty) return 'API key is required.';
+    if (model.isEmpty) return 'Model ID is required.';
+    return null;
   }
 
   Future<void> refreshModels(String provider) async {
     if (provider == 'custom') return;
 
-    if (provider != 'openrouter' && apiKeyFor(provider).isEmpty) {
-      errorByProvider[provider] = 'Add an API key first.';
+    if (apiKeyFor(provider).isEmpty) {
+      errorByProvider.remove(provider);
       return;
     }
 
@@ -234,6 +374,7 @@ class CloudModelController extends GetxController {
 
       final ids = _parseModelIds(provider, response.body);
       modelsByProvider[provider] = ids;
+      modelTagsByProvider[provider] = _parseModelTags(provider, response.body);
       final fetchedAt = DateTime.now();
       fetchedAtByProvider[provider] = fetchedAt;
       await _hive.setSetting('$_cachePrefix$provider', ids);
@@ -253,7 +394,15 @@ class CloudModelController extends GetxController {
   Future<http.Response> _requestModelList(String provider) {
     switch (provider) {
       case 'openrouter':
-        return http.get(Uri.parse('${AppConstants.openRouterEndpoint}/models'));
+        return http.get(
+          Uri.parse('${AppConstants.openRouterEndpoint}/models'),
+          headers: {'Authorization': 'Bearer ${apiKeyFor(provider)}'},
+        );
+      case 'deepseek':
+        return http.get(
+          Uri.parse('${AppConstants.deepSeekEndpoint}/models'),
+          headers: {'Authorization': 'Bearer ${apiKeyFor(provider)}'},
+        );
       case 'google':
         return http.get(Uri.parse(
             '${AppConstants.googleEndpoint}?key=${apiKeyFor(provider)}'));
@@ -287,6 +436,42 @@ class CloudModelController extends GetxController {
         .whereType<String>()
         .toSet()
         .toList();
+  }
+
+  Map<String, List<String>> _parseModelTags(String provider, String body) {
+    if (provider != 'openrouter') return const {};
+
+    final data = jsonDecode(body);
+    final raw = data['data'] as List? ?? [];
+    final tags = <String, List<String>>{};
+
+    for (final model in raw) {
+      if (model is! Map) continue;
+      final id = model['id']?.toString();
+      if (id == null || id.isEmpty) continue;
+
+      final pricing = model['pricing'];
+      final isFreeId = id.toLowerCase().contains(':free');
+      final isFreePrice = pricing is Map && _isZeroOpenRouterPricing(pricing);
+      if (isFreeId || isFreePrice) {
+        tags[id] = const ['FREE'];
+      }
+    }
+
+    return tags;
+  }
+
+  bool _isZeroOpenRouterPricing(Map pricing) {
+    final prompt = _pricingValue(pricing['prompt']);
+    final completion = _pricingValue(pricing['completion']);
+    final request = _pricingValue(pricing['request']);
+    return prompt == 0 && completion == 0 && (request == null || request == 0);
+  }
+
+  double? _pricingValue(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 
   void _loadCachedModels(String provider) {

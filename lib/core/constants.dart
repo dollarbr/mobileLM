@@ -18,6 +18,7 @@ class AppConstants {
   static const String keyStabilityKey = 'stability_api_key';
   static const String keyNvidiaKey = 'nvidia_api_key';
   static const String keyOpenRouterKey = 'openrouter_api_key';
+  static const String keyDeepSeekKey = 'deepseek_api_key';
   static const String keyCustomCloudName = 'custom_cloud_name';
   static const String keyCustomCloudBaseUrl = 'custom_cloud_base_url';
   static const String keyCustomCloudKey = 'custom_cloud_api_key';
@@ -28,6 +29,7 @@ class AppConstants {
   static const String keyStabilityModel = 'stability_model';
   static const String keyNvidiaModel = 'nvidia_model';
   static const String keyOpenRouterModel = 'openrouter_model';
+  static const String keyDeepSeekModel = 'deepseek_model';
   static const String keyCustomCloudModel = 'custom_cloud_model';
   static const String keyGlobalSystemPrompt = 'global_system_prompt';
   static const String keyLocalModelPath = 'local_model_path';
@@ -53,13 +55,23 @@ class AppConstants {
   static const String keyServerNgrokToken = 'server_ngrok_token';
   static const String keyServerNgrokDomain = 'server_ngrok_domain';
   static const String keyImageSteps = 'image_steps';
+  static const String keyImageGenForceCpu = 'image_gen_force_cpu';
+  static const String keyImageGenBackend = 'image_gen_backend';
+  static const String keyImageGenGpuGuardMb = 'image_gen_gpu_guard_mb';
+  static const String keyImageGenSize = 'image_gen_size';
+  static const String keyImageGenQuantization = 'image_gen_quantization';
+  static const String keyFontScale = 'font_scale';
 
   // Default Model Config
   static const double defaultTemperature = 0.7;
   static const int defaultMaxTokens = 1024;
   static const int defaultContextSize = 2048;
   static const String defaultLiteRtPerformanceMode = 'auto_fast';
-  static const int defaultImageSteps = 4;
+  static const int defaultImageSteps = 1;
+  static const bool defaultImageGenForceCpu = true;
+  static const int defaultImageGenGpuGuardMb = 1843; // 1.8 GB
+  static const int defaultImageGenSize = 0; // 0 = Auto recommended
+  static const double defaultFontScale = 0.95; // 4th slider stop, "Small" default
 
   // System Prompt (compact for small context models)
   static const String systemPrompt =
@@ -120,6 +132,7 @@ class AppConstants {
       'description': 'Strong general chat LiteRT-LM model from Google Gemma',
       'template': 'litert',
       'runtime': 'litert',
+      'vision': 'true',
     },
     {
       'name': 'Gemma 4 E4B Instruct (LiteRT-LM)',
@@ -130,6 +143,7 @@ class AppConstants {
       'description': 'Highest quality LiteRT-LM option; needs about 5 GB RAM',
       'template': 'litert',
       'runtime': 'litert',
+      'vision': 'true',
     },
     {
       'name': 'Kimi Moonlight 16B-A3B (Q3_K_S)',
@@ -174,7 +188,8 @@ class AppConstants {
       'url':
           'https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf',
       'size': '1.71 GB',
-      'description': 'Google\'s lightweight general chat model — fast and smart',
+      'description':
+          'Google\'s lightweight general chat model — fast and smart',
       'template': 'gemma',
     },
     {
@@ -237,7 +252,8 @@ class AppConstants {
       'url':
           'https://huggingface.co/cyberdelia/CyberRealistic/resolve/main/CyberRealistic_V8_FP16.safetensors',
       'size': '2.0 GB',
-      'description': 'Photorealistic, uncensored local image generation — FP16 for mobile',
+      'description':
+          'Photorealistic, uncensored local image generation — FP16 for mobile',
       'template': 'sd',
     },
     {
@@ -269,7 +285,6 @@ class AppConstants {
     },
   ];
 
-
   // Cloud API Endpoints
   static const String openaiEndpoint =
       'https://api.openai.com/v1/chat/completions';
@@ -283,4 +298,5 @@ class AppConstants {
       'https://api.stability.ai/v2beta/stable-image/generate/sd3';
   static const String nvidiaEndpoint = 'https://integrate.api.nvidia.com/v1';
   static const String openRouterEndpoint = 'https://openrouter.ai/api/v1';
+  static const String deepSeekEndpoint = 'https://api.deepseek.com';
 }

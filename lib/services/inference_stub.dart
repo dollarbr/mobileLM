@@ -29,6 +29,7 @@ class InferenceEngine {
     String liteRtPerformanceMode = 'cpu_safe',
     bool forceLiteRtCpu = true,
     bool clearLiteRtCache = false,
+    bool enableLiteRtVision = false,
     void Function(double)? onProgress,
   }) async {
     return LoadResult(
