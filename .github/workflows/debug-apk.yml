@@ -25,6 +25,17 @@ jobs:
         with:
           submodules: recursive
 
+      # The vendored native builds (llama.cpp Vulkan, LiteRT, SD) fill the
+      # runner's ~14 GB free disk with intermediates. Drop the preinstalled
+      # toolchains this build never touches; the Android SDK stays.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/share/swift /usr/share/miniconda 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -51,7 +62,7 @@ jobs:
         run: |
           cd build/app/outputs/flutter-apk
           ls -1
-          mv app-debug.apk "PrivateLM-debug-${GITHUB_SHA::7}.apk"
+          mv app-debug.apk "mobilelm-debug-${GITHUB_SHA::7}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
