@@ -53,7 +53,7 @@ class SettingsView extends GetView<SettingsController> {
                         ? Icon(Icons.check,
                             size: 18,
                             color: isDark
-                                ? const Color(0xFF0A84FF)
+                                ? const Color(0xFFB9F53E)
                                 : AppColors.primary)
                         : null,
                     showDivider: mode != ThemeMode.system,
@@ -94,7 +94,7 @@ class SettingsView extends GetView<SettingsController> {
                       ? Icon(Icons.check,
                           size: 18,
                           color: isDark
-                              ? const Color(0xFF0A84FF)
+                              ? const Color(0xFFB9F53E)
                               : AppColors.primary)
                       : null,
                   showDivider: true,
@@ -110,7 +110,7 @@ class SettingsView extends GetView<SettingsController> {
                       ? Icon(Icons.check,
                           size: 18,
                           color: isDark
-                              ? const Color(0xFF0A84FF)
+                              ? const Color(0xFFB9F53E)
                               : AppColors.primary)
                       : null,
                   showDivider: false,
@@ -181,7 +181,7 @@ class SettingsView extends GetView<SettingsController> {
                         decoration: BoxDecoration(
                             gradient: LinearGradient(colors: [
                               isDark
-                                  ? const Color(0xFF0A84FF)
+                                  ? const Color(0xFFB9F53E)
                                   : AppColors.primary,
                               AppColors.secondary
                             ]),
@@ -425,7 +425,7 @@ class SettingsView extends GetView<SettingsController> {
   /// tool added there shows up here without touching this file.
   Widget _buildToolsCard(BuildContext context, bool isDark) {
     final enabled = controller.toolsEnabled.value;
-    final accent = isDark ? const Color(0xFF0A84FF) : AppColors.primary;
+    final accent = isDark ? const Color(0xFFB9F53E) : AppColors.primary;
     final catalogue = buildDefaultToolRegistry().all.toList();
     final on = controller.enabledTools;
 
@@ -562,14 +562,14 @@ class SettingsView extends GetView<SettingsController> {
           context,
           isDark,
           leading: _iconBox(
-              isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+              isDark ? const Color(0xFFB9F53E) : AppColors.primary,
               modes[i].icon),
           title: modes[i].title,
           subtitle: modes[i].subtitle,
           trailing: controller.thinkingMode.value == modes[i].value
               ? Icon(Icons.check,
                   size: 18,
-                  color: isDark ? const Color(0xFF0A84FF) : AppColors.primary)
+                  color: isDark ? const Color(0xFFB9F53E) : AppColors.primary)
               : null,
           showDivider: i < modes.length - 1,
           onTap: () => controller.setThinkingMode(modes[i].value),
@@ -601,7 +601,7 @@ class SettingsView extends GetView<SettingsController> {
             leading: _iconBox(
                 status?.available == true
                     ? AppColors.success
-                    : (isDark ? const Color(0xFF0A84FF) : AppColors.primary),
+                    : (isDark ? const Color(0xFFB9F53E) : AppColors.primary),
                 Icons.memory_rounded),
             title: 'NPU',
             subtitle: subtitle,
@@ -622,7 +622,7 @@ class SettingsView extends GetView<SettingsController> {
   Widget _buildComputeCard(BuildContext context, bool isDark) {
     final cores = Platform.numberOfProcessors;
     final half = (cores ~/ 2).clamp(2, 6);
-    final accent = isDark ? const Color(0xFF0A84FF) : AppColors.primary;
+    final accent = isDark ? const Color(0xFFB9F53E) : AppColors.primary;
     return Obx(() {
       final selected = controller.cpuThreads.value;
       final options = <({int value, String title, String subtitle})>[
@@ -697,14 +697,14 @@ class SettingsView extends GetView<SettingsController> {
           context,
           isDark,
           leading: _iconBox(
-              isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+              isDark ? const Color(0xFFB9F53E) : AppColors.primary,
               modes[i].icon),
           title: modes[i].title,
           subtitle: modes[i].subtitle,
           trailing: controller.liteRtPerformanceMode.value == modes[i].value
               ? Icon(Icons.check,
                   size: 18,
-                  color: isDark ? const Color(0xFF0A84FF) : AppColors.primary)
+                  color: isDark ? const Color(0xFFB9F53E) : AppColors.primary)
               : null,
           showDivider: i < modes.length - 1,
           onTap: () => controller.setLiteRtPerformanceMode(modes[i].value),
@@ -822,7 +822,7 @@ class SettingsView extends GetView<SettingsController> {
     final isOver = stepsValue > safeMax;
     final accent = isOver
         ? AppColors.warning
-        : (isDark ? const Color(0xFF0A84FF) : AppColors.primary);
+        : (isDark ? const Color(0xFFB9F53E) : AppColors.primary);
     final selectedBackend = controller.imageGenBackend.value;
     final gpuBackend = controller.recommendedImageGpuBackend();
     final gpuAvailable = gpuBackend != Backend.cpu;
@@ -890,7 +890,7 @@ class SettingsView extends GetView<SettingsController> {
           Row(children: [
             Icon(Icons.photo_size_select_large_rounded,
                 size: 16,
-                color: isDark ? const Color(0xFF0A84FF) : AppColors.primary),
+                color: isDark ? const Color(0xFFB9F53E) : AppColors.primary),
             const SizedBox(width: 8),
             Text('Image Size',
                 style: GoogleFonts.inter(
@@ -899,7 +899,7 @@ class SettingsView extends GetView<SettingsController> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                  color: (isDark ? const Color(0xFF0A84FF) : AppColors.primary)
+                  color: (isDark ? const Color(0xFFB9F53E) : AppColors.primary)
                       .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6)),
               child: Text(
@@ -909,7 +909,7 @@ class SettingsView extends GetView<SettingsController> {
                   style: GoogleFonts.inter(
                       fontSize: 13,
                       color:
-                          isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+                          isDark ? const Color(0xFFB9F53E) : AppColors.primary,
                       fontWeight: FontWeight.w600)),
             ),
           ]),
@@ -943,7 +943,7 @@ class SettingsView extends GetView<SettingsController> {
                         : Theme.of(context).hintColor,
                   ),
                   selectedColor:
-                      isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+                      isDark ? const Color(0xFFB9F53E) : AppColors.primary,
                   backgroundColor: isDark
                       ? Colors.white.withValues(alpha: 0.06)
                       : Colors.black.withValues(alpha: 0.04),
@@ -985,7 +985,7 @@ class SettingsView extends GetView<SettingsController> {
           Row(children: [
             Icon(Icons.shield_outlined,
                 size: 16,
-                color: isDark ? const Color(0xFF0A84FF) : AppColors.primary),
+                color: isDark ? const Color(0xFFB9F53E) : AppColors.primary),
             const SizedBox(width: 8),
             Text('GPU Safety',
                 style: GoogleFonts.inter(
@@ -994,7 +994,7 @@ class SettingsView extends GetView<SettingsController> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                  color: (isDark ? const Color(0xFF0A84FF) : AppColors.primary)
+                  color: (isDark ? const Color(0xFFB9F53E) : AppColors.primary)
                       .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6)),
               child: Text(
@@ -1004,7 +1004,7 @@ class SettingsView extends GetView<SettingsController> {
                   style: GoogleFonts.inter(
                       fontSize: 13,
                       color:
-                          isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+                          isDark ? const Color(0xFFB9F53E) : AppColors.primary,
                       fontWeight: FontWeight.w600)),
             ),
           ]),
@@ -1020,7 +1020,7 @@ class SettingsView extends GetView<SettingsController> {
               min: 0,
               max: 4096,
               divisions: 16,
-              activeColor: isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+              activeColor: isDark ? const Color(0xFFB9F53E) : AppColors.primary,
               onChanged: (v) => controller.setImageGenGpuGuardMb(v.toInt())),
           if (controller.imageGenGpuGuardMb.value <= 0 ||
               controller.imageGenGpuGuardMb.value >= 2048)
@@ -1053,7 +1053,7 @@ class SettingsView extends GetView<SettingsController> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             _iconBox(
-                isDark ? const Color(0xFF0A84FF) : AppColors.primary,
+                isDark ? const Color(0xFFB9F53E) : AppColors.primary,
                 selectedBackend == Backend.cpu
                     ? Icons.memory_rounded
                     : Icons.bolt_rounded),
@@ -1124,7 +1124,7 @@ class SettingsView extends GetView<SettingsController> {
   Widget _buildFontSizeCard(BuildContext context, bool isDark) {
     const min = 0.8;
     const max = 1.4;
-    final accent = isDark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF);
+    final accent = isDark ? const Color(0xFFB9F53E) : const Color(0xFFB9F53E);
 
     String scaleLabel(double v) {
       if (v <= 0.85) return 'XS';
@@ -1233,7 +1233,7 @@ class SettingsView extends GetView<SettingsController> {
         : 0.0;
     final accent = isOver
         ? Color.lerp(AppColors.warning, AppColors.error, danger)!
-        : (isDark ? const Color(0xFF0A84FF) : AppColors.primary);
+        : (isDark ? const Color(0xFFB9F53E) : AppColors.primary);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
@@ -1325,7 +1325,7 @@ class SettingsView extends GetView<SettingsController> {
         : 0.0;
     final accent = isOver
         ? Color.lerp(AppColors.warning, AppColors.error, danger)!
-        : (isDark ? const Color(0xFF0A84FF) : AppColors.primary);
+        : (isDark ? const Color(0xFFB9F53E) : AppColors.primary);
 
     return _appleGroupedCard(context, isDark, children: [
       Padding(

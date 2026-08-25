@@ -12,7 +12,7 @@ class ServerView extends GetView<ServerController> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = isDark ? const Color(0xFF0A84FF) : AppColors.primary;
+    final accent = isDark ? const Color(0xFFB9F53E) : AppColors.primary;
 
     return Scaffold(
       backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),

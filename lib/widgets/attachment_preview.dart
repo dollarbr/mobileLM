@@ -200,7 +200,7 @@ class AttachmentPreview extends StatelessWidget {
 
   Color _colorForType(String type, bool isDark) {
     switch (type) {
-      case 'image':  return isDark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF);
+      case 'image':  return isDark ? const Color(0xFFB9F53E) : const Color(0xFFB9F53E);
       case 'pdf':    return const Color(0xFFFF3B30);
       case 'audio':  return const Color(0xFFFF9500);
       case 'text':   return isDark ? const Color(0xFF64D2FF) : const Color(0xFF5AC8FA);

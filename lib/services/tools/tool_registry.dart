@@ -1,5 +1,15 @@
 import 'dart:async';
 
+/// How much a tool can change the world.
+enum ToolRisk {
+  /// Answers or reads; running it needs no permission from anyone.
+  safe,
+
+  /// Changes device state (clipboard, files, messages…). Runs only after an
+  /// explicit human approval in the UI.
+  write,
+}
+
 /// One thing the model can ask the app to do.
 class Tool {
   final String name;
@@ -14,12 +24,15 @@ class Tool {
   /// Shown in Settings so the user knows which tools leave the device.
   final bool requiresNetwork;
 
+  final ToolRisk risk;
+
   const Tool({
     required this.name,
     required this.description,
     this.parameters = const {},
     required this.run,
     this.requiresNetwork = false,
+    this.risk = ToolRisk.safe,
   });
 
   String get signature => parameters.isEmpty
@@ -69,10 +82,20 @@ $lines''';
   ///
   /// A failing tool returns its error as a normal result rather than throwing:
   /// the model can then say what went wrong, which beats the turn dying.
-  Future<String> execute(String name, Map<String, String> args) async {
+  ///
+  /// A [ToolRisk.write] tool runs only with [confirmed]; otherwise the result
+  /// is [confirmMarker], which the caller turns into an approval dialog.
+  Future<String> execute(
+    String name,
+    Map<String, String> args, {
+    bool confirmed = false,
+  }) async {
     final tool = byName(name);
     if (tool == null) {
       return 'Error: no tool named "$name". Available: ${_tools.keys.join(", ")}.';
+    }
+    if (tool.risk == ToolRisk.write && !confirmed) {
+      return confirmMarker;
     }
     try {
       return await tool.run(args);
@@ -80,4 +103,7 @@ $lines''';
       return 'Error: $name failed — $e';
     }
   }
+
+  /// Prefix of the result returned when a write tool needs approval first.
+  static const String confirmMarker = 'CONFIRM_REQUIRED:';
 }

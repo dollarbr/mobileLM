@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'calculator.dart';
 import 'tool_registry.dart';
@@ -89,5 +91,44 @@ ToolRegistry buildDefaultToolRegistry({
         parameters: {'url': 'full http(s) URL'},
         requiresNetwork: true,
         run: (args) => readUrl(args['url'] ?? ''),
+      ),
+      Tool(
+        name: 'clipboard_read',
+        description: "Read the device's current clipboard text.",
+        run: (_) async =>
+            (await Clipboard.getData('text/plain'))?.text ??
+            'The clipboard is empty or holds no text.',
+      ),
+      Tool(
+        name: 'clipboard_write',
+        description: 'Replace the clipboard text. Asks the user first.',
+        parameters: {'text': 'the text to put on the clipboard'},
+        risk: ToolRisk.write,
+        run: (args) async {
+          final text = args['text'];
+          if (text == null || text.isEmpty) return 'Error: no text given.';
+          await Clipboard.setData(ClipboardData(text: text));
+          return 'Clipboard set.';
+        },
+      ),
+      Tool(
+        name: 'vibrate',
+        description: 'Give the device a short haptic buzz.',
+        run: (_) async {
+          await HapticFeedback.heavyImpact();
+          return 'Buzzed.';
+        },
+      ),
+      Tool(
+        name: 'share_text',
+        description: "Open Android's share sheet so the user can send text "
+            'to another app. The user picks the destination.',
+        parameters: {'text': 'what to share'},
+        run: (args) async {
+          final text = args['text'];
+          if (text == null || text.isEmpty) return 'Error: no text given.';
+          await Share.share(text);
+          return 'Share sheet opened.';
+        },
       ),
     ].where((t) => enabled == null || enabled.contains(t.name)));

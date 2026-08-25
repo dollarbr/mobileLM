@@ -97,7 +97,7 @@ class TaskView extends GetView<TaskController> {
         if (current == null) return const SizedBox.shrink();
         if (controller.isPlanning.value) {
           return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            CircularProgressIndicator(color: isDark ? const Color(0xFF0A84FF) : AppColors.primary),
+            CircularProgressIndicator(color: isDark ? const Color(0xFFB9F53E) : AppColors.primary),
             const SizedBox(height: 16),
             Text('AI is planning steps…', style: GoogleFonts.inter(color: Theme.of(context).hintColor)),
           ]));
@@ -147,7 +147,7 @@ class TaskView extends GetView<TaskController> {
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: isRunning ? Border.all(color: isDark ? const Color(0xFF0A84FF) : AppColors.primary, width: 1) : null,
+        border: isRunning ? Border.all(color: isDark ? const Color(0xFFB9F53E) : AppColors.primary, width: 1) : null,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -160,7 +160,7 @@ class TaskView extends GetView<TaskController> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF2F2F7), borderRadius: BorderRadius.circular(8)),
-            child: Text(step.command!, style: GoogleFonts.firaCode(fontSize: 12, color: isDark ? const Color(0xFF0A84FF) : AppColors.primary)),
+            child: Text(step.command!, style: GoogleFonts.firaCode(fontSize: 12, color: isDark ? const Color(0xFFB9F53E) : AppColors.primary)),
           ),
         ],
         if (step.output != null && step.output!.isNotEmpty) ...[
@@ -173,7 +173,7 @@ class TaskView extends GetView<TaskController> {
 
   Widget _stepStatusIcon(BuildContext context, String status, bool isDark) {
     switch (status) {
-      case 'running': return SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: isDark ? const Color(0xFF0A84FF) : AppColors.primary));
+      case 'running': return SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: isDark ? const Color(0xFFB9F53E) : AppColors.primary));
       case 'done': return const Icon(Icons.check_circle_rounded, size: 18, color: AppColors.success);
       case 'failed': return const Icon(Icons.error_rounded, size: 18, color: AppColors.error);
       default: return Icon(Icons.circle_outlined, size: 18, color: Theme.of(context).hintColor);
@@ -182,7 +182,7 @@ class TaskView extends GetView<TaskController> {
 
   Color _statusColor(BuildContext context, String status) {
     switch (status) {
-      case 'running': return Theme.of(context).brightness == Brightness.dark ? const Color(0xFF0A84FF) : AppColors.primary;
+      case 'running': return Theme.of(context).brightness == Brightness.dark ? const Color(0xFFB9F53E) : AppColors.primary;
       case 'completed': case 'done': return AppColors.success;
       case 'failed': return AppColors.error;
       default: return Theme.of(context).hintColor;

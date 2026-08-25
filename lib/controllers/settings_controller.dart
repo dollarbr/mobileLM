@@ -766,8 +766,8 @@ class SettingsController extends GetxController {
                     : Icons.memory_rounded,
                 size: 20,
                 color: isDark
-                    ? const Color(0xFF0A84FF)
-                    : const Color(0xFF007AFF),
+                    ? const Color(0xFFB9F53E)
+                    : const Color(0xFFB9F53E),
               ),
               const SizedBox(width: 10),
               Text(label,
@@ -818,8 +818,8 @@ class SettingsController extends GetxController {
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
                           color: isDark
-                              ? const Color(0xFF0A84FF)
-                              : const Color(0xFF007AFF)),
+                              ? const Color(0xFFB9F53E)
+                              : const Color(0xFFB9F53E)),
                     ),
                   ),
                 ),
@@ -876,8 +876,8 @@ class SettingsController extends GetxController {
               },
               style: FilledButton.styleFrom(
                 backgroundColor: isDark
-                    ? const Color(0xFF0A84FF)
-                    : const Color(0xFF007AFF),
+                    ? const Color(0xFFB9F53E)
+                    : const Color(0xFFB9F53E),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
