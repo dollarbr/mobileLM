@@ -20,7 +20,7 @@ class ModelView extends GetView<ModelController> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Models',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w700)),
         actions: [
           Obx(() {
             if (controller.modelScope.value != 'local') {
@@ -78,11 +78,11 @@ class ModelView extends GetView<ModelController> {
                     children: [
                       Text(
                         'LOCAL MODELS (${controller.filteredDisplayedModels.length})',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
                           color: Theme.of(context).hintColor,
-                          letterSpacing: 1.2,
+                          letterSpacing: 1.6,
                         ),
                       ),
                       InkWell(
@@ -218,18 +218,13 @@ class ModelView extends GetView<ModelController> {
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: selected == entry.key
-                        ? AppColors.primary.withValues(alpha: 0.18)
-                        : Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.5),
+                        ? AppColors.primary
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: selected == entry.key
-                          ? AppColors.primary.withValues(alpha: 0.3)
-                          : Theme.of(context)
-                              .dividerColor
-                              .withValues(alpha: 0.5),
+                          ? AppColors.primary
+                          : Theme.of(context).dividerColor.withValues(alpha: 0.5),
                     ),
                   ),
                   child: Row(
@@ -237,7 +232,7 @@ class ModelView extends GetView<ModelController> {
                     children: [
                       if (selected == entry.key) ...[
                         const Icon(Icons.check,
-                            size: 16, color: AppColors.primary),
+                            size: 16, color: AppColors.onVolt),
                         const SizedBox(width: 4),
                       ],
                       Text(
@@ -246,7 +241,7 @@ class ModelView extends GetView<ModelController> {
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           color: selected == entry.key
-                              ? AppColors.primary
+                              ? AppColors.onVolt
                               : Theme.of(context).hintColor,
                         ),
                       ),
@@ -2604,7 +2599,7 @@ class ModelView extends GetView<ModelController> {
           margin: const EdgeInsets.only(bottom: 12),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             side: BorderSide(
               color: isActive
                   ? AppColors.primary.withValues(alpha: 0.5)
@@ -2628,8 +2623,8 @@ class ModelView extends GetView<ModelController> {
                         children: [
                           Text(
                             model.name,
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 17,
                               fontWeight: FontWeight.w700,
                               color:
                                   Theme.of(context).colorScheme.onSurface,

@@ -32,7 +32,7 @@ if (file("google-services.json").exists()) {
 }
 
 android {
-    namespace = "com.orailnoor.mobilelm"
+    namespace = "com.dollarbr.mobilelm"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -47,7 +47,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.orailnoor.mobilelm"
+        applicationId = "com.dollarbr.mobilelm"
         minSdk = 28
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

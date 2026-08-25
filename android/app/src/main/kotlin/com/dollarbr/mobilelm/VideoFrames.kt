@@ -1,4 +1,4 @@
-package com.orailnoor.mobilelm
+package com.dollarbr.mobilelm
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever

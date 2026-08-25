@@ -293,15 +293,11 @@ class ChatView extends GetView<ChatController> {
         child: SingleChildScrollView(
       padding: const EdgeInsets.all(32),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Image.asset(
-          'assets/icons/appicon.png',
-          width: 120,
-          height: 120,
-        ),
+        const _BrandMark(size: 120),
         const SizedBox(height: 20),
         Text('Hello.',
-            style: GoogleFonts.inter(
-                fontSize: 32,
+            style: GoogleFonts.spaceGrotesk(
+                fontSize: 40,
                 fontWeight: FontWeight.w700,
                 color: isDark ? Colors.white : Colors.black)),
         const SizedBox(height: 6),
@@ -660,9 +656,9 @@ class ChatView extends GetView<ChatController> {
                   child: Container(
                 decoration: BoxDecoration(
                   color: isDark
-                      ? const Color(0xFF1C1C1E)
+                      ? const Color(0xFF1D2838)
                       : const Color(0xFFF2F2F7),
-                  borderRadius: BorderRadius.circular(22),
+                  borderRadius: BorderRadius.circular(26),
                 ),
                 child: TextField(
                   controller: controller.textController,
@@ -709,8 +705,8 @@ class ChatView extends GetView<ChatController> {
                   iconData = Icons.stop_rounded;
                   onTap = controller.toggleListening;
                 } else if (hasContent) {
-                  // Has text or attachment → blue send
-                  bgColor = _appleBlue(context);
+                  // Has text or attachment → Volt send with ink glyph
+                  bgColor = const Color(0xFFB9F53E);
                   iconData = Icons.arrow_upward_rounded;
                   onTap = controller.sendMessage;
                 } else {
@@ -737,9 +733,11 @@ class ChatView extends GetView<ChatController> {
                           ScaleTransition(scale: anim, child: child),
                       child: Icon(iconData,
                           key: ValueKey(iconData),
-                          color: (loading || listening || hasContent)
+                          color: (loading || listening)
                               ? Colors.white
-                              : Theme.of(context).hintColor,
+                              : hasContent
+                                  ? const Color(0xFF0B1018)
+                                  : Theme.of(context).hintColor,
                           size: iconData == Icons.mic_none_rounded ? 18 : 20),
                     ),
                   ),
@@ -755,9 +753,9 @@ class ChatView extends GetView<ChatController> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF131B27) : Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (_) => Container(
         constraints:
             BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
@@ -1481,4 +1479,40 @@ class _BlinkingCursorState extends State<_BlinkingCursor>
                     color: widget.color,
                     borderRadius: BorderRadius.circular(1)))));
   }
+}
+
+/// The mobileLM mark: a bolt with two thought sparks, drawn vectorially so it
+/// stays crisp at any size (replaces the old bitmap splash cube).
+class _BrandMark extends StatelessWidget {
+  final double size;
+  const _BrandMark({required this.size});
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        size: Size.square(size),
+        painter: _BrandMarkPainter(),
+      );
+}
+
+class _BrandMarkPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width / 100;
+    final bolt = Path()
+      ..moveTo(31.4 * s, 44.7 * s)
+      ..lineTo(54.1 * s, 20.5 * s)
+      ..lineTo(49.2 * s, 38.3 * s)
+      ..lineTo(67.0 * s, 38.3 * s)
+      ..lineTo(44.3 * s, 62.3 * s)
+      ..lineTo(49.2 * s, 44.7 * s)
+      ..close();
+    canvas.drawPath(bolt, Paint()..color = const Color(0xFFB9F53E));
+    canvas.drawCircle(Offset(78.5 * s, 19.9 * s), 2.7 * s,
+        Paint()..color = const Color(0xFF8B7CFF));
+    canvas.drawCircle(Offset(84.8 * s, 14.1 * s), 1.4 * s,
+        Paint()..color = const Color(0xFF8B7CFF));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

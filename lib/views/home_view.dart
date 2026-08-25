@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../controllers/home_controller.dart';
 import 'chat_view.dart';
 import 'model_view.dart';
-import 'server_view.dart';
 import 'settings_view.dart';
 
 class HomeView extends GetView<HomeController> {
@@ -20,10 +19,6 @@ class HomeView extends GetView<HomeController> {
         icon: Icons.arrow_downward_rounded,
         activeIcon: Icons.arrow_downward_rounded,
         label: 'Models'),
-    _NavItem(
-        icon: Icons.dns_outlined,
-        activeIcon: Icons.dns_rounded,
-        label: 'Server'),
     _NavItem(
         icon: Icons.settings_outlined,
         activeIcon: Icons.settings,
@@ -49,7 +44,6 @@ class HomeView extends GetView<HomeController> {
           children: const [
             ChatView(),
             ModelView(),
-            ServerView(),
             SettingsView()
           ],
         );
