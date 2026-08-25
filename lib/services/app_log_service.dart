@@ -205,7 +205,7 @@ class AppLogService extends GetxService {
         if (await previous.exists()) XFile(previous.path),
         XFile(file.path),
       ],
-      subject: 'privateLM logs',
+      subject: 'mobileLM logs',
     );
     return true;
   }

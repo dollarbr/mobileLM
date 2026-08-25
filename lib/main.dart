@@ -107,7 +107,7 @@ void main() {
     // Keep last model as a quick-load option, but do not auto-load on startup.
     _validateLastModel();
 
-    runApp(const PrivateLMApp());
+    runApp(const MobileLMApp());
 
     // Apply system UI after frame is rendered so Get.mediaQuery is available
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -191,8 +191,8 @@ void _autoConfigureForDevice() {
       'maxTokens=${device.recommendedMaxTokens} for ${device.totalRamGB.value.toStringAsFixed(1)}GB RAM');
 }
 
-class PrivateLMApp extends StatelessWidget {
-  const PrivateLMApp({super.key});
+class MobileLMApp extends StatelessWidget {
+  const MobileLMApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +201,7 @@ class PrivateLMApp extends StatelessWidget {
       final themeMode = settings.themeMode.value;
       final scale = settings.fontScale.value; // read here → Obx tracks it
       return GetMaterialApp(
-        title: 'PrivateLM',
+        title: 'mobileLM',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,

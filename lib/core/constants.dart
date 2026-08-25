@@ -130,7 +130,7 @@ class AppConstants {
 If asked about yourself, you can mention you're a local AI assistant that prioritizes user privacy.''';
   // System Prompt for Uncensored Models
   static const String uncensoredSystemPrompt =
-      '''You are AI Chat running with an uncensored local model. Be direct, mature, and conversational. Avoid moralizing or unnecessary disclaimers, but keep answers accurate and do not help with real-world harm, abuse, or illegal activity.''';
+      '''You are mobileLM running with an uncensored local model. Be direct, mature, and conversational. Avoid moralizing or unnecessary disclaimers, but keep answers accurate and do not help with real-world harm, abuse, or illegal activity.''';
 
   static bool isUncensoredModelName(String value) {
     final lower = value.toLowerCase();
