@@ -1680,6 +1680,16 @@ class SettingsView extends GetView<SettingsController> {
                     fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             ListTile(
+              leading: const Icon(Icons.settings_backup_restore_rounded),
+              title: const Text('Everything (configs + models)'),
+              subtitle: const Text(
+                  'Template first, then the files in the backup folder'),
+              onTap: () {
+                Navigator.pop(ctx);
+                mc.restoreEverything();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.settings_suggest_outlined),
               title: const Text('Configs template (.json)'),
               subtitle: const Text('Overwrites current settings'),

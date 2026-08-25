@@ -909,15 +909,8 @@ class ModelController extends GetxController {
     final path = result?.files.single.path;
     if (path == null) return;
     try {
-      final config =
-          jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
-      if (config['type'] != 'privatelm-config') {
-        throw Exception('Not a mobileLM config backup.');
-      }
-      final settingsCount = (config['settings'] as Map?)?.length ?? 0;
-      final confirmed = await _confirmRestore(settingsCount);
-      if (!confirmed) return;
-      await applyConfigTemplate(config);
+      final settingsCount = await _applyTemplateFile(File(path));
+      if (settingsCount < 0) return; // user cancelled the overwrite dialog
       Get.snackbar('Restore', 'Configs applied. Restart to fully reload.',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
@@ -929,6 +922,48 @@ class ModelController extends GetxController {
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
     }
+  }
+
+  /// One pass for a wiped install: config template first (so mmproj
+  /// associations and params land), then the model files, restart last.
+  Future<void> restoreEverything() async {
+    final log = Get.find<AppLogService>();
+    final result = await FilePicker.pickFiles(type: FileType.any);
+    final path = result?.files.single.path;
+    if (path == null) return;
+    try {
+      final settingsCount = await _applyTemplateFile(File(path));
+      if (settingsCount < 0) return; // user cancelled the overwrite dialog
+      final restored = await restoreModelsFromBackup();
+      Get.snackbar(
+          'Restore',
+          'Configs applied ($settingsCount value(s)) · '
+          '$restored model file(s) restored',
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 6));
+      final restart = await _askRestart();
+      if (restart) await _download.restartApp();
+    } catch (e) {
+      log.error('Restore failed', details: '$e');
+      Get.snackbar('Restore failed', '$e',
+          snackPosition: SnackPosition.BOTTOM,
+          duration: const Duration(seconds: 6));
+    }
+  }
+
+  /// Validates and applies a template file; returns how many settings it
+  /// carried. Shared by the configs-only and everything flows.
+  Future<int> _applyTemplateFile(File file) async {
+    final config =
+        jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    if (config['type'] != 'privatelm-config') {
+      throw Exception('Not a mobileLM config backup.');
+    }
+    final settingsCount = (config['settings'] as Map?)?.length ?? 0;
+    final confirmed = await _confirmRestore(settingsCount);
+    if (!confirmed) return -1;
+    await applyConfigTemplate(config);
+    return settingsCount;
   }
 
   Future<bool> _confirmRestore(int settingsCount) async {
