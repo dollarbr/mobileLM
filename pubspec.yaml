@@ -1,7 +1,7 @@
-name: privatelm
-description: AI Chat — Local/Cloud LLM Assistant
+name: privatelm # dart package name kept from the PrivateLM base — renaming means touching every import; revisit post-0.1
+description: mobileLM — local-first AI assistant with a native tool spine
 publish_to: "none"
-version: 1.0.9+9
+version: 0.1.0+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

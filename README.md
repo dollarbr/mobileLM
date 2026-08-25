@@ -9,7 +9,7 @@ mobileLM mixes the two halves of a pocket AI:
 
 Everything runs on-device by default. Cloud is opt-in.
 
-> Status: **bootstrap** — no app code yet. See [`docs/PLAN.md`](docs/PLAN.md) for the roadmap and [`docs/brand/`](docs/brand/) for the identity.
+> Status: **M1** — PrivateLM engine imported and rebranded; agent spine next. See [`docs/PLAN.md`](docs/PLAN.md) for the roadmap and [`docs/brand/`](docs/brand/) for the identity.
 
 ## Brand
 

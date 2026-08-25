@@ -1,4 +1,4 @@
-package com.orailnoor.privatelm
+package com.orailnoor.mobilelm
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever

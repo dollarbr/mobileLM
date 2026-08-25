@@ -94,7 +94,7 @@ class ChatBubble extends StatelessWidget {
                   visibleContent,
                   style: GoogleFonts.inter(
                     fontSize: 15,
-                    color: Colors.white,
+                    color: const Color(0xFF0B1018),
                     height: 1.45,
                     fontWeight: FontWeight.w400,
                   ),

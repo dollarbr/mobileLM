@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- bubble + bolt scaled into the adaptive safe zone -->
+    <group
+        android:scaleX="0.62"
+        android:scaleY="0.62"
+        android:pivotX="256"
+        android:pivotY="256">
+        <path
+            android:fillColor="#1D2838"
+            android:pathData="M148,320 Q138,392 92,430 Q170,416 240,332 Z" />
+        <path
+            android:fillColor="#1D2838"
+            android:pathData="M172,88 H340 A76,76 0 0 1 416,164 V260 A76,76 0 0 1 340,336 H172 A76,76 0 0 1 96,260 V164 A76,76 0 0 1 172,88 Z" />
+        <path
+            android:fillColor="#B9F53E"
+            android:pathData="M161,229 L277,105 L252,196 L343,196 L227,319 L252,229 Z" />
+        <path
+            android:fillColor="#8B7CFF"
+            android:pathData="M402,102 m-14,0 a14,14 0 1 1 28,0 a14,14 0 1 1 -28,0" />
+        <path
+            android:fillColor="#8B7CFF"
+            android:pathData="M434,72 m-7,0 a7,7 0 1 1 14,0 a7,7 0 1 1 -14,0" />
+    </group>
+</vector>

@@ -1,6 +1,6 @@
 {
-    "name": "PrivateLM",
-    "short_name": "PrivateLM",
+    "name": "mobileLM",
+    "short_name": "mobileLM",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

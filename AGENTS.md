@@ -5,8 +5,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 
 ## Estado atual
 
-M0 concluído: apenas docs + marca. **Ainda não existe código de app.**
-No M1 a codebase do PrivateLM entra neste repo — até lá, não criar scaffold Flutter à mão.
+M1 concluído no código: base PrivateLM importada e rebrandada (pacote com.orailnoor.mobilelm, ícone adaptativo bolha+raio, tema Ink/Volt). Validação final = CI verde.
 
 ## Regras herdadas (aprendidas nas sessões anteriores)
 
