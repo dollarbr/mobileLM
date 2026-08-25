@@ -186,7 +186,7 @@ class CloudService extends GetxService {
     if (_provider == 'openrouter') {
       return const {
         'HTTP-Referer': 'https://ai-chat.local',
-        'X-Title': 'AI Chat',
+        'X-Title': 'mobileLM',
       };
     }
     return const {};
@@ -468,7 +468,7 @@ class CloudService extends GetxService {
       maxTokens: maxTokens,
       extraHeaders: const {
         'HTTP-Referer': 'https://ai-chat.local',
-        'X-Title': 'AI Chat',
+        'X-Title': 'mobileLM',
       },
     );
   }

@@ -132,7 +132,7 @@ class ChatView extends GetView<ChatController> {
             model = '${settings.customCloudName.value}: $model';
         }
         final title = sid.isEmpty
-            ? 'PrivateLM'
+            ? 'mobileLM'
             : controller.sessions.firstWhereOrNull((s) => s.id == sid)?.title ??
                 'Chat';
         return Padding(

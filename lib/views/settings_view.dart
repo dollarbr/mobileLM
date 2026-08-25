@@ -211,7 +211,7 @@ class SettingsView extends GetView<SettingsController> {
                     Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('PrivateLM',
+                          Text('mobileLM',
                               style: GoogleFonts.inter(
                                   fontSize: 17, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 2),

@@ -891,7 +891,7 @@ class ModelController extends GetxController {
       final config =
           jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
       if (config['type'] != 'privatelm-config') {
-        throw Exception('Not a PrivateLM config backup.');
+        throw Exception('Not a mobileLM config backup.');
       }
       final settingsCount = (config['settings'] as Map?)?.length ?? 0;
       final confirmed = await _confirmRestore(settingsCount);
