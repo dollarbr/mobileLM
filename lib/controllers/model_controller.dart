@@ -325,7 +325,10 @@ class ModelController extends GetxController {
     final quant = _quantFromFilename(model.filename);
     int? ctx;
     try {
-      if (await _download.isModelDownloaded(model.filename)) {
+      // The native probe is GGUF-only — feeding it a .litertlm just makes
+      // llama.cpp complain about the magic bytes.
+      if (await _download.isModelDownloaded(model.filename) &&
+          isLlamaModel(model)) {
         final path = await _download.modelPath(model.filename);
         final meta = await LlamaModelMeta.probeFile(path);
         ctx = int.tryParse(meta['context_length'] ?? '');
