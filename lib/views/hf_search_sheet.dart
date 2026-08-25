@@ -105,11 +105,20 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
         limit: _pageSize,
       );
       if (!mounted) return;
-      final usable = _filters.pipelineTag.isNotEmpty
+      var usable = _filters.pipelineTag.isNotEmpty
           ? page
           : page
               .where((r) => HfSearchService.isRunnable(r.pipelineTag))
               .toList();
+      // Client-side substring gate — the hub API cannot do it.
+      if (_filters.nameQuery.isNotEmpty) {
+        final q = _filters.nameQuery.toLowerCase();
+        usable = usable
+            .where((r) =>
+                r.name.toLowerCase().contains(q) ||
+                r.owner.toLowerCase().contains(q))
+            .toList();
+      }
       setState(() {
         _busy = false;
         _loadingMore = false;
@@ -165,14 +174,36 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
   }
 
   /// The weights this phone has the memory to load, given the current filter.
+  ///
+  /// Two gates, both enforced while "Fits my device" is on:
+  ///  1. Hard parameter cap — anything advertising more than 7B in its name
+  ///     is out, no matter how aggressively it was quantized. MoE names list
+  ///     every count ("26B-A4B"), so taking the MAX of all matches keeps the
+  ///     total, which is what memory actually scales with.
+  ///  2. The RAM budget in bytes for files that advertise nothing parseable.
   List<HfFile> get _visibleFiles {
     if (!_filters.fitsDevice) return _files;
     final budget = _maxBytes;
-    if (budget <= 0) return _files;
-    return _files
-        .where((f) =>
-            f.sizeBytes + (f.recommendedProjector?.sizeBytes ?? 0) <= budget)
-        .toList();
+    return _files.where((f) {
+      final params = _maxAdvertisedParamB(f.filename);
+      if (params != null && params > 7) return false;
+      if (budget <= 0) return true;
+      return f.sizeBytes + (f.recommendedProjector?.sizeBytes ?? 0) <= budget;
+    }).toList();
+  }
+
+  static final RegExp _paramRe =
+      RegExp(r'(?:^|[^a-z0-9])(\d+(?:\.\d+)?)\s?b(?=[^a-z0-9]|$)');
+
+  /// Largest "NB" token in the filename (e.g. 1B, 3.2B, 26B), or null.
+  double? _maxAdvertisedParamB(String filename) {
+    final lower = filename.toLowerCase();
+    double? best;
+    for (final m in _paramRe.allMatches(lower)) {
+      final v = double.tryParse(m.group(1)!);
+      if (v != null && (best == null || v > best)) best = v;
+    }
+    return best;
   }
 
   int get _maxBytes {
@@ -543,9 +574,12 @@ class _FiltersSheetState extends State<_FiltersSheet> {
   late HfFilters _f = widget.initial;
   late final TextEditingController _author =
       TextEditingController(text: widget.initial.author);
+  late final TextEditingController _nameQuery =
+      TextEditingController(text: widget.initial.nameQuery);
 
   @override
   void dispose() {
+    _nameQuery.dispose();
     _author.dispose();
     super.dispose();
   }

@@ -53,6 +53,45 @@ class DownloadService extends GetxService with WidgetsBindingObserver {
     return await platform_dl.isModelDownloaded(await modelPath(filename));
   }
 
+  /// SAF directory picker for backups (persisted grant).
+  Future<String?> pickBackupDirectory() =>
+      platform_dl.pickBackupTree();
+
+  Future<bool> copyFromBackupDirectory({
+    required String treeUri,
+    required String name,
+    required String destPath,
+    String? subFolder,
+  }) =>
+      platform_dl.copyFromTree(
+          treeUri: treeUri, name: name, destPath: destPath, subFolder: subFolder);
+
+  Future<String?> ensureBackupPath({
+    required String treeUri,
+    required List<String> segments,
+  }) =>
+      platform_dl.ensureTreePath(treeUri: treeUri, segments: segments);
+
+  Future<List<Map<String, dynamic>>> walkBackupTree({
+    required String treeUri,
+    List<String> extensions = const ['.gguf', '.litertlm', '.safetensors'],
+  }) =>
+      platform_dl.listTreeRecursive(treeUri: treeUri, extensions: extensions);
+
+  Future<void> restartApp() => platform_dl.restartAppNow();
+
+  Future<int> copyToBackupDirectory({
+    required String treeUri,
+    required String name,
+    required String sourcePath,
+    String? parentDocUri,
+  }) =>
+      platform_dl.copyToBackupTree(
+          treeUri: treeUri,
+          name: name,
+          sourcePath: sourcePath,
+          parentDocUri: parentDocUri);
+
   Future<List<String>> getDownloadedModels() async {
     if (kIsWeb) return [];
     return await platform_dl.getDownloadedModels(await modelsDir);
@@ -81,6 +120,15 @@ class DownloadService extends GetxService with WidgetsBindingObserver {
       // Permanent channel progress listener
       const MethodChannel('com.aichat.ai_chat/model_import')
           .setMethodCallHandler((call) async {
+        if (call.method == 'backupProgress') {
+          final data = Map<String, dynamic>.from(call.arguments as Map);
+          try {
+            Get.find<ModelController>()
+                .onBackupProgress(filename: data['filename'] as String,
+                    copied: (data['copiedBytes'] as num).toInt());
+          } catch (_) {}
+          return;
+        }
         if (call.method == 'importProgress') {
           final data = Map<String, dynamic>.from(call.arguments as Map);
           final filename = data['filename'] as String;

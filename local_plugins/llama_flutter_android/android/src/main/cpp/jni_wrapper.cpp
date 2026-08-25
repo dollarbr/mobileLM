@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 #include <android/log.h>
 #include "llama.cpp/include/llama.h"
+#include "gguf.h"
 #include "llama.cpp/ggml/include/ggml-backend.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
@@ -599,9 +600,15 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeDrainL
     jobjectArray out = env->NewObjectArray(
         static_cast<jsize>(drained.size()), stringClass, nullptr);
     for (jsize i = 0; i < static_cast<jsize>(drained.size()); ++i) {
-        jstring line = env->NewStringUTF(drained[i].c_str());
-        // NewStringUTF returns null on malformed UTF-8; skip rather than
-        // hand the JVM a null element the Kotlin side would trip over.
+        // ggml/llama.cpp logs are raw C++ strings and routinely carry bytes
+        // that are not valid *Modified* UTF-8 (truncated multibyte tails,
+        // embedded NULs). NewStringUTF used to reject those by returning
+        // null; CheckJNI on current Android aborts the whole process instead,
+        // which is exactly how a debuggable build died while loading a model
+        // whose metadata logs such a byte. Sanitize first.
+        const std::string clean =
+            sanitizeUTF8(drained[i].c_str(), drained[i].size());
+        jstring line = env->NewStringUTF(clean.c_str());
         if (line == nullptr) {
             env->ExceptionClear();
             continue;
@@ -702,6 +709,21 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeSetMed
         env->DeleteLocalRef(item);
     }
     LOGI("Queued %zu media file(s) for the next generation", g_pending_media.size());
+}
+
+// Chat templates embed their own BOS when the model needs one; tokenizing that
+// with add_special=true produced two BOS tokens (check_double_bos_eos warning)
+// and measurably degraded Llama-3.x output. Skip add_special when the prompt
+// already opens with this vocab's BOS text.
+static bool prompt_already_has_bos(const llama_vocab* vocab,
+                                   const std::string& prompt) {
+    const llama_token bos = llama_vocab_bos(vocab);
+    if (bos == LLAMA_TOKEN_NULL) return false;
+    char piece[64] = {0};
+    const int n = llama_token_to_piece(vocab, bos, piece, sizeof(piece) - 1,
+                                       /*lstrip*/ 0, /*special*/ true);
+    if (n <= 0 || (size_t)n > prompt.size()) return false;
+    return prompt.compare(0, (size_t)n, piece, (size_t)n) == 0;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -829,7 +851,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
 
         mtmd_input_text text;
         text.text          = sanitized_prompt.c_str();
-        text.add_special   = true;
+        text.add_special   = !prompt_already_has_bos(g_vocab, sanitized_prompt);
         text.parse_special = true;
 
         std::vector<const mtmd_bitmap*> bitmap_ptrs(bitmaps.begin(), bitmaps.end());
@@ -904,9 +926,10 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
         // --- text-only prefill -------------------------------------------
         const char* sanitized_cstr = sanitized_prompt.c_str();
         const int sanitized_len = sanitized_prompt.length();
+        const bool add_special = !prompt_already_has_bos(g_vocab, sanitized_prompt);
 
         // Tokenize prompt - when tokens is NULL, llama_tokenize returns NEGATIVE count
-        const int n_prompt_tokens = -llama_tokenize(g_vocab, sanitized_cstr, sanitized_len, nullptr, 0, true, true);
+        const int n_prompt_tokens = -llama_tokenize(g_vocab, sanitized_cstr, sanitized_len, nullptr, 0, add_special, true);
         LOGI("Token count: %d", n_prompt_tokens);
 
         if (n_prompt_tokens <= 0) {
@@ -918,7 +941,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
             return;
         }
         std::vector<llama_token> tokens(n_prompt_tokens);
-        const int actual_tokens = llama_tokenize(g_vocab, sanitized_cstr, sanitized_len, tokens.data(), tokens.size(), true, true);
+        const int actual_tokens = llama_tokenize(g_vocab, sanitized_cstr, sanitized_len, tokens.data(), tokens.size(), add_special, true);
         if (actual_tokens < 0) {
             llama_batch_free(batch);
             jclass exception = env->FindClass("java/lang/RuntimeException");
@@ -1102,6 +1125,143 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
     
     llama_batch_free(batch);
     env->DeleteLocalRef(callbackClass);
+}
+
+// Reads one GGUF metadata key from the loaded model ("general.name",
+// sampler defaults embedded by some exporters, …). Empty string when absent.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGetMeta(
+    JNIEnv* env, jobject thiz, jstring key) {
+    if (!g_model) return env->NewStringUTF("");
+    const char* k = env->GetStringUTFChars(key, nullptr);
+    char buf[256] = {0};
+    const int32_t n =
+        llama_model_meta_val_str(g_model, k, buf, sizeof(buf) - 1);
+    env->ReleaseStringUTFChars(key, k);
+    if (n <= 0) return env->NewStringUTF("");
+    const std::string clean = sanitizeUTF8(buf, (size_t) n);
+    return env->NewStringUTF(clean.c_str());
+}
+
+// Reads a few header keys straight from an on-disk GGUF — no model load.
+// no_alloc skips the tensor blob, so a multi-GB file answers in milliseconds
+// and the model card can show facts the filename does not carry (the true
+// context window especially: "Q4_0" names never mention 32k). Newline-
+// separated key=value lines; empty string when the file is unreadable.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeProbeGgufFile(
+    JNIEnv* env, jobject thiz, jstring path) {
+    if (!path) return env->NewStringUTF("");
+    const char* p = env->GetStringUTFChars(path, nullptr);
+    const std::string file(p);
+    env->ReleaseStringUTFChars(path, p);
+
+    gguf_init_params params;
+    params.no_alloc = true;
+    params.ctx = nullptr;
+    gguf_context* gc = gguf_init_from_file(file.c_str(), params);
+    if (!gc) return env->NewStringUTF("");
+
+    auto str_kv = [&](const char* key) -> std::string {
+        const int64_t id = gguf_find_key(gc, key);
+        if (id < 0 || gguf_get_kv_type(gc, id) != GGUF_TYPE_STRING) return "";
+        return gguf_get_val_str(gc, id);
+    };
+    auto int_kv = [&](const std::string& key) -> uint64_t {
+        const int64_t id = gguf_find_key(gc, key.c_str());
+        if (id < 0) return 0;
+        switch (gguf_get_kv_type(gc, id)) {
+            case GGUF_TYPE_UINT32: return gguf_get_val_u32(gc, id);
+            case GGUF_TYPE_INT32:  return (uint64_t) gguf_get_val_i32(gc, id);
+            case GGUF_TYPE_UINT64: return gguf_get_val_u64(gc, id);
+            case GGUF_TYPE_INT64:  return (uint64_t) gguf_get_val_i64(gc, id);
+            default: return 0;
+        }
+    };
+
+    const std::string arch = str_kv("general.architecture");
+    std::string out = "arch=" + arch + "\n";
+    // Context length is keyed per architecture ("llama.context_length").
+    if (!arch.empty()) {
+        const uint64_t ctx = int_kv(arch + ".context_length");
+        if (ctx > 0) out += "context_length=" + std::to_string(ctx) + "\n";
+    }
+    const std::string label = str_kv("general.size_label");
+    if (!label.empty()) out += "size_label=" + label + "\n";
+    gguf_free(gc);
+
+    const std::string clean = sanitizeUTF8(out.data(), out.size());
+    return env->NewStringUTF(clean.c_str());
+}
+
+// Formats the conversation with the template embedded in the model's own GGUF
+// (tokenizer.chat_template), so every family — Llama-3, ChatML, Gemma, Qwen,
+// Mistral… — gets its real prompt shape instead of a name-sniffed guess.
+// Returns "" when the model ships no template; the caller falls back.
+// Parallel arrays rather than JSON keep a parser out of native code.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeApplyChatTemplate(
+    JNIEnv* env, jobject thiz, jobjectArray roles, jobjectArray contents) {
+
+    if (!g_model) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalStateException"),
+                      "Model not loaded");
+        return nullptr;
+    }
+
+    const jsize n = env->GetArrayLength(roles);
+    if (n == 0 || env->GetArrayLength(contents) != n) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                      "roles and contents must be non-empty and same length");
+        return nullptr;
+    }
+
+    const char* tmpl = llama_model_chat_template(g_model, nullptr);
+    if (tmpl == nullptr || tmpl[0] == '\0') {
+        LOGI("GGUF carries no chat template; caller will fall back");
+        return env->NewStringUTF("");
+    }
+
+    std::vector<llama_chat_message> msgs;
+    std::vector<std::string> owned;
+    owned.reserve(2 * (size_t)n);
+    for (jsize i = 0; i < n; i++) {
+        auto grab = [&](jobjectArray arr) {
+            jstring s = (jstring) env->GetObjectArrayElement(arr, i);
+            const char* c = env->GetStringUTFChars(s, nullptr);
+            owned.emplace_back(c ? c : "");
+            env->ReleaseStringUTFChars(s, c);
+            env->DeleteLocalRef(s);
+        };
+        grab(roles);
+        grab(contents);
+    }
+    for (size_t i = 0; i < (size_t)n; i++) {
+        msgs.push_back({owned[2 * i].c_str(), owned[2 * i + 1].c_str()});
+    }
+
+    size_t cap = 4096;
+    std::vector<char> buf(cap);
+    // Per the header: returns the total bytes needed when the buffer is too
+    // small, so grow to exactly that once instead of guessing twice.
+    int32_t rc = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(),
+                                           /*add_ass*/ true,
+                                           buf.data(), (int32_t) buf.size());
+    if (rc > (int32_t) buf.size()) {
+        cap = (size_t) rc + 1;
+        buf.resize(cap);
+        rc = llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true,
+                                       buf.data(), (int32_t) buf.size());
+    }
+    if (rc <= 0) {
+        LOGE("llama_chat_apply_template failed with code %d", rc);
+        return env->NewStringUTF("");
+    }
+
+    LOGI("Applied the model's own chat template (%zu chars)", (size_t) rc);
+    const std::string out =
+        sanitizeUTF8(buf.data(), (size_t) rc);
+    return env->NewStringUTF(out.c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL
