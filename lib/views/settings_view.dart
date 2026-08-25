@@ -17,6 +17,8 @@ import '../services/local_image_service.dart';
 import '../services/device_info_service.dart';
 import '../services/tools/builtin_tools.dart';
 import '../services/device_info_native.dart' as platform_info;
+import '../services/image_generation_notification_service.dart';
+import '../services/scheduled_task_service.dart';
 import '../ffi/sd_ffi_bindings.dart';
 import 'log_view.dart';
 
@@ -201,6 +203,25 @@ class SettingsView extends GetView<SettingsController> {
                 ),
               ]),
               const SizedBox(height: 10),
+              Obx(() {
+                final taskCount =
+                    Get.find<ScheduledTaskService>().tasks.length;
+                return _appleGroupedCard(context, isDark, children: [
+                  _appleListTile(
+                    context,
+                    isDark,
+                    leading: _iconBox(
+                        const Color(0xFF8B7CFF), Icons.schedule_rounded),
+                    title: 'Scheduled tasks',
+                    subtitle: taskCount == 0
+                        ? 'Daily prompts that run on their own'
+                        : '${taskCount} daily task${taskCount == 1 ? '' : 's'}',
+                    showDivider: false,
+                    onTap: () => _openScheduledTasksSheet(context, isDark),
+                  ),
+                ]);
+              }),
+              const SizedBox(height: 10),
               _sectionLabel(context, 'DIAGNOSTICS'),
               _appleGroupedCard(context, isDark, children: [
                 _appleListTile(
@@ -338,6 +359,163 @@ class SettingsView extends GetView<SettingsController> {
         decoration:
             BoxDecoration(color: color, borderRadius: BorderRadius.circular(7)),
         child: Icon(icon, size: 17, color: Colors.white));
+  }
+
+  void _openScheduledTasksSheet(BuildContext context, bool isDark) {
+    final service = Get.find<ScheduledTaskService>();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surface : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            20, 16, 20, 24 + MediaQuery.of(sheetCtx).viewInsets.bottom),
+        child: Obx(() => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Scheduled tasks',
+                    style: GoogleFonts.inter(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                if (service.tasks.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Text(
+                      'No tasks yet. A task runs its prompt every day at the '
+                      'chosen time with the model it was created with — even '
+                      'with the app closed — and posts the result here in chat.',
+                      style: GoogleFonts.inter(
+                          fontSize: 13, color: Colors.grey.shade500),
+                    ),
+                  ),
+                ...service.tasks.map((t) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(t.name,
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        'Daily ${t.hour.toString().padLeft(2, '0')}:'
+                        '${t.minute.toString().padLeft(2, '0')} · ${t.prompt}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: t.enabled,
+                            onChanged: (v) => service.setEnabled(t, v),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => service.remove(t.id),
+                          ),
+                        ],
+                      ),
+                    )),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: () async {
+                    final created = await _createScheduledTaskDialog(
+                        sheetCtx, service);
+                    if (created && sheetCtx.mounted) Navigator.pop(sheetCtx);
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('New daily task'),
+                ),
+              ],
+            )),
+      ),
+    );
+  }
+
+  Future<bool> _createScheduledTaskDialog(
+      BuildContext context, ScheduledTaskService service) async {
+    final nameCtl = TextEditingController();
+    final promptCtl = TextEditingController();
+    TimeOfDay time = const TimeOfDay(hour: 8, minute: 0);
+    var ok = false;
+    await showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (dlgCtx, setState) => AlertDialog(
+          title: const Text('New daily task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtl,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              TextField(
+                controller: promptCtl,
+                minLines: 3,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                    labelText: 'Prompt to run every day'),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.schedule_rounded),
+                title: Text(time.format(dlgCtx)),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                      context: dlgCtx, initialTime: time);
+                  if (picked != null) setState(() => time = picked);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (nameCtl.text.trim().isEmpty ||
+                    promptCtl.text.trim().isEmpty) return;
+                ok = true;
+                Navigator.pop(dlgCtx);
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!ok) return false;
+    final modelName = Get.find<InferenceService>().loadedModelName.value;
+    if (modelName.isEmpty) {
+      Get.snackbar('Scheduled tasks', 'Load a local model first.',
+          snackPosition: SnackPosition.BOTTOM);
+      return false;
+    }
+    try {
+      final modelPath =
+          await Get.find<DownloadService>().modelPath(modelName);
+      await service.add(
+        name: nameCtl.text.trim(),
+        prompt: promptCtl.text.trim(),
+        modelPath: modelPath,
+        hour: time.hour,
+        minute: time.minute,
+      );
+      // First run may need notification + battery exemptions.
+      await Get.find<ImageGenerationNotificationService>().ensurePermission();
+      Get.snackbar('Scheduled tasks', 'Task created.',
+          snackPosition: SnackPosition.BOTTOM);
+      return true;
+    } catch (e) {
+      Get.snackbar('Scheduled tasks', 'Failed: $e',
+          snackPosition: SnackPosition.BOTTOM);
+      return false;
+    }
   }
 
   Widget _sectionLabel(BuildContext context, String title) {

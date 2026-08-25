@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../services/video_contact_sheet.dart';
 import '../services/video_frames_service.dart';
@@ -20,6 +21,7 @@ import '../models/chat_message.dart';
 import '../models/chat_session.dart';
 import '../ffi/sd_ffi_bindings.dart';
 import '../services/hive_service.dart';
+import '../services/scheduled_task_service.dart';
 import '../services/inference_service.dart';
 import '../services/cloud_service.dart';
 import '../services/local_image_service.dart';
@@ -199,6 +201,31 @@ class ChatController extends GetxController {
     }
     _resetInferenceContext();
     _scrollToBottom(force: true);
+    _drainScheduledResults();
+  }
+
+  /// Scheduled-task outputs land here as assistant turns so the user finds
+  /// them inside normal conversation flow instead of a hidden drawer.
+  Future<void> _drainScheduledResults() async {
+    try {
+      final results =
+          await Get.find<ScheduledTaskService>().drainResults();
+      if (results.isEmpty) return;
+      for (final r in results) {
+        final when = DateFormat('d MMM, HH:mm').format(r.at);
+        final msg = ChatMessage(
+          id: r.id,
+          chatId: currentSessionId.value,
+          role: 'assistant',
+          content: '[⏰ ${r.taskName} · $when]\n\n${r.output}',
+        );
+        messages.add(msg);
+        _hive.saveMessage(msg.id, msg.toMap());
+      }
+      _scrollToBottom();
+    } catch (_) {
+      // Results stay undrained and surface next time; never break opening a chat.
+    }
   }
 
   void deleteChat(String sessionId) {

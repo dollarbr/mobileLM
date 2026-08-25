@@ -6,6 +6,8 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'scheduled_task_service.dart';
+
 class ImageGenerationNotificationService {
   static const int _progressNotificationId = 4201;
   static const int _foregroundNotificationId = 4202;
@@ -236,4 +238,8 @@ void imageGenerationBackgroundStart(ServiceInstance service) async {
   service.on('stopService').listen((event) {
     service.stopSelf();
   });
+
+  // Same isolate, same plugin registrations — the agent scheduler rides
+  // along with image generation's foreground service.
+  startSchedulerLoop(service);
 }
