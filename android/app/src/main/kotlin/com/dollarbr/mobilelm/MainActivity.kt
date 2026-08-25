@@ -177,7 +177,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "copyFromTree" -> {
                     val treeUri = call.argument<String>("treeUri")
-                    val subFolder = call.argument<String>("subFolder")
+                    val relativePath = call.argument<String>("relativePath")
                     val name = call.argument<String>("name")
                     val destPath = call.argument<String>("destPath")
                     if (treeUri.isNullOrBlank() || name.isNullOrBlank() || destPath.isNullOrBlank()) {
@@ -186,7 +186,7 @@ class MainActivity : FlutterActivity() {
                     }
                     thread(name = "restore-copy") {
                         try {
-                            val bytes = copyFromTree(Uri.parse(treeUri), subFolder, name, destPath)
+                            val bytes = copyFromTree(Uri.parse(treeUri), relativePath, name, destPath)
                             mainHandler.post { result.success(mapOf("bytes" to bytes)) }
                         } catch (e: Exception) {
                             mainHandler.post {
@@ -841,11 +841,49 @@ class MainActivity : FlutterActivity() {
         return out
     }
 
-    private fun copyFromTree(treeUri: Uri, subFolder: String?, name: String, destPath: String): Long {
-        val entries = listTreeSubFolder(treeUri, subFolder)
-        val docId = entries.firstOrNull { it["name"] == name }?.get("documentId") as? String
-            ?: throw IllegalStateException("$name not found in the backup.")
-        val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+    private fun copyFromTree(treeUri: Uri, relativePath: String?, name: String, destPath: String): Long {
+        // Walk the nested Vendor/Family folders from the walk's relative path;
+        // the file itself is its path's last segment.
+        var rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        val folders = relativePath?.split('/')
+            ?.dropLast(1)?.filter { it.isNotBlank() } ?: emptyList()
+        for (folder in folders) {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+            var next: String? = null
+            contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null, null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(1) == folder &&
+                        c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        next = c.getString(0)
+                        break
+                    }
+                }
+            }
+            rootId = next ?: throw IllegalStateException("Folder '$folder' not found in the backup.")
+        }
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+        var docId: String? = null
+        contentResolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null, null, null
+        )?.use { c ->
+            while (c.moveToNext()) {
+                if (c.getString(1) == name) {
+                    docId = c.getString(0)
+                    break
+                }
+            }
+        } ?: throw IllegalStateException("$name not found in the backup.")
+        val id = docId ?: throw IllegalStateException("$name not found in the backup.")
+        val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
         val dest = File(destPath); dest.parentFile?.mkdirs()
         val part = File(dest.parentFile, dest.name + ".restore.part")
         var copied = 0L

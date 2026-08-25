@@ -820,14 +820,36 @@ class ModelController extends GetxController {
       backupDoneFiles.value = 1;
 
       if (includeModels && modelFiles.isNotEmpty) {
-        final all = [
-          for (final name in modelFiles)
-            '${await _download.modelsDir}/$name',
-        ].where((p) => File(p).existsSync()).toList();
-        _fileSizes = {for (final p in all) p.split('/').last: File(p).lengthSync()};
+        // Projectors travel with their weights: a vision GGUF whose mmproj
+        // stayed home is a dead download on the far side. Each selected
+        // model silently drags its mmproj into the same Vendor/Family folder.
+        final allModels = [...availableModels, ...customModels];
+        final dir = await _download.modelsDir;
+        final entries = <(String, List<String>)>[];
+        final seenPaths = <String>{};
+        for (final name in modelFiles) {
+          final src = '$dir/$name';
+          if (!File(src).existsSync() || !seenPaths.add(src)) continue;
+          final segs = await classifyModelPath(src);
+          entries.add((src, segs));
+          final model = allModels
+              .where((m) => m.filename == name)
+              .firstOrNull;
+          if (model != null &&
+              model.needsMmproj &&
+              model.mmprojFilename.isNotEmpty) {
+            final mmSrc = '$dir/${model.mmprojFilename}';
+            if (File(mmSrc).existsSync() && seenPaths.add(mmSrc)) {
+              entries.add((mmSrc, segs));
+            }
+          }
+        }
+        _fileSizes = {
+          for (final (p, _) in entries) p.split('/').last: File(p).lengthSync()
+        };
         var offset = 0;
         _backupOffsets = {
-          for (final p in all)
+          for (final (p, _) in entries)
             p.split('/').last: (() {
               final o = offset;
               offset += File(p).lengthSync();
@@ -835,12 +857,11 @@ class ModelController extends GetxController {
             })(),
         };
         backupTotalBytes.value = offset;
-        backupTotalFiles.value = all.length + 1;
+        backupTotalFiles.value = entries.length + 1;
         var skipped = 0;
-        for (final src in all) {
+        for (final (src, segs) in entries) {
           final name = src.split('/').last;
           backupFile.value = name;
-          final segs = await classifyModelPath(src);
           final destDoc = await _download.ensureBackupPath(
               treeUri: treeUri, segments: segs);
           if (destDoc == null) {
@@ -979,11 +1000,17 @@ class ModelController extends GetxController {
     for (final entry in files) {
       final name = entry['name'] as String;
       final size = (entry['size'] as num?)?.toInt() ?? 0;
+      final relPath = entry['relativePath'] as String?;
       final dest = File('${dir.path}/$name');
       if (dest.existsSync() && dest.lengthSync() == size) continue;
       backupFile.value = name;
+      // The tree is Vendor/Family/file — resolve by the walk's relative path;
+      // a flat 'models' subfolder search never finds anything.
       final ok = await _download.copyFromBackupDirectory(
-          treeUri: treeUri, name: name, destPath: dest.path, subFolder: 'models');
+          treeUri: treeUri,
+          name: name,
+          destPath: dest.path,
+          relativePath: relPath);
       if (ok) restored++;
       backupDoneFiles.value = restored;
     }
