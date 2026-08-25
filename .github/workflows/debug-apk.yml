@@ -55,8 +55,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: privatelm-debug-apk
-          path: build/app/outputs/flutter-apk/PrivateLM-debug-*.apk
+          name: mobilelm-debug-apk
+          path: build/app/outputs/flutter-apk/mobilelm-debug-*.apk
           if-no-files-found: error
 
       - name: Upload native build logs on failure

@@ -63,9 +63,9 @@ jobs:
         run: |
           cd build/app/outputs/flutter-apk
           ls -1 # surfaces a naming mismatch here rather than in the mv below
-          mv app-arm64-v8a-release.apk    "PrivateLM-$TAG-arm64-v8a.apk"
-          mv app-armeabi-v7a-release.apk  "PrivateLM-$TAG-armeabi-v7a.apk"
-          ls -lh PrivateLM-*.apk
+          mv app-arm64-v8a-release.apk    "mobilelm-$TAG-arm64-v8a.apk"
+          mv app-armeabi-v7a-release.apk  "mobilelm-$TAG-armeabi-v7a.apk"
+          ls -lh mobilelm-*.apk
 
       - name: Generate release notes from commits
         env:
@@ -90,7 +90,7 @@ jobs:
           }
 
           {
-            printf '## PrivateLM %s\n\n' "$TAG"
+            printf '## mobileLM %s\n\n' "$TAG"
             section 'Features'    "$(log | grep -E '^feat(\([^)]*\))?!?:' | fmt)"
             section 'Fixes'       "$(log | grep -E '^fix(\([^)]*\))?!?:' | fmt)"
             section 'Build & CI'  "$(log | grep -E '^(ci|build|chore)(\([^)]*\))?!?:' | fmt)"
@@ -114,4 +114,4 @@ jobs:
         with:
           body_path: RELEASE_NOTES.md
           files: |
-            build/app/outputs/flutter-apk/PrivateLM-*.apk
+            build/app/outputs/flutter-apk/mobilelm-*.apk

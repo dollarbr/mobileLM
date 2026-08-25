@@ -1,4 +1,4 @@
-package com.orailnoor.privatelm
+package com.orailnoor.mobilelm
 
 import android.app.AlertDialog
 import android.app.AlarmManager
