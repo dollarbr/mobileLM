@@ -240,11 +240,7 @@ class AppTheme {
   }
 
   // Bubble colors
-  static Color userBubbleColor(BuildContext context) {
-    return Theme.of(context).brightness == Brightness.dark
-        ? const Color(0xFFB9F53E)
-        : const Color(0xFFB9F53E);
-  }
+  static Color userBubbleColor(BuildContext context) => AppColors.userBubble;
 
   static Color aiBubbleColor(BuildContext context) {
     return Theme.of(context).brightness == Brightness.dark

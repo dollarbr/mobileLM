@@ -13,9 +13,10 @@ import 'web_tools.dart';
 ///
 /// The offline three answer what a language model genuinely cannot know or
 /// reliably compute: the wall clock, arithmetic, and the hardware it runs on.
+/// The device pair (clipboard, haptics) and the share sheet stay permission-
+/// free; write-class tools ([ToolRisk.write]) pause for user confirmation.
 /// The two network tools are listed here too but each one is individually
-/// switchable in Settings, because turning them on is the moment a local-only
-/// app starts talking to the internet. Tools needing a runtime permission
+/// switchable in Settings. Tools needing a runtime permission
 /// (location, contacts, camera) are still not wired up.
 ///
 /// [enabled] filters by name; null means every tool. Pass the user's selection
