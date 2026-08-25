@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Flutter / Dart (M1)
+.dart_tool/
+.packages
+build/
+*.iml
+
+# Android
+android/.gradle/
+local.properties
+*.keystore
+key.properties
+
+# Secrets / agent notes
+.claude/
+.env
