@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import '../controllers/settings_controller.dart';
 import '../core/colors.dart';
+import 'server_view.dart';
 import '../core/constants.dart';
 import '../services/inference_service.dart';
 import '../controllers/model_controller.dart';
@@ -184,8 +185,18 @@ class SettingsView extends GetView<SettingsController> {
                   title: 'Logs',
                   subtitle: 'View errors, warnings, and debug details',
                   trailing: const Icon(Icons.chevron_right, size: 18),
-                  showDivider: false,
                   onTap: () => Get.to(() => const LogView()),
+                ),
+                _appleListTile(
+                  context,
+                  isDark,
+                  leading: _iconBox(
+                      const Color(0xFFB9F53E), Icons.dns_outlined),
+                  title: 'Local API Server',
+                  subtitle: 'OpenAI-compatible endpoint on this device',
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  showDivider: false,
+                  onTap: () => Get.to(() => const ServerView()),
                 ),
               ]),
               const SizedBox(height: 24),
@@ -217,8 +228,8 @@ class SettingsView extends GetView<SettingsController> {
                           const SizedBox(height: 2),
                           Text(
                               controller.appVersion.value.isEmpty
-                                  ? 'Version unavailable · by orailnoor'
-                                  : 'v${controller.appVersion.value} · by orailnoor',
+                                  ? 'Version unavailable · by dollarbr'
+                                  : 'v${controller.appVersion.value} · by dollarbr',
                               style: GoogleFonts.inter(
                                   fontSize: 13,
                                   color: Theme.of(context).hintColor)),
@@ -307,9 +318,10 @@ class SettingsView extends GetView<SettingsController> {
     return Padding(
       padding: const EdgeInsets.only(left: 16, bottom: 6),
       child: Text(title,
-          style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w400,
+          style: GoogleFonts.spaceGrotesk(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.4,
               color: Theme.of(context).hintColor)),
     );
   }
@@ -446,6 +458,17 @@ class SettingsView extends GetView<SettingsController> {
     final enabled = controller.toolsEnabled.value;
     final accent = isDark ? const Color(0xFFB9F53E) : AppColors.primary;
     final catalogue = buildDefaultToolRegistry().all.toList();
+    // Alphabetical for the local tools; read_url then web_search pinned last,
+    // with the custom-endpoint fields right under web_search.
+    final others = catalogue
+        .where((t) => t.name != 'web_search' && t.name != 'read_url')
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final ordered = [
+      ...others,
+      catalogue.firstWhere((t) => t.name == 'read_url'),
+      catalogue.firstWhere((t) => t.name == 'web_search'),
+    ];
     final on = controller.enabledTools;
 
     return _appleGroupedCard(context, isDark, children: [
@@ -462,25 +485,25 @@ class SettingsView extends GetView<SettingsController> {
         onTap: () => controller.setToolsEnabled(!enabled),
       ),
       if (enabled)
-        for (var i = 0; i < catalogue.length; i++)
+        for (var i = 0; i < ordered.length; i++)
           _appleListTile(
             context,
             isDark,
             leading: _iconBox(
-                catalogue[i].requiresNetwork ? AppColors.warning : accent,
-                catalogue[i].requiresNetwork
+                ordered[i].requiresNetwork ? AppColors.warning : accent,
+                ordered[i].requiresNetwork
                     ? Icons.public_rounded
                     : Icons.offline_bolt_rounded),
-            title: catalogue[i].name,
-            subtitle: catalogue[i].requiresNetwork
-                ? 'Needs internet — ${catalogue[i].description}'
-                : catalogue[i].description,
-            trailing: on.contains(catalogue[i].name)
+            title: ordered[i].name,
+            subtitle: ordered[i].requiresNetwork
+                ? 'Needs internet — ${ordered[i].description}'
+                : ordered[i].description,
+            trailing: on.contains(ordered[i].name)
                 ? Icon(Icons.check, size: 18, color: accent)
                 : null,
-            showDivider: i < catalogue.length - 1,
+            showDivider: i < ordered.length - 1,
             onTap: () => controller.toggleTool(
-                catalogue[i].name, !on.contains(catalogue[i].name)),
+                ordered[i].name, !on.contains(ordered[i].name)),
           ),
       if (enabled && on.contains('web_search'))
         _buildCustomSearchFields(context, isDark),
@@ -1405,13 +1428,14 @@ class SettingsView extends GetView<SettingsController> {
                 trailing: backing
                     ? null
                     : const Icon(Icons.chevron_right, size: 18),
-                showDivider: files.isNotEmpty,
+                showDivider: true,
                 onTap: backing
                     ? null
                     : () => _showBackupSheet(context),
               ),
-              if (files.isNotEmpty)
-                _appleListTile(
+              // Always offered: restoring a config backup into a fresh
+              // install is exactly when it is needed.
+              _appleListTile(
                   context,
                   isDark,
                   leading: _iconBox(

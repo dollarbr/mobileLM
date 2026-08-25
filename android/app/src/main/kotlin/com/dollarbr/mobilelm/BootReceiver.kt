@@ -1,4 +1,4 @@
-package com.orailnoor.mobilelm
+package com.dollarbr.mobilelm
 
 import android.content.BroadcastReceiver
 import android.content.Context

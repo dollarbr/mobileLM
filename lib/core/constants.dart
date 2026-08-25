@@ -98,10 +98,10 @@ class AppConstants {
 
   /// Which tools are ticked when the user first turns tools on. The offline
   /// three only — a local-first app does not reach the network by default.
+  /// Only the network pair ships enabled: they are the tools a chat model
+  /// actually needs, and each one is individually reviewable. Everything else
+  /// waits for an explicit opt-in in Settings.
   static const List<String> defaultEnabledTools = [
-    'get_datetime',
-    'calculate',
-    'get_device_info',
     'web_search',
     'read_url',
   ];
@@ -117,7 +117,7 @@ class AppConstants {
   static const int defaultImageGenGpuGuardMb = 2048; // 2 GB — no warning at this value
   static const int defaultImageGenSize = 0; // 0 = Auto recommended
   static const double defaultFontScale =
-      1.00; // 5th slider stop — the largest still labelled "Recommended"
+      1.10; // first slider stop labelled "Large" — the new out-of-box size
 
   // System Prompt (compact for small context models) — same default as OGAM.
   static const String systemPrompt =

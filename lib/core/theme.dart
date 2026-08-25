@@ -56,9 +56,9 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.inter(
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
+        titleTextStyle: GoogleFonts.spaceGrotesk(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
           color: textPrimary,
         ),
         iconTheme: IconThemeData(color: isDark ? const Color(0xFFB9F53E) : AppColors.primary),
@@ -71,7 +71,7 @@ class AppTheme {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           side: BorderSide(color: separator, width: 0.5),
         ),
       ),
@@ -93,15 +93,15 @@ class AppTheme {
         fillColor: surfaceHigh,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: isDark ? const Color(0xFFB9F53E) : AppColors.primary, width: 1),
         ),
         hintStyle: GoogleFonts.inter(color: textMuted, fontSize: 15),
@@ -201,12 +201,12 @@ class AppTheme {
       dividerTheme: DividerThemeData(color: separator, thickness: 0.5),
       dialogTheme: DialogThemeData(
         backgroundColor: isDark ? const Color(0xFF1D2838) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         titleTextStyle: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: textPrimary),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: isDark ? const Color(0xFF131B27) : Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: isDark ? const Color(0xFFB9F53E) : AppColors.primary,
