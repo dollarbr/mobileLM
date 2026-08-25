@@ -105,6 +105,13 @@ class AppConstants {
     'web_search',
     'read_url',
   ];
+
+  static const String keyAgentMaxHops = 'agent_max_hops';
+
+  /// Tool round-trips per message. 1 = the classic single hop (a small model
+  /// handed its own tool output loops forever); the agent toggle raises it.
+  static const int defaultAgentMaxHops = 1;
+  static const int maxAgentHopsCap = 8;
   static const int defaultImageSteps = 8;
   static const bool defaultImageGenForceCpu = true;
   /// 0 = half the cores. See the thread-tuning note in inference_android.dart.

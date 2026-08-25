@@ -57,6 +57,9 @@ class SettingsController extends GetxController {
   final toolsEnabled = AppConstants.defaultToolsEnabled.obs;
   final enabledTools = AppConstants.defaultEnabledTools.toSet().obs;
 
+  /// Tool round-trips allowed per message (agent depth). 1 = single hop.
+  final agentMaxHops = AppConstants.defaultAgentMaxHops.obs;
+
   /// Optional search endpoint. Empty means web_search uses the scrape chain.
   final customSearchUrl = ''.obs;
   final customSearchToken = ''.obs;
@@ -281,6 +284,9 @@ class SettingsController extends GetxController {
     fontScale.value = _hive.getSetting(AppConstants.keyFontScale,
             defaultValue: AppConstants.defaultFontScale) ??
         AppConstants.defaultFontScale;
+    agentMaxHops.value = _hive.getSetting(AppConstants.keyAgentMaxHops,
+            defaultValue: AppConstants.defaultAgentMaxHops) ??
+        AppConstants.defaultAgentMaxHops;
 
     // Sync controllers with loaded values
     openaiKeyController.text = openaiKey.value;
@@ -942,6 +948,13 @@ class SettingsController extends GetxController {
   Future<void> setToolsEnabled(bool enabled) async {
     toolsEnabled.value = enabled;
     await _hive.setSetting(AppConstants.keyToolsEnabled, enabled);
+  }
+
+  /// Agent depth: how many tool round-trips one message may take.
+  Future<void> setAgentMaxHops(int hops) async {
+    final v = hops.clamp(1, AppConstants.maxAgentHopsCap);
+    agentMaxHops.value = v;
+    await _hive.setSetting(AppConstants.keyAgentMaxHops, v);
   }
 
   /// Tick or untick one tool. The master [toolsEnabled] switch still gates all
