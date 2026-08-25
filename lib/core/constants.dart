@@ -48,6 +48,11 @@ class AppConstants {
       'litert_gpu_warning_accepted';
   static const String keyLiteRtGpuLoadPending = 'litert_gpu_load_pending';
   static const String keyLiteRtGpuCrashDetected = 'litert_gpu_crash_detected';
+  /// Per-model Auto Fast benchmark verdicts. Key = prefix + 'name:bytes',
+  /// value = 'cpu' | 'gpu'. Measured once, reused on every later load.
+  static const String autoFastBenchKeyPrefix = 'auto_fast_bench_';
+  /// Same scheme for the vision projector backend ('cpu' | 'gpu').
+  static const String visionBenchKeyPrefix = 'vision_bench_';
   static const String keyImageModelPath = 'image_model_path';
   static const String keyImageModelName = 'image_model_name';
   static const String keyTemperature = 'temperature';
@@ -65,19 +70,31 @@ class AppConstants {
   static const String keyImageGenSize = 'image_gen_size';
   static const String keyImageGenQuantization = 'image_gen_quantization';
   static const String keyFontScale = 'font_scale';
+  static const String keyTopP = 'top_p';
+  static const String keyTopK = 'top_k';
+  static const String keyMinP = 'min_p';
+  static const String keyRepeatPenalty = 'repeat_penalty';
+  /// Per-model parameter overrides captured from GGUF metadata.
+  static const String modelParamsKeyPrefix = 'model_params_';
+  /// Persisted SAF tree URI for the models backup destination.
+  static const String keyBackupTreeUri = 'backup_tree_uri';
 
   // Default Model Config
-  static const double defaultTemperature = 0.7;
+  static const double defaultTemperature = 0.20;
   static const int defaultMaxTokens = 1024;
-  static const int defaultContextSize = 2048;
+  static const int defaultContextSize = 4096;
   static const String defaultLiteRtPerformanceMode = 'auto_fast';
+
+  /// Hard context ceiling for LiteRT models: the GPU driver OOMs above it.
+  /// inference_service clamps the dialog value to this; the model card
+  /// states it, because .litertlm headers carry no context field of their own.
+  static const int liteRtContextCap = 4096;
 
   /// 'auto' leaves the model to its own habits; 'on'/'off' send the soft switch.
   static const String defaultThinkingMode = 'auto';
 
-  /// Off by default: the tool catalogue costs context on every turn, and a small
-  /// model that has never been trained for tools answers worse with it present.
-  static const bool defaultToolsEnabled = false;
+  /// On by default with the offline trio plus the two web tools pre-ticked.
+  static const bool defaultToolsEnabled = true;
 
   /// Which tools are ticked when the user first turns tools on. The offline
   /// three only — a local-first app does not reach the network by default.
@@ -85,8 +102,10 @@ class AppConstants {
     'get_datetime',
     'calculate',
     'get_device_info',
+    'web_search',
+    'read_url',
   ];
-  static const int defaultImageSteps = 1;
+  static const int defaultImageSteps = 8;
   static const bool defaultImageGenForceCpu = true;
   /// 0 = half the cores. See the thread-tuning note in inference_android.dart.
   static const int defaultCpuThreads = 0;
@@ -95,15 +114,20 @@ class AppConstants {
   /// falls back per-op for the ViT, so the "GPU" path spends its time copying
   /// tensors. Switchable in Settings, because this is a per-driver fact.
   static const bool defaultMmprojForceCpu = true;
-  static const int defaultImageGenGpuGuardMb = 1843; // 1.8 GB
+  static const int defaultImageGenGpuGuardMb = 2048; // 2 GB — no warning at this value
   static const int defaultImageGenSize = 0; // 0 = Auto recommended
   static const double defaultFontScale =
-      0.95; // 4th slider stop, "Small" default
+      1.00; // 5th slider stop — the largest still labelled "Recommended"
 
-  // System Prompt (compact for small context models)
+  // System Prompt (compact for small context models) — same default as OGAM.
   static const String systemPrompt =
-      '''You are AI Chat, a helpful and friendly assistant. Be concise, accurate, and conversational. Answer questions directly without unnecessary preamble.''';
+      '''You are a helpful AI assistant running locally on the user's device. Your responses should be:
+- Accurate and factual - never make up information
+- Concise but complete - answer the question fully without unnecessary elaboration
+- Helpful and friendly - focus on solving the user's actual need
+- Honest about limitations - if you don't know something, say so
 
+If asked about yourself, you can mention you're a local AI assistant that prioritizes user privacy.''';
   // System Prompt for Uncensored Models
   static const String uncensoredSystemPrompt =
       '''You are AI Chat running with an uncensored local model. Be direct, mature, and conversational. Avoid moralizing or unnecessary disclaimers, but keep answers accurate and do not help with real-world harm, abuse, or illegal activity.''';

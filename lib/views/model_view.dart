@@ -2454,6 +2454,97 @@ class ModelView extends GetView<ModelController> {
     );
   }
 
+  /// Vision pairing for one model: pick a projector from device storage,
+  /// reuse one already in the models dir, or unpair.
+  void _showVisionSheet(BuildContext context, AiModel model) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final current = controller.mmprojRefFor(model.filename);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor:
+          isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Vision · ${model.name}',
+                style: GoogleFonts.inter(
+                    fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              current == null
+                  ? 'No projector paired'
+                  : 'Paired: ${current.split("/").last}',
+              style: GoogleFonts.inter(
+                  fontSize: 13, color: Theme.of(context).hintColor),
+            ),
+            const SizedBox(height: 14),
+            ListTile(
+              leading: const Icon(Icons.folder_open_rounded),
+              title: const Text('Pick from device storage'),
+              subtitle: const Text('Copies the file into the models folder'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await controller.importMmprojFor(model.filename);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cloud_download_rounded),
+              title: const Text('From Hugging Face'),
+              subtitle:
+                  const Text('Download the mmproj via the HF search, then pair it here'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final downloaded = await controller.downloadedMmprojCandidates();
+                if (!context.mounted) return;
+                if (downloaded.isEmpty) {
+                  Get.snackbar('Vision',
+                      'No mmproj file found in the models folder yet. Open HF search, download the projector for this repo, come back here.',
+                      snackPosition: SnackPosition.BOTTOM,
+                      duration: const Duration(seconds: 6));
+                  return;
+                }
+                _pickDownloadedMmproj(context, model, downloaded);
+              },
+            ),
+            if (current != null)
+              ListTile(
+                leading: const Icon(Icons.link_off_rounded),
+                title: const Text('Unpair'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await controller.setMmprojOverride(model.filename, null);
+                },
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _pickDownloadedMmproj(BuildContext context, AiModel model,
+      List<String> candidates) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: ListView(shrinkWrap: true, children: [
+          for (final path in candidates)
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(path.split('/').last),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await controller.setMmprojOverride(
+                    model.filename, path.split('/').last);
+              },
+            ),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildModelCard(BuildContext context, AiModel model) {
     return Obx(() {
       final isDownloaded = controller.isDownloaded(model.filename);
@@ -2562,7 +2653,8 @@ class ModelView extends GetView<ModelController> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            controller.modelSizeLabel(model),
+                            controller.modelSpecLine(
+                                model, controller.modelSizeLabel(model)),
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               color: Theme.of(context).hintColor,
@@ -2605,6 +2697,24 @@ class ModelView extends GetView<ModelController> {
                                             : 'Load',
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Vision (mmproj) pairing',
+                              onPressed: disableActions
+                                  ? null
+                                  : () => _showVisionSheet(context, model),
+                              icon: Icon(
+                                controller.mmprojRefFor(model.filename) !=
+                                        null
+                                    ? Icons.visibility_rounded
+                                    : Icons.visibility_outlined,
+                                size: 20,
+                                color:
+                                    controller.mmprojRefFor(model.filename) !=
+                                            null
+                                        ? AppColors.success
+                                        : Theme.of(context).hintColor,
                               ),
                             ),
                             IconButton(

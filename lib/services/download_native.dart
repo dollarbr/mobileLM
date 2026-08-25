@@ -234,3 +234,102 @@ Future<List<Map<String, dynamic>>> getActiveNativeDownloads() async {
     return [];
   }
 }
+
+// ── SAF backup (scoped-storage safe) ─────────────────────────────────────
+
+/// Opens the system folder picker and returns the granted tree URI, or null
+/// on cancel. The grant is persistable: pick once, reuse forever.
+Future<String?> pickBackupTree() async {
+  if (!Platform.isAndroid) return null;
+  try {
+    return await _channel.invokeMethod<String>('pickBackupTree');
+  } catch (e) {
+    print('[DownloadNative] pickBackupTree failed: $e');
+    rethrow;
+  }
+}
+
+/// Copy result: 0 = failed, 1 = copied, 2 = skipped (identical already there).
+Future<int> copyToBackupTree({
+  required String treeUri,
+  required String name,
+  required String sourcePath,
+  String? parentDocUri,
+}) async {
+  if (!Platform.isAndroid) return 0;
+  try {
+    final res = await _channel.invokeMapMethod<String, dynamic>('copyToTree', {
+      'treeUri': treeUri,
+      'name': name,
+      'sourcePath': sourcePath,
+      'parentDocUri': parentDocUri,
+    });
+    if (res?['skipped'] == true) return 2; // already identical on destination
+    return 1;
+  } catch (e) {
+    print('[DownloadNative] copyToTree($name) failed: $e');
+    return 0;
+  }
+}
+
+Future<bool> copyFromTree({
+  required String treeUri,
+  required String name,
+  required String destPath,
+  String? subFolder,
+}) async {
+  if (!Platform.isAndroid) return false;
+  try {
+    await _channel.invokeMethod<dynamic>('copyFromTree', {
+      'treeUri': treeUri,
+      'subFolder': subFolder,
+      'name': name,
+      'destPath': destPath,
+    });
+    return true;
+  } catch (e) {
+    print('[DownloadNative] copyFromTree($name) failed: $e');
+    return false;
+  }
+}
+
+Future<void> restartAppNow() async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _channel.invokeMethod<dynamic>('restartApp');
+  } catch (_) {}
+}
+
+/// Ensures a nested folder path exists inside the granted tree; returns leaf.
+Future<String?> ensureTreePath({
+  required String treeUri,
+  required List<String> segments,
+}) async {
+  if (!Platform.isAndroid) return null;
+  try {
+    return await _channel.invokeMethod<String>('ensureTreePath', {
+      'treeUri': treeUri,
+      'segments': segments,
+    });
+  } catch (e) {
+    print('[DownloadNative] ensureTreePath failed: $e');
+    return null;
+  }
+}
+
+/// Every model file anywhere inside the granted tree (settings/ skipped).
+Future<List<Map<String, dynamic>>> listTreeRecursive({
+  required String treeUri,
+  required List<String> extensions,
+}) async {
+  if (!Platform.isAndroid) return [];
+  try {
+    final result = await _channel.invokeListMethod<dynamic>(
+        'listTreeRecursive', {'treeUri': treeUri, 'extensions': extensions});
+    if (result == null) return [];
+    return result.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  } catch (e) {
+    print('[DownloadNative] listTreeRecursive failed: $e');
+    return [];
+  }
+}

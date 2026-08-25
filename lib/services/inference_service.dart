@@ -117,7 +117,7 @@ class InferenceService extends GetxService {
           AppConstants.defaultContextSize;
 
       final finalContextSize =
-          isLiteRt ? contextSize.clamp(512, 4096) : contextSize;
+          isLiteRt ? contextSize.clamp(512, AppConstants.liteRtContextCap) : contextSize;
 
       final lastLoadedContext =
           _hive.getSetting<int>('last_loaded_context_size') ?? 0;
