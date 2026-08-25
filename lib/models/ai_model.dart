@@ -115,3 +115,23 @@ class AiModel {
     );
   }
 }
+
+/// What the model card can state about a model beyond its file size.
+/// GGUF fields come from the file's own header; LiteRT files carry no such
+/// header, so only what is true by construction (the app-wide context cap)
+/// or readable from the filename lands here.
+class ModelSpec {
+  /// Parameter count as advertised, e.g. `1.6B` or `E2B`.
+  final String? paramsLabel;
+
+  /// Maximum context window in tokens.
+  final int? contextLength;
+
+  /// Quantization tag from the filename, e.g. `Q4_0`.
+  final String? quantLabel;
+
+  const ModelSpec({this.paramsLabel, this.contextLength, this.quantLabel});
+
+  bool get isEmpty =>
+      paramsLabel == null && contextLength == null && quantLabel == null;
+}

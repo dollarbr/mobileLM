@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Environment
 import android.provider.OpenableColumns
+import android.provider.DocumentsContract
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -25,12 +26,14 @@ class MainActivity : FlutterActivity() {
     private val importChannelName = "com.aichat.ai_chat/model_import"
     private val mediaChannelName = "com.aichat.ai_chat/media"
     private val importRequestCode = 4207
+    private val backupTreeRequestCode = 4208
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var importChannel: MethodChannel? = null
     private var mediaChannel: MethodChannel? = null
     private var pendingImportResult: MethodChannel.Result? = null
     private var pendingModelsDir: String? = null
+    private var pendingBackupResult: MethodChannel.Result? = null
     private val monitoredInAppDownloads = ConcurrentHashMap.newKeySet<Long>()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -123,6 +126,114 @@ class MainActivity : FlutterActivity() {
                         } catch (e: java.lang.Exception) {
                             mainHandler.post {
                                 result.error("QUERY_FAILED", e.message ?: e.toString(), null)
+                            }
+                        }
+                    }
+                }
+                // Scoped storage: writes outside app dirs only work through a
+                // SAF directory grant. The tree URI is persisted, so the user
+                // picks the backup folder once and every later backup goes
+                // straight to it.
+                "pickBackupTree" -> {
+                    if (pendingBackupResult != null) {
+                        result.error("BACKUP_BUSY", "A folder pick is already running.", null)
+                        return@setMethodCallHandler
+                    }
+                    pendingBackupResult = result
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                                 Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                    }
+                    startActivityForResult(intent, backupTreeRequestCode)
+                }
+                "copyToTree" -> {
+                    val treeUri = call.argument<String>("treeUri")
+                    val name = call.argument<String>("name")
+                    val srcPath = call.argument<String>("sourcePath")
+                    val parentDocUri = call.argument<String>("parentDocUri")
+                    if (treeUri.isNullOrBlank() || name.isNullOrBlank() || srcPath.isNullOrBlank()) {
+                        result.error("INVALID_BACKUP", "treeUri, name and sourcePath are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    thread(name = "backup-copy") {
+                        try {
+                            val parent = if (parentDocUri.isNullOrBlank()) null else Uri.parse(parentDocUri)
+                            val bytes = copyFileToTree(Uri.parse(treeUri), name, srcPath, parent)
+                            // -1 means an identical file is already there.
+                            mainHandler.post {
+                                result.success(mapOf(
+                                    "bytes" to if (bytes < 0) 0 else bytes,
+                                    "skipped" to (bytes < 0)
+                                ))
+                            }
+                        } catch (e: Exception) {
+                            mainHandler.post {
+                                result.error("COPY_FAILED", e.message ?: e.toString(), null)
+                            }
+                        }
+                    }
+                }
+                "copyFromTree" -> {
+                    val treeUri = call.argument<String>("treeUri")
+                    val subFolder = call.argument<String>("subFolder")
+                    val name = call.argument<String>("name")
+                    val destPath = call.argument<String>("destPath")
+                    if (treeUri.isNullOrBlank() || name.isNullOrBlank() || destPath.isNullOrBlank()) {
+                        result.error("INVALID_RESTORE", "treeUri, name and destPath are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    thread(name = "restore-copy") {
+                        try {
+                            val bytes = copyFromTree(Uri.parse(treeUri), subFolder, name, destPath)
+                            mainHandler.post { result.success(mapOf("bytes" to bytes)) }
+                        } catch (e: Exception) {
+                            mainHandler.post {
+                                result.error("RESTORE_COPY_FAILED", e.message ?: e.toString(), null)
+                            }
+                        }
+                    }
+                }
+                // Nested path creation following the user's on-disk layout,
+                // e.g. LLMs/Google/Gemma3 — missing levels are created.
+                "ensureTreePath" -> {
+                    val treeUri = call.argument<String>("treeUri")
+                    @Suppress("UNCHECKED_CAST")
+                    val segments = call.argument<List<String>>("segments") ?: emptyList()
+                    if (treeUri.isNullOrBlank() || segments.isEmpty()) {
+                        result.error("INVALID_PATH", "treeUri and segments are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    thread(name = "backup-mkdir-path") {
+                        try {
+                            val doc = ensureTreePath(Uri.parse(treeUri), segments)
+                            mainHandler.post { result.success(doc?.toString()) }
+                        } catch (e: Exception) {
+                            mainHandler.post {
+                                result.error("PATH_FAILED", e.message ?: e.toString(), null)
+                            }
+                        }
+                    }
+                }
+                "listTreeRecursive" -> {
+                    val treeUri = call.argument<String>("treeUri")
+                    val extensions = call.argument<List<String>>("extensions") ?: emptyList()
+                    if (treeUri.isNullOrBlank()) {
+                        result.error("INVALID_LIST", "treeUri is required.", null)
+                        return@setMethodCallHandler
+                    }
+                    thread(name = "backup-walk") {
+                        try {
+                            val items = listTreeRecursive(
+                                Uri.parse(treeUri),
+                                extensions.map { it.lowercase() }.toSet(),
+                                mutableListOf("settings")
+                            )
+                            mainHandler.post { result.success(items) }
+                        } catch (e: Exception) {
+                            mainHandler.post {
+                                result.error("LIST_FAILED", e.message ?: e.toString(), null)
                             }
                         }
                     }
@@ -485,6 +596,27 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == backupTreeRequestCode) {
+            val res = pendingBackupResult
+            pendingBackupResult = null
+            val treeUri = data?.data
+            if (resultCode != RESULT_OK || treeUri == null) {
+                res?.success(null)
+                return
+            }
+            try {
+                contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                )
+            } catch (_: Exception) {
+                // Grant may be one-shot on some providers; copying still works this session.
+            }
+            res?.success(treeUri.toString())
+            return
+        }
+
         if (requestCode != importRequestCode) return
 
         if (resultCode != RESULT_OK || data?.data == null) {
@@ -655,6 +787,247 @@ class MainActivity : FlutterActivity() {
                 }
             }
         return -1L
+    }
+
+    /// Copies [srcPath] into the SAF directory tree at [treeUri] under [name],
+    /// replacing any previous document of the same display name.
+    private fun resolveParentInTree(treeUri: Uri, parentDocUri: Uri?): Pair<Uri, String> {
+        return if (parentDocUri != null) {
+            parentDocUri to DocumentsContract.getDocumentId(parentDocUri)
+        } else {
+            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+            DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId) to rootId
+        }
+    }
+
+    private fun listTreeSubFolder(treeUri: Uri, subFolder: String?): List<Map<String, Any>> {
+        var rootId = DocumentsContract.getTreeDocumentId(treeUri)
+        if (!subFolder.isNullOrBlank()) {
+            // Find the child directory id by walking one level.
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+            contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null, null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(1) == subFolder &&
+                        c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        rootId = c.getString(0)
+                        break
+                    }
+                }
+            }
+        }
+        val out = mutableListOf<Map<String, Any>>()
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+        contentResolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_SIZE),
+            null, null, null
+        )?.use { c ->
+            while (c.moveToNext()) {
+                out.add(mapOf(
+                    "documentId" to c.getString(0),
+                    "name" to (c.getString(1) ?: ""),
+                    "size" to (c.getLong(2))
+                ))
+            }
+        }
+        return out
+    }
+
+    private fun copyFromTree(treeUri: Uri, subFolder: String?, name: String, destPath: String): Long {
+        val entries = listTreeSubFolder(treeUri, subFolder)
+        val docId = entries.firstOrNull { it["name"] == name }?.get("documentId") as? String
+            ?: throw IllegalStateException("$name not found in the backup.")
+        val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+        val dest = File(destPath); dest.parentFile?.mkdirs()
+        val part = File(dest.parentFile, dest.name + ".restore.part")
+        var copied = 0L
+        contentResolver.openInputStream(docUri)?.use { input ->
+            part.outputStream().use { output ->
+                val buffer = ByteArray(1024 * 1024)
+                while (true) {
+                    val r = input.read(buffer)
+                    if (r <= 0) break
+                    output.write(buffer, 0, r)
+                    copied += r
+                }
+            }
+        } ?: throw IllegalStateException("Could not open the backup file.")
+        if (dest.exists()) dest.delete()
+        if (!part.renameTo(dest)) throw IllegalStateException("Could not finalize the restored file.")
+        return copied
+    }
+
+    private fun copyFileToTree(treeUri: Uri, name: String, srcPath: String, parentDocUri: Uri?): Long {
+        val (rootUri, rootId) = resolveParentInTree(treeUri, parentDocUri)
+
+        var existingId: String? = null
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootId)
+        contentResolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null, null, null
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                if (cursor.getString(1) == name) {
+                    existingId = cursor.getString(0)
+                    break
+                }
+            }
+        }
+        val sourceLength = File(srcPath).length()
+        if (existingId != null) {
+            var existingSize = -1L
+            contentResolver.query(
+                DocumentsContract.buildDocumentUriUsingTree(treeUri, existingId!!),
+                arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+                null, null, null
+            )?.use { c ->
+                if (c.moveToFirst()) existingSize = c.getLong(0)
+            }
+            // Same name AND same byte size: treat as already backed up.
+            // Reading both sides for a real hash would cost as much as the
+            // copy itself on multi-GB weights.
+            if (existingSize == sourceLength && sourceLength > 0L) {
+                return -1L
+            }
+            DocumentsContract.deleteDocument(
+                contentResolver,
+                DocumentsContract.buildDocumentUriUsingTree(treeUri, existingId!!)
+            )
+        }
+
+        val target = DocumentsContract.createDocument(
+            contentResolver, rootUri, "application/octet-stream", name
+        ) ?: throw IllegalStateException("Could not create the backup file.")
+
+        val source = File(srcPath)
+        val totalBytes = source.length()
+        var copied = 0L
+        var lastEmit = 0L
+        contentResolver.openOutputStream(target)?.use { output ->
+            source.inputStream().use { input ->
+                val buffer = ByteArray(1024 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                    copied += read
+                    // Throttle: one event per 32 MiB keeps the channel quiet
+                    // over a multi-gigabyte file while staying smooth enough.
+                    if (copied - lastEmit >= 32L * 1024 * 1024 || copied == totalBytes) {
+                        lastEmit = copied
+                        emitBackupProgress(name, copied, totalBytes)
+                    }
+                }
+            }
+        } ?: throw IllegalStateException("Could not open the backup destination.")
+        return copied
+    }
+
+    /// Walks/creates nested folders under the tree; returns the leaf doc URI.
+    private fun ensureTreePath(treeUri: Uri, segments: List<String>): Uri? {
+        var parentId = DocumentsContract.getTreeDocumentId(treeUri)
+        var parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentId)
+        for (segment in segments) {
+            var childId: String? = null
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+            contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null, null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(1) == segment &&
+                        c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        childId = c.getString(0)
+                        break
+                    }
+                }
+            }
+            if (childId == null) {
+                val created = DocumentsContract.createDocument(
+                    contentResolver, parentUri,
+                    DocumentsContract.Document.MIME_TYPE_DIR, segment
+                ) ?: throw IllegalStateException("Could not create folder '$segment'.")
+                childId = DocumentsContract.getDocumentId(created)
+                parentUri = created
+            } else {
+                parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId!!)
+            }
+            parentId = childId!!
+        }
+        return parentUri
+    }
+
+    /// Depth-first walk collecting model files anywhere in the tree, skipping
+    /// [skipFolders] (by display name) so settings never look like models.
+    private fun listTreeRecursive(
+        treeUri: Uri,
+        extensions: Set<String>,
+        skipFolders: MutableList<String>,
+        maxFiles: Int = 500,
+    ): List<Map<String, Any>> {
+        val out = mutableListOf<Map<String, Any>>()
+        data class Node(val docId: String, val relPath: String)
+
+        val queue = ArrayDeque<Node>()
+        queue.add(Node(DocumentsContract.getTreeDocumentId(treeUri), ""))
+        while (queue.isNotEmpty() && out.size < maxFiles) {
+            val node = queue.removeFirst()
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, node.docId)
+            contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE,
+                        DocumentsContract.Document.COLUMN_SIZE),
+                null, null, null
+            )?.use { c ->
+                while (c.moveToNext() && out.size < maxFiles) {
+                    val id = c.getString(0)
+                    val name = c.getString(1) ?: continue
+                    val mime = c.getString(2) ?: ""
+                    val size = c.getLong(3)
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        if (name !in skipFolders) {
+                            queue.add(Node(id, node.relPath + name + "/"))
+                        }
+                    } else if (extensions.any { name.lowercase().endsWith(it) }) {
+                        out.add(mapOf(
+                            "name" to name,
+                            "size" to size,
+                            "documentId" to id,
+                            "relativePath" to (node.relPath + name)
+                        ))
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    private fun emitBackupProgress(filename: String, copiedBytes: Long, totalBytes: Long) {
+        mainHandler.post {
+            importChannel?.invokeMethod(
+                "backupProgress",
+                mapOf(
+                    "filename" to filename,
+                    "copiedBytes" to copiedBytes,
+                    "totalBytes" to totalBytes
+                )
+            )
+        }
     }
 
     private fun sanitizeFilename(filename: String): String {
