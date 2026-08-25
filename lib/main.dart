@@ -97,7 +97,8 @@ void main() {
       return true;
     };
     final imageNotifications = Get.put(ImageGenerationNotificationService());
-    await Get.putAsync(() => ScheduledTaskService().init());
+    final scheduledTasks = Get.put(ScheduledTaskService());
+    await scheduledTasks.init();
     await imageNotifications.init();
     await imageNotifications.configureBackgroundService();
     Get.put(ServerController(), permanent: true);

@@ -196,10 +196,7 @@ class ModelView extends GetView<ModelController> {
   Widget _buildLocalFilterChips(BuildContext context) {
     const labels = {
       'downloaded': 'Downloaded',
-      'general': 'General',
-      'image': 'Image Gen',
-      'uncensored': 'Uncensored',
-      'vision': 'Multimodal',
+      'curated': 'Curated Models',
     };
     return Obx(() {
       final selected = controller.localFilter.value.isEmpty

@@ -283,12 +283,26 @@ class ChatView extends GetView<ChatController> {
 
   // ── Empty State ──
   Widget _emptyState(BuildContext context, bool isDark) {
+    // Fresh sample of four every time the empty state rebuilds.
     final suggestions = [
       'Explain quantum computing simply',
       'Write a short poem about time',
       'Help me debug my code',
-      'Summarize a complex topic'
-    ];
+      'Summarize a complex topic',
+      'What time is it in Tokyo?',
+      'Brainstorm names for a coffee shop',
+      'Draft a polite complaint email',
+      'Translate "good morning" to 5 languages',
+      'Plan a 3-day trip to Lisbon',
+      'Convert 120 km to miles',
+      'Write a haiku about rain',
+      "Explain recursion like I'm five",
+      'Suggest a beginner workout plan',
+      'Tell me a fun fact about space',
+      'Help me write a resume summary',
+      'Multiply 128 by 456',
+    ]..shuffle();
+    final picked = suggestions.take(4).toList();
     return Center(
         child: SingleChildScrollView(
       padding: const EdgeInsets.all(32),
@@ -353,7 +367,7 @@ class ChatView extends GetView<ChatController> {
             spacing: 10,
             runSpacing: 10,
             alignment: WrapAlignment.center,
-            children: suggestions
+            children: picked
                 .map((s) => _suggestionChip(context, s, isDark))
                 .toList(),
           );
