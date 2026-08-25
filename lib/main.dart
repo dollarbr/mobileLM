@@ -24,6 +24,7 @@ import 'services/local_image_service.dart';
 import 'services/app_log_service.dart';
 import 'services/crash_reporting_service.dart';
 import 'services/image_generation_notification_service.dart';
+import 'services/scheduled_task_service.dart';
 import 'core/constants.dart';
 
 void main() {
@@ -96,6 +97,7 @@ void main() {
       return true;
     };
     final imageNotifications = Get.put(ImageGenerationNotificationService());
+    await Get.putAsync(() => ScheduledTaskService().init());
     await imageNotifications.init();
     await imageNotifications.configureBackgroundService();
     Get.put(ServerController(), permanent: true);

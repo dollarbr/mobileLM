@@ -2,9 +2,13 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../download_service.dart';
+import '../inference_service.dart';
+import '../scheduled_task_service.dart';
 import 'calculator.dart';
 import 'tool_registry.dart';
 import 'web_tools.dart';
@@ -130,6 +134,81 @@ ToolRegistry buildDefaultToolRegistry({
           if (text == null || text.isEmpty) return 'Error: no text given.';
           await Share.share(text);
           return 'Share sheet opened.';
+        },
+      ),
+      Tool(
+        name: 'schedule_task',
+        description:
+            'Schedule a daily prompt this assistant runs by itself at a fixed '
+            'local time, even with the app closed. The result appears in the '
+            'chat afterwards. Asks the user first.',
+        parameters: {
+          'name': 'short label, e.g. "Morning digest"',
+          'prompt': 'the instruction to run every day',
+          'hour': '0-23',
+          'minute': '0-59',
+        },
+        risk: ToolRisk.write,
+        run: (args) async {
+          final name = args['name']?.trim();
+          final prompt = args['prompt']?.trim();
+          final hour = int.tryParse(args['hour'] ?? '');
+          final minute = int.tryParse(args['minute'] ?? '');
+          if (name == null || prompt == null || hour == null || minute == null) {
+            return 'Error: need name, prompt, hour and minute.';
+          }
+          if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+            return 'Error: hour must be 0-23 and minute 0-59.';
+          }
+          final inference = Get.find<InferenceService>();
+          final modelName = inference.loadedModelName.value;
+          if (modelName.isEmpty) {
+            return 'Error: no local model loaded — load one first.';
+          }
+          final modelPath =
+              await Get.find<DownloadService>().modelPath(modelName);
+          final task = await Get.find<ScheduledTaskService>().add(
+            name: name,
+            prompt: prompt,
+            modelPath: modelPath,
+            hour: hour,
+            minute: minute,
+          );
+          return 'Scheduled "${task.name}" daily at '
+              '${hour.toString().padLeft(2, '0')}:'
+              '${minute.toString().padLeft(2, '0')}.';
+        },
+      ),
+      Tool(
+        name: 'list_scheduled_tasks',
+        description: 'List the daily tasks scheduled to run on their own.',
+        run: (_) async {
+          final tasks = Get.find<ScheduledTaskService>().tasks;
+          if (tasks.isEmpty) return 'No scheduled tasks.';
+          return tasks
+              .map((t) =>
+                  '${t.name} — daily ${t.hour.toString().padLeft(2, '0')}:'
+                  '${t.minute.toString().padLeft(2, '0')} — '
+                  '${t.enabled ? 'enabled' : 'disabled'}')
+              .join('\n');
+        },
+      ),
+      Tool(
+        name: 'cancel_scheduled_task',
+        description:
+            'Cancel one scheduled daily task by its exact name. Asks the user first.',
+        parameters: {'name': 'exact task name to cancel'},
+        risk: ToolRisk.write,
+        run: (args) async {
+          final name = args['name']?.trim();
+          if (name == null || name.isEmpty) return 'Error: no name given.';
+          final service = Get.find<ScheduledTaskService>();
+          final match = service.tasks.firstWhereOrNull(
+            (t) => t.name.toLowerCase() == name.toLowerCase(),
+          );
+          if (match == null) return 'Error: no task named "$name".';
+          await service.remove(match.id);
+          return 'Cancelled "${match.name}".';
         },
       ),
     ].where((t) => enabled == null || enabled.contains(t.name)));
