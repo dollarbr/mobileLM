@@ -45,9 +45,13 @@ class SettingsController extends GetxController {
   final globalSystemPrompt = AppConstants.systemPrompt.obs;
   final nvidiaModels = <String>[].obs;
   final isLoadingNvidiaModels = false.obs;
-  final temperature = 0.1.obs;
-  final maxTokens = 512.obs;
-  final contextSize = 2048.obs;
+  final temperature = 0.20.obs;
+  final topP = 0.9.obs;
+  final topK = 40.obs;
+  final minP = 0.05.obs;
+  final repeatPenalty = 1.1.obs;
+  final maxTokens = 1024.obs;
+  final contextSize = 4096.obs;
   final liteRtPerformanceMode = AppConstants.defaultLiteRtPerformanceMode.obs;
   final thinkingMode = AppConstants.defaultThinkingMode.obs;
   final toolsEnabled = AppConstants.defaultToolsEnabled.obs;
@@ -58,7 +62,7 @@ class SettingsController extends GetxController {
   final customSearchToken = ''.obs;
   final customSearchUrlController = TextEditingController();
   final customSearchTokenController = TextEditingController();
-  final imageSteps = 1.obs;
+  final imageSteps = 8.obs;
   final imageGenForceCpu = AppConstants.defaultImageGenForceCpu.obs;
   final cpuThreads = AppConstants.defaultCpuThreads.obs;
   final mmprojForceCpu = AppConstants.defaultMmprojForceCpu.obs;
@@ -198,6 +202,17 @@ class SettingsController extends GetxController {
     temperature.value = _hive.getSetting(AppConstants.keyTemperature,
             defaultValue: AppConstants.defaultTemperature) ??
         AppConstants.defaultTemperature;
+    topP.value = _hive.getSetting<double>(AppConstants.keyTopP,
+            defaultValue: 0.9) ??
+        0.9;
+    topK.value = _hive.getSetting<int>(AppConstants.keyTopK, defaultValue: 40) ??
+        40;
+    minP.value = _hive.getSetting<double>(AppConstants.keyMinP,
+            defaultValue: 0.05) ??
+        0.05;
+    repeatPenalty.value = _hive.getSetting<double>(AppConstants.keyRepeatPenalty,
+            defaultValue: 1.1) ??
+        1.1;
     maxTokens.value = _hive.getSetting(AppConstants.keyMaxTokens,
             defaultValue: AppConstants.defaultMaxTokens) ??
         AppConstants.defaultMaxTokens;
@@ -721,6 +736,26 @@ class SettingsController extends GetxController {
   static const maxManualContextSize = 8388608;
 
   /// Shows a manual-entry dialog for Max Tokens or Context Size.
+  void setTopP(double v) {
+    topP.value = v.clamp(0.0, 1.0);
+    _hive.setSetting(AppConstants.keyTopP, topP.value);
+  }
+
+  void setTopK(int v) {
+    topK.value = v.clamp(1, 200);
+    _hive.setSetting(AppConstants.keyTopK, topK.value);
+  }
+
+  void setMinP(double v) {
+    minP.value = v.clamp(0.0, 1.0);
+    _hive.setSetting(AppConstants.keyMinP, minP.value);
+  }
+
+  void setRepeatPenalty(double v) {
+    repeatPenalty.value = v.clamp(1.0, 2.0);
+    _hive.setSetting(AppConstants.keyRepeatPenalty, repeatPenalty.value);
+  }
+
   /// [field] must be either 'maxTokens' or 'contextSize'.
   /// Returns the validated value (already applied), or null if cancelled.
   static Future<int?> showManualEntryDialog({

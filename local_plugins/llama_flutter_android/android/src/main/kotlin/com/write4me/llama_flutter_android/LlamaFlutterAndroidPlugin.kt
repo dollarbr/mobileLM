@@ -27,10 +27,12 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
     // adding fields there would mean reconstructing it. Loading a projector
     // and queueing media is a small, self-contained surface anyway.
     private var mtmdChannel: MethodChannel? = null
+    private var metaChannel: MethodChannel? = null
 
     companion object {
         private const val TAG = "LlamaFlutterPlugin"
         private const val MTMD_CHANNEL = "llama_flutter_android/mtmd"
+        private const val META_CHANNEL = "llama_flutter_android/model_meta"
     }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -39,6 +41,9 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
         flutterApi = LlamaFlutterApi(binding.binaryMessenger)
         LlamaHostApi.setUp(binding.binaryMessenger, this)
         mtmdChannel = MethodChannel(binding.binaryMessenger, MTMD_CHANNEL).also {
+            it.setMethodCallHandler(this)
+        }
+        metaChannel = MethodChannel(binding.binaryMessenger, META_CHANNEL).also {
             it.setMethodCallHandler(this)
         }
     }
@@ -60,10 +65,28 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
         LlamaHostApi.setUp(binding.binaryMessenger, null)
         mtmdChannel?.setMethodCallHandler(null)
         mtmdChannel = null
+        metaChannel?.setMethodCallHandler(null)
+        metaChannel = null
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "getMeta" -> {
+                ensureNativeLoaded()?.let {
+                    result.error("NATIVE_LOAD", it.message, null); return
+                }
+                val key = call.argument<String>("key")
+                result.success(if (key.isNullOrEmpty()) "" else nativeGetMeta(key))
+            }
+
+            "probeFile" -> {
+                ensureNativeLoaded()?.let {
+                    result.error("NATIVE_LOAD", it.message, null); return
+                }
+                val path = call.argument<String>("path")
+                result.success(if (path.isNullOrEmpty()) "" else nativeProbeGgufFile(path))
+            }
+
             "mediaMarker" -> {
                 ensureNativeLoaded()?.let {
                     result.error("NATIVE_LOAD", it.message, null); return
@@ -294,12 +317,26 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
         isStopping.set(false)
         generationJob = scope.launch {
             try {
-                // Format the chat messages using the template manager
-                val formattedPrompt = ChatTemplateManager.formatMessages(
-                    request.messages.map { msg -> TemplateChatMessage(msg.role, msg.content) },
-                    request.template,
-                    currentModelPath
-                )
+                // Prefer the template embedded in the model's GGUF — it is the
+                // vendor's own prompt shape and needs no per-model guessing.
+                // ChatTemplateManager stays as the fallback for models that
+                // ship no tokenizer.chat_template metadata.
+                val messages = request.messages.map { msg -> TemplateChatMessage(msg.role, msg.content) }
+                val formattedPrompt: String = if (request.template == null) {
+                    try {
+                        val native = nativeApplyChatTemplate(
+                            messages.map { it.role }.toTypedArray(),
+                            messages.map { it.content }.toTypedArray()
+                        )
+                        if (native.isNotBlank()) native
+                        else ChatTemplateManager.formatMessages(messages, null, currentModelPath)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "Native chat template failed; falling back to name sniffing", t)
+                        ChatTemplateManager.formatMessages(messages, request.template, currentModelPath)
+                    }
+                } else {
+                    ChatTemplateManager.formatMessages(messages, request.template, currentModelPath)
+                }
 
                 nativeGenerate(
                     formattedPrompt,
@@ -552,5 +589,11 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
     private external fun nativeFreeMmproj()
     private external fun nativeAudioSampleRate(): Int
     private external fun nativeSetMedia(paths: Array<String>)
+    // Applies the chat template embedded in the loaded model's GGUF. Returns ""
+    // when the model ships none, so callers can fall back to name sniffing.
+    private external fun nativeApplyChatTemplate(roles: Array<String>, contents: Array<String>): String
+    private external fun nativeGetMeta(key: String): String
+    // Header-only GGUF read (no model load) for the model-card spec line.
+    private external fun nativeProbeGgufFile(path: String): String
     // outStats[0] = vulkanApiVersion, outStats[1] = deviceLocalMemoryBytes
 }

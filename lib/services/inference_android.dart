@@ -1,10 +1,16 @@
 import 'dart:async';
-import 'dart:io' show Platform, Directory;
+import 'dart:convert';
+import 'dart:io' show Directory, File, Platform;
+import 'package:get/get.dart';
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
+import '../controllers/settings_controller.dart';
+import '../core/constants.dart';
 import 'acceleration.dart';
+import 'hive_service.dart';
 
 /// Whether the current platform supports local inference.
 bool get supportsLocalInference => Platform.isAndroid || Platform.isIOS;
@@ -45,6 +51,9 @@ class InferenceEngine {
 
   /// What the loaded GGUF projector supports, or null when there is none.
   MultimodalSupport? _mmprojSupport;
+  /// Sampler values this session generates with: user globals overlaid by
+  /// per-model saves, then by whatever the GGUF itself declares.
+  final Map<String, double> _effectiveParams = {};
   String _mediaMarker = '<__media__>';
 
   MultimodalSupport? get multimodalSupport => _mmprojSupport;
@@ -134,22 +143,105 @@ class InferenceEngine {
     }
 
     // ── Load Progress ──
-    await _loadProgressSub?.cancel();
-    _loadProgressSub = null;
-    try {
-      _loadProgressSub = _controller!.loadProgress.listen((progress) {
-        onProgress?.call(_normalizeProgress(progress));
-      });
-    } catch (_) {}
+    // Re-created on every backend switch below: the subscription dies with the
+    // old LlamaController when dispose() closes its stream.
+    Future<void> subscribeProgress() async {
+      await _loadProgressSub?.cancel();
+      _loadProgressSub = null;
+      try {
+        _loadProgressSub = _controller!.loadProgress.listen((progress) {
+          onProgress?.call(_normalizeProgress(progress));
+        });
+      } catch (_) {}
+    }
+    await subscribeProgress();
 
     // ── Load ──
-    await _controller!.loadModel(
-      modelPath: modelPath,
-      threads: threads,
-      contextSize: contextSize,
-      gpuLayers: gpuLayers,
-    );
+    Future<void> loadWith(int layers) async {
+      await _controller!.loadModel(
+        modelPath: modelPath,
+        threads: threads,
+        contextSize: contextSize,
+        gpuLayers: layers,
+      );
+    }
+    await loadWith(gpuLayers);
     _hasLoadedModel = true;
+
+    // ── Auto Fast micro-benchmark ──
+    // Vulkan present says a GPU *can* take the layers; it does not say the GPU
+    // is fast. On small models the Mali here prefilled 6x slower than the CPU
+    // (3.4 vs 21.2 tok/s) because shader dispatch dominates. So when the user
+    // asked for Auto Fast and we loaded onto the GPU, measure both backends on
+    // one short prefill and keep the winner before the first real prompt.
+    //
+    // The verdict is cached per model file in Hive, so a model benchmarks once
+    // ever — later loads go straight to the winning backend. The key includes
+    // the byte size so a re-quantized file under the same name re-benchmarks.
+    String benchKey() => '${AppConstants.autoFastBenchKeyPrefix}'
+        '${modelPath.split('/').last}:${File(modelPath).lengthSync()}';
+    String? cachedVerdict;
+    try {
+      final hive = Get.find<HiveService>();
+      cachedVerdict = hive.getSetting<String>(benchKey());
+    } catch (_) {}
+
+    bool benchOnCpu = false;
+    if (liteRtPerformanceMode == 'auto_fast' && gpuLayers > 0) {
+      if (cachedVerdict == 'cpu') {
+        print('[Inference] Auto Fast: cached CPU win for this model'
+            ' — loading straight to CPU');
+        await _controller!.dispose();
+        _controller = LlamaController();
+        await subscribeProgress();
+        await loadWith(0);
+        gpuLayers = 0;
+        benchOnCpu = true;
+      } else {
+        if (cachedVerdict == 'gpu') {
+          print('[Inference] Auto Fast: cached GPU win for this model'
+              ' — skipping benchmark');
+        } else {
+          try {
+            print('[Inference] Auto Fast: benchmarking GPU prefill…');
+            final gpuMs = await _benchPrefillMs(_controller!);
+
+            print('[Inference] Auto Fast: reloading on CPU for comparison…');
+            await _controller!.dispose();
+            _controller = LlamaController();
+            await subscribeProgress();
+            await loadWith(0);
+            benchOnCpu = true;
+            final cpuMs = await _benchPrefillMs(_controller!);
+
+            final winner = gpuMs <= cpuMs ? 'gpu' : 'cpu';
+            try {
+              Get.find<HiveService>().setSetting(benchKey(), winner);
+            } catch (_) {}
+            print('[Inference] Auto Fast: $winner wins '
+                '(${gpuMs <= cpuMs ? gpuMs : cpuMs} ms vs '
+                '${gpuMs <= cpuMs ? cpuMs : gpuMs} ms)${cachedVerdict == null ? ' — saved' : ''}');
+
+            if (winner == 'gpu') {
+              print('[Inference] Auto Fast: reloading on GPU');
+              await _controller!.dispose();
+              _controller = LlamaController();
+              await subscribeProgress();
+              await loadWith(gpuLayers);
+              benchOnCpu = false;
+            } else {
+              gpuLayers = 0;
+            }
+          } catch (e) {
+            // Whatever failed, the model that is currently loaded still works:
+            // report honestly which one that is instead of throwing away the load.
+            gpuLayers = benchOnCpu ? 0 : gpuLayers;
+            print('[Inference] Auto Fast benchmark failed: $e — '
+                'keeping ${benchOnCpu ? 'CPU' : 'GPU'} load');
+          }
+        }
+      }
+    }
 
     // ── Multimodal projector ──
     // A GGUF vision or audio model is two files: the weights, loaded above,
@@ -162,15 +254,73 @@ class InferenceEngine {
       // image measured 183 s to encode with useGpu on this Mali, one thread
       // pegged and no system time -- the signature of a per-op Vulkan
       // fallback shuttling tensors rather than a ViT running on the GPU.
-      // Which way is faster is a per-device fact, so it is a setting.
-      final useGpuForProjector = gpuLayers > 0 && !mmprojForceCpu;
-      print('[Inference] Projector backend: '
-          '${useGpuForProjector ? 'GPU' : 'CPU'} ($threads threads)');
-      final support = await LlamaMultimodal.loadProjector(
-        mmprojPath,
-        useGpu: useGpuForProjector,
-        nThreads: threads,
-      );
+      // Which way is faster is a per-device fact, so like Auto Fast it gets
+      // measured once and cached — unless the user pinned CPU explicitly.
+      String visionKey() => '${AppConstants.visionBenchKeyPrefix}'
+          '${mmprojPath.split('/').last}:${File(mmprojPath).lengthSync()}';
+
+      bool useGpuForProjector = gpuLayers > 0 && !mmprojForceCpu;
+      String? visionVerdict;
+      if (useGpuForProjector) {
+        try {
+          visionVerdict =
+              Get.find<HiveService>().getSetting<String>(visionKey());
+        } catch (_) {}
+        if (visionVerdict == 'cpu') {
+          useGpuForProjector = false;
+          print('[Inference] Vision: cached CPU win — encoder on CPU');
+        } else if (visionVerdict == 'gpu') {
+          print('[Inference] Vision: cached GPU win — skipping benchmark');
+        }
+      }
+
+      Future<MultimodalSupport?> loadProjector(bool gpu) {
+        return LlamaMultimodal.loadProjector(
+          mmprojPath,
+          useGpu: gpu,
+          nThreads: threads,
+        );
+      }
+
+      MultimodalSupport? support;
+      try {
+        if (useGpuForProjector && visionVerdict == null) {
+          print('[Inference] Vision: benchmarking GPU encoder…');
+          support = await loadProjector(true);
+          final gpuMs = await _benchEncodeMs(_controller!);
+
+          print('[Inference] Vision: reloading encoder on CPU…');
+          await LlamaMultimodal.freeProjector();
+          support = await loadProjector(false);
+          final cpuMs = await _benchEncodeMs(_controller!);
+
+          final winner = gpuMs <= cpuMs ? 'gpu' : 'cpu';
+          try {
+            Get.find<HiveService>().setSetting(visionKey(), winner);
+          } catch (_) {}
+          print('[Inference] Vision: $winner wins '
+              '(${gpuMs <= cpuMs ? gpuMs : cpuMs} ms vs '
+              '${gpuMs <= cpuMs ? cpuMs : gpuMs} ms)');
+
+          if (winner == 'gpu') {
+            print('[Inference] Vision: reloading encoder on GPU');
+            await LlamaMultimodal.freeProjector();
+            support = await loadProjector(true);
+          } else {
+            useGpuForProjector = false;
+          }
+        } else {
+          support = await loadProjector(useGpuForProjector);
+        }
+      } catch (e) {
+        print('[Inference] Vision benchmark failed: $e');
+        try {
+          await LlamaMultimodal.freeProjector();
+        } catch (_) {}
+        support = await loadProjector(false);
+        useGpuForProjector = false;
+      }
+
       if (support == null) {
         // Not fatal: the model still answers text. Saying so beats a silent
         // downgrade the user only notices when an image is ignored.
@@ -178,9 +328,12 @@ class InferenceEngine {
       } else {
         _mmprojSupport = support;
         _mediaMarker = await LlamaMultimodal.mediaMarker();
-        print('[Inference] ✓ Projector loaded: $support');
+        print('[Inference] ✓ Projector loaded: $support '
+            '(${useGpuForProjector ? "GPU" : "CPU"})');
       }
     }
+
+    await _applyEffectiveParams(modelPath);
 
     final accel = gpuLayers > 0
         ? 'GPU ($gpuLayers layers, $gpuNameStr)'
@@ -480,10 +633,10 @@ class InferenceEngine {
         template: null,
         maxTokens: maxTokens,
         temperature: temperature,
-        topP: 0.9,
-        topK: 40,
-        minP: 0.05,
-        repeatPenalty: 1.1,
+        topP: _effectiveParams['topP'] ?? 0.9,
+        topK: (_effectiveParams['topK'] ?? 40).toInt(),
+        minP: _effectiveParams['minP'] ?? 0.05,
+        repeatPenalty: _effectiveParams['repeatPenalty'] ?? 1.1,
         repeatLastN: 64,
       );
       print('[Inference] generateChat() started (${messages.length} messages)');
@@ -499,10 +652,10 @@ class InferenceEngine {
         prompt: fullPrompt,
         maxTokens: maxTokens,
         temperature: temperature,
-        topP: 0.9,
-        topK: 40,
-        minP: 0.05,
-        repeatPenalty: 1.1,
+        topP: _effectiveParams['topP'] ?? 0.9,
+        topK: (_effectiveParams['topK'] ?? 40).toInt(),
+        minP: _effectiveParams['minP'] ?? 0.05,
+        repeatPenalty: _effectiveParams['repeatPenalty'] ?? 1.1,
         repeatLastN: 64,
       );
     }
@@ -929,6 +1082,147 @@ class InferenceEngine {
     messages
         .add(ChatMessage(role: 'user', content: prompt, imagePath: imagePath));
     return messages;
+  }
+
+  /// One raw-completion pass, timed to the first token.
+  ///
+  /// maxTokens=1 keeps it pure prefill — the quantity that actually differs
+  /// between CPU and GPU on small models. Callers pass the same string to both
+  /// backends, so only relative time matters; absolute tok/s is for the log.
+  Future<int> _timeToFirstToken(LlamaController controller, String prompt,
+      {Duration budget = const Duration(seconds: 15)}) async {
+    final sw = Stopwatch()..start();
+    final done = Completer<void>();
+    late final StreamSubscription<String> sub;
+    sub = controller.generate(
+      prompt: prompt,
+      maxTokens: 1,
+      temperature: 0.0,
+      topP: 1.0,
+      topK: 1,
+      minP: 0.05,
+      typicalP: 1.0,
+      repeatPenalty: 1.0,
+      frequencyPenalty: 0.0,
+      presencePenalty: 0.0,
+      repeatLastN: 1,
+    ).listen(
+      (_) {
+        if (!done.isCompleted) done.complete();
+      },
+      onError: (Object _) {
+        if (!done.isCompleted) done.complete();
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+    );
+    await done.future.timeout(budget, onTimeout: () {});
+    sw.stop();
+    await sub.cancel();
+    try {
+      await controller.stop();
+    } catch (_) {}
+    return sw.elapsedMilliseconds;
+  }
+
+  /// Resolves the sampler values for this model, in precedence order:
+  /// GGUF-embedded metadata > per-model saved overrides > user globals.
+  /// Whatever the GGUF declares is cached under the model's key so later
+  /// loads skip the queries.
+  Future<void> _applyEffectiveParams(String modelPath) async {
+    final sc = Get.find<SettingsController>();
+    final params = <String, double>{
+      'temperature': sc.temperature.value,
+      'topP': sc.topP.value,
+      'topK': sc.topK.value.toDouble(),
+      'minP': sc.minP.value,
+      'repeatPenalty': sc.repeatPenalty.value,
+    };
+
+    String cacheKey() => '${AppConstants.modelParamsKeyPrefix}'
+        '${modelPath.split('/').last}:${File(modelPath).lengthSync()}';
+    try {
+      final raw = Get.find<HiveService>().getSetting<String>(cacheKey());
+      if (raw != null) {
+        final saved = jsonDecode(raw) as Map<String, dynamic>;
+        saved.forEach((k, v) => params[k] = (v as num).toDouble());
+      }
+    } catch (_) {}
+
+    const candidates = <String, List<String>>{
+      'temperature': ['temperature', 'sampling.temperature', 'gen.temperature'],
+      'topP': ['top_p', 'sampling.top_p', 'gen.top_p'],
+      'topK': ['top_k', 'sampling.top_k', 'gen.top_k'],
+      'minP': ['min_p', 'sampling.min_p', 'gen.min_p'],
+      'repeatPenalty': [
+        'repeat_penalty',
+        'sampling.repeat_penalty',
+        'gen.repeat_penalty'
+      ],
+    };
+    var fromModel = false;
+    for (final entry in candidates.entries) {
+      for (final key in entry.value) {
+        final v = double.tryParse(await LlamaModelMeta.get(key) ?? '');
+        if (v != null) {
+          if (params[entry.key] != v) fromModel = true;
+          params[entry.key] = v;
+          break;
+        }
+      }
+    }
+    if (fromModel) {
+      try {
+        Get.find<HiveService>()
+            .setSetting(cacheKey(), jsonEncode(params));
+      } catch (_) {}
+    }
+    _effectiveParams
+      ..clear()
+      ..addAll(params);
+    print('[Inference] Sampler: '
+        '${params.entries.map((e) => "${e.key}=${e.value}").join(", ")}');
+  }
+
+  /// Text-prefill benchmark: fixed ~24-token string, long enough that per-call
+  /// overhead does not dominate, short enough that a slow GPU stays in budget.
+  Future<int> _benchPrefillMs(LlamaController controller) {
+    return _timeToFirstToken(controller, 'The quick brown fox jumps over '
+        'the lazy dog. Pack my box with five dozen liquor jugs.');
+  }
+
+  /// Vision-encoder benchmark over a tiny generated PNG.
+  ///
+  /// Encoder cost scales with patch count, so 64×64 keeps both passes inside
+  /// seconds while still exercising the same op mix that made full photos
+  /// take 183 s on this Mali's Vulkan fallback. The queued media is cleared
+  /// afterwards either way — a leftover bench image would otherwise ride
+  /// along with the user's first real attachment.
+  Future<int> _benchEncodeMs(LlamaController controller) async {
+    final dir = await getTemporaryDirectory();
+    final bench = File('${dir.path}/vision_bench_64.png');
+    if (!bench.existsSync()) {
+      final image = img.Image(width: 64, height: 64);
+      for (var y = 0; y < 64; y++) {
+        for (var x = 0; x < 64; x++) {
+          image.setPixelRgba(x, y, x * 4 % 256, y * 4 % 256, (x + y) * 2 % 256, 255);
+        }
+      }
+      await bench.writeAsBytes(img.encodePng(image));
+    }
+    await LlamaMultimodal.setMedia([bench.path]);
+    final marker = _mediaMarker.isNotEmpty
+        ? _mediaMarker
+        : await LlamaMultimodal.mediaMarker();
+    try {
+      return await _timeToFirstToken(
+          controller, '$marker\nDescribe this image.');
+    } finally {
+      try {
+        await LlamaMultimodal.setMedia(const []);
+      } catch (_) {}
+    }
   }
 
   String _buildPrompt(

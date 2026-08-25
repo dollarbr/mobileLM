@@ -134,7 +134,12 @@ class HfFilters {
     this.tags = const {},
     this.pipelineTag = '',
     this.fitsDevice = true,
+    this.nameQuery = '',
   });
+
+  /// Substring the repo name/owner must contain (case-insensitive). Applied
+  /// client-side: the hub API has no "name contains" facet.
+  final String nameQuery;
 
   /// Which runtime's weights to list.
   final HfFormat format;
@@ -170,6 +175,7 @@ class HfFilters {
   /// "1 filter" on an untouched sheet.
   int get activeCount =>
       (format == HfFormat.any ? 0 : 1) +
+      (nameQuery.isEmpty ? 0 : 1) +
       (author.isEmpty ? 0 : 1) +
       (minParamsB == null ? 0 : 1) +
       (maxParamsB == null ? 0 : 1) +
@@ -186,9 +192,11 @@ class HfFilters {
     bool? fitsDevice,
     bool clearMin = false,
     bool clearMax = false,
+    String? nameQuery,
   }) {
     return HfFilters(
       format: format ?? this.format,
+      nameQuery: nameQuery ?? this.nameQuery,
       author: author ?? this.author,
       minParamsB: clearMin ? null : (minParamsB ?? this.minParamsB),
       maxParamsB: clearMax ? null : (maxParamsB ?? this.maxParamsB),
