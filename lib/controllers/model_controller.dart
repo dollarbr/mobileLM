@@ -52,13 +52,7 @@ class ModelController extends GetxController {
     sortSmallestFirst.value = !sortSmallestFirst.value;
   }
 
-  static const localFilters = [
-    'downloaded',
-    'general',
-    'image',
-    'uncensored',
-    'vision'
-  ];
+  static const localFilters = ['downloaded', 'curated'];
 
   List<AiModel> get displayedModels {
     final active = _inference.loadedModelName.value;
@@ -89,21 +83,21 @@ class ModelController extends GetxController {
       switch (filter) {
         case 'downloaded':
           return isDownloaded(model.filename);
-        case 'uncensored':
-          return isUncensoredModel(model);
-        case 'vision':
-          return isVisionModel(model);
-        case 'image':
-          return isImageModel(model);
-        case 'general':
+        case 'curated':
         default:
-          return isGeneralModel(model);
+          // Catalogue picks that fit this phone: nothing sideloaded, and
+          // weights within the 60%-of-RAM line the device service draws.
+          return !model.isImported &&
+              !model.isCustom &&
+              _knownModelBytes(model) > 0 &&
+              _knownModelBytes(model) <=
+                  Get.find<DeviceInfoService>().maxModelBytes;
       }
     }).toList();
   }
 
   String get defaultLocalFilter =>
-      downloadedFiles.isNotEmpty ? 'downloaded' : 'general';
+      downloadedFiles.isNotEmpty ? 'downloaded' : 'curated';
 
   double get importProgress => importTotalBytes.value <= 0
       ? 0.0

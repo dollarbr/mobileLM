@@ -9,7 +9,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants.dart';
-import 'app_log_service.dart';
 import 'inference_android.dart' if (dart.library.html) 'inference_stub.dart'
     as platform;
 
