@@ -736,14 +736,19 @@ class ChatController extends GetxController {
         );
       }
 
-      // ── Tool hop ──────────────────────────────────────────────────────
-      // Exactly one round, never a loop. A small model handed its own tool
-      // output will happily call the same tool again forever; one hop covers
-      // the real case ("what time is it", "what is 12.5*3") and cannot spin.
+      // ── Tool hops ─────────────────────────────────────────────────────
+      // One round by default: a small model handed its own tool output will
+      // happily call the same tool forever, so the agent depth setting owns
+      // the ceiling and 1 keeps the classic single hop.
       if (Get.find<SettingsController>().toolsEnabled.value &&
           generationId == _generationSerial) {
-        final call = ToolCallParser.parseFirst(rawResponse);
-        if (call != null) {
+        final maxHops = Get.find<SettingsController>().agentMaxHops.value;
+        var convo = history;
+        var hop = 0;
+        while (hop < maxHops) {
+          final call = ToolCallParser.parseFirst(rawResponse);
+          if (call == null) break;
+          hop++;
           streamingResponse.value = 'Running ${call.name}…';
           var toolResult = await _tools.execute(call.name, call.arguments);
 
@@ -795,8 +800,8 @@ class ChatController extends GetxController {
           // The call and its result go back as a normal exchange: none of the
           // runtimes here share a tool-role message format, and plain text is
           // what every one of them understands.
-          final toolHistory = [
-            ...history,
+          convo = [
+            ...convo,
             {'role': 'assistant', 'content': call.raw},
             {'role': 'user', 'content': 'Tool result for ${call.name}: $toolResult'},
           ];
@@ -805,7 +810,7 @@ class ChatController extends GetxController {
             rawResponse = await Get.find<InferenceService>().generate(
               prompt: 'Tool result for ${call.name}: $toolResult',
               systemPrompt: _effectiveSystemPrompt,
-              conversationHistory: toolHistory,
+              conversationHistory: convo,
               source: 'chat',
               onToken: (token) {
                 streamingResponse.value += token;
@@ -817,7 +822,7 @@ class ChatController extends GetxController {
             rawResponse = await Get.find<CloudService>().sendMessage(
               messages: [
                 {'role': 'system', 'content': _effectiveSystemPrompt},
-                ...toolHistory,
+                ...convo,
               ],
               onToken: (token) {
                 streamingResponse.value += token;
@@ -826,15 +831,16 @@ class ChatController extends GetxController {
               },
             );
           }
+          if (generationId != _generationSerial) return;
+        }
 
-          // If it asked for another tool, show the reply as-is rather than
-          // hopping again — the user can see what it wanted and decide.
-          final second = ToolCallParser.parseFirst(rawResponse);
-          if (second != null) {
-            rawResponse = rawResponse.replaceAll(second.raw, '').trim();
-            if (rawResponse.isEmpty) {
-              rawResponse = 'Tool result for ${call.name}: $toolResult';
-            }
+        // Cap reached with the model still asking for tools: show the reply
+        // without the dangling call rather than hopping again.
+        final overflow = ToolCallParser.parseFirst(rawResponse);
+        if (overflow != null) {
+          rawResponse = rawResponse.replaceAll(overflow.raw, '').trim();
+          if (rawResponse.isEmpty) {
+            rawResponse = 'Tool limit reached ($maxHops hop(s)).';
           }
         }
       }
