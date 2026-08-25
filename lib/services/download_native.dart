@@ -276,13 +276,13 @@ Future<bool> copyFromTree({
   required String treeUri,
   required String name,
   required String destPath,
-  String? subFolder,
+  String? relativePath,
 }) async {
   if (!Platform.isAndroid) return false;
   try {
     await _channel.invokeMethod<dynamic>('copyFromTree', {
       'treeUri': treeUri,
-      'subFolder': subFolder,
+      'relativePath': relativePath,
       'name': name,
       'destPath': destPath,
     });

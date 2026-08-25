@@ -61,10 +61,13 @@ class DownloadService extends GetxService with WidgetsBindingObserver {
     required String treeUri,
     required String name,
     required String destPath,
-    String? subFolder,
+    String? relativePath,
   }) =>
       platform_dl.copyFromTree(
-          treeUri: treeUri, name: name, destPath: destPath, subFolder: subFolder);
+          treeUri: treeUri,
+          name: name,
+          destPath: destPath,
+          relativePath: relativePath);
 
   Future<String?> ensureBackupPath({
     required String treeUri,
