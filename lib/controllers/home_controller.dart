@@ -72,7 +72,7 @@ class HomeController extends GetxController {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: isDark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF),
+              backgroundColor: isDark ? const Color(0xFFB9F53E) : const Color(0xFFB9F53E),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () {

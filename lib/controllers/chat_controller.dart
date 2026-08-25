@@ -745,7 +745,48 @@ class ChatController extends GetxController {
         final call = ToolCallParser.parseFirst(rawResponse);
         if (call != null) {
           streamingResponse.value = 'Running ${call.name}…';
-          final toolResult = await _tools.execute(call.name, call.arguments);
+          var toolResult = await _tools.execute(call.name, call.arguments);
+
+          // Write-class tools come back once asking for a human tap before
+          // they actually run.
+          if (toolResult.startsWith(ToolRegistry.confirmMarker)) {
+            if (generationId != _generationSerial) return;
+            streamingResponse.value = '';
+            final argsText = call.arguments.entries
+                .map((e) => '${e.key}: "${e.value}"')
+                .join('\n');
+            final allowed = await Get.dialog<bool>(
+                  AlertDialog(
+                    title: const Text('Confirm tool'),
+                    content: Text(
+                      '${call.name} wants to change something on this device.'
+                      '${argsText.isEmpty ? '' : '\n\n$argsText'}',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Get.back(result: false),
+                        child: const Text('Deny'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Get.back(result: true),
+                        child: const Text('Allow'),
+                      ),
+                    ],
+                  ),
+                ) ??
+                false;
+            if (generationId != _generationSerial) return;
+            if (!allowed) {
+              toolResult = 'The user declined this call.';
+            } else {
+              streamingResponse.value = 'Running ${call.name}…';
+              toolResult = await _tools.execute(
+                call.name,
+                call.arguments,
+                confirmed: true,
+              );
+            }
+          }
           Get.find<AppLogService>().info('Tool ${call.name} -> $toolResult');
 
           if (generationId != _generationSerial) return;

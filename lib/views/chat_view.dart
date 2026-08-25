@@ -18,8 +18,8 @@ import '../widgets/thought_disclosure.dart';
 
 // ── Apple-style color helpers ──
 Color _appleBlue(BuildContext c) => Theme.of(c).brightness == Brightness.dark
-    ? const Color(0xFF0A84FF)
-    : const Color(0xFF007AFF);
+    ? const Color(0xFFB9F53E)
+    : const Color(0xFFB9F53E);
 
 Color _aiBubble(BuildContext c) => Theme.of(c).brightness == Brightness.dark
     ? const Color(0xFF1C1C1E)
@@ -1004,7 +1004,7 @@ class _AttachButton extends StatelessWidget {
                 const SizedBox(width: 12),
                 _SheetTile(
                   icon: Icons.attach_file_rounded,
-                  color: const Color(0xFF0A84FF),
+                  color: const Color(0xFFB9F53E),
                   label: 'File',
                   sub: isCloud ? 'PDF, DOCX, text…' : 'PDF, DOCX, text…',
                   isDark: isDarkSheet,

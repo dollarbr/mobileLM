@@ -2441,8 +2441,8 @@ class ModelView extends GetView<ModelController> {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: isDark
-                ? const Color(0xFF0A84FF)
-                : const Color(0xFF007AFF),
+                ? const Color(0xFFB9F53E)
+                : const Color(0xFFB9F53E),
           ),
         ),
         labelStyle: TextStyle(

@@ -14,8 +14,8 @@ class ChatBubble extends StatelessWidget {
   const ChatBubble({super.key, required this.message});
 
   // ── Apple-style colors ──
-  static const _appleBlue = Color(0xFF007AFF);
-  static const _appleBlueDark = Color(0xFF0A84FF);
+  static const _appleBlue = Color(0xFFB9F53E);
+  static const _appleBlueDark = Color(0xFFB9F53E);
 
   @override
   Widget build(BuildContext context) {

@@ -108,7 +108,7 @@ class HomeView extends GetView<HomeController> {
   }
 
   Widget _buildSidebar(BuildContext context, bool isDark) {
-    final accent = isDark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF);
+    final accent = isDark ? const Color(0xFFB9F53E) : const Color(0xFFB9F53E);
     final muted = Theme.of(context).hintColor;
 
     return Container(

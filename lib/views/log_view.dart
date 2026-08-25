@@ -63,7 +63,7 @@ class LogView extends StatelessWidget {
             // A crash report needs the file: full history, native ggml lines
             // included, and whatever the run before the crash wrote.
             tooltip: 'Share full log file',
-            icon: Icon(Icons.ios_share_rounded, size: 20, color: isDark ? const Color(0xFF0A84FF) : AppColors.primary),
+            icon: Icon(Icons.ios_share_rounded, size: 20, color: isDark ? const Color(0xFFB9F53E) : AppColors.primary),
             onPressed: () async {
               if (!await logs.shareLogFile()) {
                 Get.snackbar('No Log File', 'Nothing has been written to disk yet.', snackPosition: SnackPosition.BOTTOM);
