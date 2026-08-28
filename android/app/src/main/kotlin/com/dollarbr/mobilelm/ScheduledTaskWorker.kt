@@ -11,8 +11,6 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -23,8 +21,8 @@ class ScheduledTaskWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(context, workerParams) {
 
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val taskId = inputData.getString(KEY_TASK_ID) ?: return@withContext Result.failure()
+    override suspend fun doWork(): Result {
+        val taskId = inputData.getString(KEY_TASK_ID) ?: return Result.failure()
         val taskName = inputData.getString(KEY_TASK_NAME) ?: "Task"
         val prompt = inputData.getString(KEY_PROMPT) ?: ""
         val modelPath = inputData.getString(KEY_MODEL_PATH) ?: ""
@@ -32,35 +30,16 @@ class ScheduledTaskWorker(
 
         setForeground(createForegroundInfo(taskName))
 
-        try {
-            val engine = InferenceEngine()
-            val load = engine.loadModel(
-                modelPath = modelPath,
-                contextSize = 4096,
-                deviceTier = "medium",
-                cpuThreads = 4,
-                onProgress = { },
-            )
-            if (!load.success) {
-                throw Exception(load.message)
-            }
+        appendResult(
+            taskId = taskId,
+            output = "PENDING: ${
+                if (modelName.isNullOrBlank()) modelPath else "$modelName|$modelPath"
+            }|||$prompt"
+        )
+        showResultNotification(taskName, "Scheduled task triggered. Open mobileLM to run it.")
+        openApp()
 
-            val output = engine.generate(
-                prompt = prompt,
-                systemPrompt = SYSTEM_PROMPT,
-                modelName = modelName ?: modelPath.split("/").last,
-                maxTokens = 1024,
-                temperature = 0.2,
-            )
-
-            engine.dispose()
-            appendResult(taskId, output)
-            showResultNotification(taskName, output.take(120))
-            Result.success()
-        } catch (e: Exception) {
-            appendResult(taskId, "ERROR: $e")
-            Result.failure()
-        }
+        return Result.success()
     }
 
     private fun createForegroundInfo(taskName: String): ForegroundInfo {
@@ -100,7 +79,7 @@ class ScheduledTaskWorker(
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle("mobileLM · $taskName")
-            .setContentText(if (snippet.isEmpty()) "(empty response)" else snippet)
+            .setContentText(snippet)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setAutoCancel(true)
             .build()
@@ -137,8 +116,18 @@ class ScheduledTaskWorker(
             FileOutputStream(resultsFile).use { fos ->
                 fos.write(org.json.JSONArray(list).toString().toByteArray())
             }
-        } catch (e: Exception) {
+        } catch (e: RuntimeException) {
             Log.w(TAG, "Failed to append scheduled result: $e")
+        }
+    }
+
+    private fun openApp() {
+        try {
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            context.startActivity(intent)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Failed to open app: $e")
         }
     }
 
@@ -194,7 +183,5 @@ class ScheduledTaskWorker(
         const val KEY_PROMPT = "prompt"
         const val KEY_MODEL_PATH = "modelPath"
         const val KEY_MODEL_NAME = "modelName"
-
-        const val SYSTEM_PROMPT = "You are a helpful AI assistant running locally on the user's device. Your responses should be:\n- Accurate and factual - never make up information\n- Concise but complete - answer the question fully without unnecessary elaboration\n- Helpful and friendly - focus on solving the user's actual need\n- Honest about limitations - if you don't know something, say so\n\nIf asked about yourself, you can mention you're a local AI assistant that prioritizes user privacy."
     }
 }
