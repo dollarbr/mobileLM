@@ -79,6 +79,10 @@ class AppConstants {
   /// Persisted SAF tree URI for the models backup destination.
   static const String keyBackupTreeUri = 'backup_tree_uri';
 
+  /// Persisted SAF tree URI for the workspace root, chosen once during first
+  /// launch and relocateable later from Settings.
+  static const String keyWorkspaceTreeUri = 'workspace_tree_uri';
+
   // Default Model Config
   static const double defaultTemperature = 0.20;
   static const int defaultMaxTokens = 1024;
@@ -104,6 +108,12 @@ class AppConstants {
   static const List<String> defaultEnabledTools = [
     'web_search',
     'read_url',
+    'list_files',
+    'read_file',
+    'create_file',
+    'write_file',
+    'delete_file',
+    'rename_file',
   ];
 
   static const String keyAgentMaxHops = 'agent_max_hops';

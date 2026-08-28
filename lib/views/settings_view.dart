@@ -15,6 +15,7 @@ import '../services/download_service.dart';
 import '../services/hive_service.dart';
 import '../services/local_image_service.dart';
 import '../services/device_info_service.dart';
+import '../services/workspace_service.dart';
 import '../services/tools/builtin_tools.dart';
 import '../services/device_info_native.dart' as platform_info;
 import '../services/image_generation_notification_service.dart';
@@ -176,6 +177,9 @@ class SettingsView extends GetView<SettingsController> {
               const SizedBox(height: 24),
               _sectionLabel(context, 'STORAGE'),
               _buildStorageCard(context, isDark),
+              const SizedBox(height: 24),
+              _sectionLabel(context, 'WORKSPACE'),
+              _buildWorkspaceCard(context, isDark),
               const SizedBox(height: 24),
               _sectionLabel(context, 'AGENT'),
               _appleGroupedCard(context, isDark, children: [
@@ -399,7 +403,9 @@ class SettingsView extends GetView<SettingsController> {
                           style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
                       subtitle: Text(
                         'Daily ${t.hour.toString().padLeft(2, '0')}:'
-                        '${t.minute.toString().padLeft(2, '0')} · ${t.prompt}',
+                        '${t.minute.toString().padLeft(2, '0')}'
+                        '${t.modelName == null ? "" : " · ${t.modelName}"}'
+                        ' · ${t.prompt}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -438,6 +444,14 @@ class SettingsView extends GetView<SettingsController> {
     final nameCtl = TextEditingController();
     final promptCtl = TextEditingController();
     TimeOfDay time = const TimeOfDay(hour: 8, minute: 0);
+    final modelCtrl = Get.find<ModelController>();
+    final downloaded = modelCtrl.downloadedFiles.toList();
+    if (downloaded.isEmpty) {
+      Get.snackbar('Scheduled tasks', 'No local model files found.',
+          snackPosition: SnackPosition.BOTTOM);
+      return false;
+    }
+    String selectedModel = downloaded.first;
     var ok = false;
     await showDialog(
       context: context,
@@ -469,6 +483,17 @@ class SettingsView extends GetView<SettingsController> {
                   if (picked != null) setState(() => time = picked);
                 },
               ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: selectedModel,
+                decoration: const InputDecoration(labelText: 'Model'),
+                items: downloaded
+                    .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => selectedModel = v);
+                },
+              ),
             ],
           ),
           actions: [
@@ -490,19 +515,13 @@ class SettingsView extends GetView<SettingsController> {
       ),
     );
     if (!ok) return false;
-    final modelName = Get.find<InferenceService>().loadedModelName.value;
-    if (modelName.isEmpty) {
-      Get.snackbar('Scheduled tasks', 'Load a local model first.',
-          snackPosition: SnackPosition.BOTTOM);
-      return false;
-    }
     try {
-      final modelPath =
-          await Get.find<DownloadService>().modelPath(modelName);
+      final modelPath = await Get.find<DownloadService>().modelPath(selectedModel);
       await service.add(
         name: nameCtl.text.trim(),
         prompt: promptCtl.text.trim(),
         modelPath: modelPath,
+        modelName: selectedModel,
         hour: time.hour,
         minute: time.minute,
       );
@@ -1527,6 +1546,78 @@ class SettingsView extends GetView<SettingsController> {
         );
       })(),
     ]);
+  }
+
+  /// Workspace root: shows status and lets the user set it up or relocate it.
+  Widget _buildWorkspaceCard(BuildContext context, bool isDark) {
+    final workspace = Get.find<WorkspaceService>();
+    return _appleGroupedCard(context, isDark, children: [
+      Obx(() {
+        final ready = workspace.isReady;
+        return Column(children: [
+          _appleListTile(
+            context,
+            isDark,
+            leading: _iconBox(
+                ready ? const Color(0xFFB9F53E) : const Color(0xFF8B7CFF),
+                ready ? Icons.workspaces_outlined : Icons.workspaces_rounded),
+            title: ready ? 'Workspace folder' : 'Workspace not set up',
+            subtitle: ready
+                ? (workspace.treeUri.value ?? '')
+                : 'Pick a folder to organize your projects',
+            showDivider: workspace.supported,
+            onTap: workspace.supported
+                ? () async {
+                    if (!ready) {
+                      await workspace.pickWorkspace();
+                    } else {
+                      await _relocateWorkspace(context, workspace);
+                    }
+                  }
+                : null,
+          ),
+          if (workspace.supported && ready)
+            _appleListTile(
+              context,
+              isDark,
+              leading: _iconBox(
+                  const Color(0xFFFF9500), Icons.drive_file_move_outlined),
+              title: 'Change folder…',
+              subtitle: 'Moves all existing files into the new folder',
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              showDivider: false,
+              onTap: () => _relocateWorkspace(context, workspace),
+            ),
+        ]);
+      }),
+    ]);
+  }
+
+  Future<void> _relocateWorkspace(
+      BuildContext context, WorkspaceService workspace) async {
+    final confirmed = await Get.dialog<bool>(
+      AlertDialog(
+        title: const Text('Change workspace folder?'),
+        content: const Text(
+            'Your current projects and files will be copied into the new '
+            'folder, then this one will be used from now on.'),
+        actions: [
+          TextButton(
+              onPressed: () => Get.back(result: false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Get.back(result: true),
+              child: const Text('Continue')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok = await workspace.relocateWorkspace();
+    Get.snackbar(
+      'Workspace',
+      ok ? 'Workspace moved and active.' : 'Could not move the workspace.',
+      snackPosition: SnackPosition.BOTTOM,
+    );
   }
 
   /// Downloaded model files: name and size, straight from the download dir.

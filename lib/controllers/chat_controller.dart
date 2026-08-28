@@ -33,6 +33,8 @@ import '../services/tools/builtin_tools.dart';
 import '../services/tools/tool_call_parser.dart';
 import '../services/tools/tool_registry.dart';
 import '../utils/thought_parser.dart';
+import '../services/workspace_service.dart';
+import '../widgets/project_picker_dialog.dart';
 
 const int _visionImageMaxSide = 768;
 const int _visionImageJpegQuality = 72;
@@ -66,6 +68,7 @@ class ChatController extends GetxController {
   final sessions = <ChatSession>[].obs;
   final messages = <ChatMessage>[].obs;
   final currentSessionId = ''.obs;
+  final currentProjectPath = Rxn<String>();
   final isLoading = false.obs;
   final inputText = ''.obs;
   final selectedImagePath = Rxn<String>();
@@ -174,9 +177,26 @@ class ChatController extends GetxController {
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
-  void createNewChat() {
+  Future<void> createNewChat() async {
+    String? projectPath;
+    final workspace = Get.find<WorkspaceService>();
+    if (workspace.isReady) {
+      final projects = await workspace.listProjects();
+      projectPath = await showProjectPicker(projects);
+      if (projectPath == kNoProjectSentinel) projectPath = null;
+      if (projectPath != null && projectPath.isNotEmpty) {
+        // Create the folder on disk if it doesn't exist yet.
+        if (!projects.contains(projectPath)) {
+          await workspace.createProject(projectPath);
+        }
+      }
+    }
     final id = _uuid.v4();
-    final session = ChatSession(id: id, title: 'New Chat');
+    final session = ChatSession(
+      id: id,
+      title: 'New Chat',
+      projectPath: projectPath,
+    );
     _hive.saveSession(id, session.toMap());
     sessions.insert(0, session);
     openChat(id);
@@ -192,6 +212,18 @@ class ChatController extends GetxController {
   void openChat(String sessionId) {
     stopGenerating();
     currentSessionId.value = sessionId;
+    final session =
+        sessions.firstWhereOrNull((s) => s.id == sessionId);
+    final workspace = Get.find<WorkspaceService>();
+    final projectPath = session?.projectPath;
+    if (projectPath != null) {
+      currentProjectPath.value = projectPath;
+      // Point the Workspace tab at this chat's project folder.
+      unawaited(workspace.openProject(projectPath));
+    } else {
+      currentProjectPath.value = null;
+      workspace.currentRelPath.value = '';
+    }
     final raw = _hive.getMessagesForChat(sessionId);
     messages.value = raw.map((m) => ChatMessage.fromMap(m)).toList()
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -542,7 +574,7 @@ class ChatController extends GetxController {
 
     // Create a session if none selected
     if (currentSessionId.value.isEmpty) {
-      createNewChat();
+      await createNewChat();
     }
 
     // Encode image to base64 if it's not already pre-encoded, so the message
@@ -1060,6 +1092,7 @@ class ChatController extends GetxController {
       enabled: settings.enabledTools,
       customSearchUrl: settings.customSearchUrl.value,
       customSearchToken: settings.customSearchToken.value,
+      extra: buildFileTools(projectPath: () => currentProjectPath.value),
     );
   }
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -25,6 +24,7 @@ import 'services/app_log_service.dart';
 import 'services/crash_reporting_service.dart';
 import 'services/image_generation_notification_service.dart';
 import 'services/scheduled_task_service.dart';
+import 'services/workspace_service.dart';
 import 'core/constants.dart';
 
 void main() {
@@ -103,6 +103,8 @@ void main() {
     await imageNotifications.configureBackgroundService();
     Get.put(ServerController(), permanent: true);
     Get.put(ModelController());
+    final workspace = Get.put(WorkspaceService());
+    await workspace.initialize();
 
     // Auto-configure inference settings based on device RAM
     _autoConfigureForDevice();
