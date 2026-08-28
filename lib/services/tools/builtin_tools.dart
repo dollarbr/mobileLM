@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../download_service.dart';
 import '../inference_service.dart';
 import '../scheduled_task_service.dart';
+import '../workspace_service.dart';
 import 'calculator.dart';
 import 'tool_registry.dart';
 import 'web_tools.dart';
@@ -30,8 +31,19 @@ ToolRegistry buildDefaultToolRegistry({
   Set<String>? enabled,
   String customSearchUrl = '',
   String customSearchToken = '',
+  List<Tool> extra = const [],
 }) =>
     ToolRegistry([
+      ..._coreTools(enabled, customSearchUrl, customSearchToken),
+      ...extra,
+    ].where((t) => enabled == null || enabled.contains(t.name)));
+
+List<Tool> _coreTools(
+  Set<String>? enabled,
+  String customSearchUrl,
+  String customSearchToken,
+) =>
+    [
       Tool(
         name: 'get_datetime',
         description: "The device's current date and time, with its time zone.",
@@ -145,6 +157,7 @@ ToolRegistry buildDefaultToolRegistry({
         parameters: {
           'name': 'short label, e.g. "Morning digest"',
           'prompt': 'the instruction to run every day',
+          'model': 'filename of a downloaded local model to use',
           'hour': '0-23',
           'minute': '0-59',
         },
@@ -152,6 +165,7 @@ ToolRegistry buildDefaultToolRegistry({
         run: (args) async {
           final name = args['name']?.trim();
           final prompt = args['prompt']?.trim();
+          final model = args['model']?.trim();
           final hour = int.tryParse(args['hour'] ?? '');
           final minute = int.tryParse(args['minute'] ?? '');
           if (name == null || prompt == null || hour == null || minute == null) {
@@ -160,23 +174,34 @@ ToolRegistry buildDefaultToolRegistry({
           if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
             return 'Error: hour must be 0-23 and minute 0-59.';
           }
-          final inference = Get.find<InferenceService>();
-          final modelName = inference.loadedModelName.value;
-          if (modelName.isEmpty) {
-            return 'Error: no local model loaded — load one first.';
+          final download = Get.find<DownloadService>();
+          String modelPath;
+          String modelName;
+          if (model != null && model.isNotEmpty) {
+            if (!await download.isModelDownloaded(model)) {
+              return 'Error: model "$model" is not downloaded.';
+            }
+            modelName = model;
+            modelPath = await download.modelPath(model);
+          } else {
+            final inference = Get.find<InferenceService>();
+            modelName = inference.loadedModelName.value;
+            if (modelName.isEmpty) {
+              return 'Error: no local model loaded — load one first or pass model.';
+            }
+            modelPath = await download.modelPath(modelName);
           }
-          final modelPath =
-              await Get.find<DownloadService>().modelPath(modelName);
           final task = await Get.find<ScheduledTaskService>().add(
             name: name,
             prompt: prompt,
             modelPath: modelPath,
+            modelName: modelName,
             hour: hour,
             minute: minute,
           );
           return 'Scheduled "${task.name}" daily at '
               '${hour.toString().padLeft(2, '0')}:'
-              '${minute.toString().padLeft(2, '0')}.';
+              '${minute.toString().padLeft(2, '0')} using ${task.modelName ?? "the active model"}';
         },
       ),
       Tool(
@@ -188,8 +213,9 @@ ToolRegistry buildDefaultToolRegistry({
           return tasks
               .map((t) =>
                   '${t.name} — daily ${t.hour.toString().padLeft(2, '0')}:'
-                  '${t.minute.toString().padLeft(2, '0')} — '
-                  '${t.enabled ? 'enabled' : 'disabled'}')
+                  '${t.minute.toString().padLeft(2, '0')}'
+                  '${t.modelName == null ? "" : " · ${t.modelName}"}'
+                  ' — ${t.enabled ? 'enabled' : 'disabled'}')
               .join('\n');
         },
       ),
@@ -211,4 +237,140 @@ ToolRegistry buildDefaultToolRegistry({
           return 'Cancelled "${match.name}".';
         },
       ),
-    ].where((t) => enabled == null || enabled.contains(t.name)));
+    ];
+
+/// File tools scoped to the active chat's project folder. The [projectPath]
+/// callback reads the currently open project (null when the chat has none), so
+/// the model can only ever touch files inside it — never the whole workspace.
+///
+/// Members become write-class ([ToolRisk.write]) so a human confirms deletions,
+/// overwrites and renames; pure reads auto-run. All paths are relative to the
+/// project folder.
+List<Tool> buildFileTools({
+  required String? Function() projectPath,
+}) {
+  WorkspaceService ws() => Get.find<WorkspaceService>();
+
+  // Merges a project-relative path onto the active project folder. Returns
+  // null (=> an error the model can relay) when there is no project open.
+  String? resolve(String relative) {
+    final base = projectPath();
+    if (base == null || base.isEmpty) return null;
+    var rel = relative.trim();
+    if (rel.startsWith('/')) rel = rel.substring(1);
+    if (rel.isEmpty) return base;
+    return '$base/$rel';
+  }
+
+  String notReady() =>
+      'Error: no project folder is open in this chat. Start a chat in a '
+      'project (or bind this chat to one) before using file tools.';
+
+  return [
+    Tool(
+      name: 'list_files',
+      description: 'List the files and folders in the current project. Reads '
+          'are safe to run without asking.',
+      parameters: {'path': 'subfolder to list; omit to list the project root'},
+      run: (args) async {
+        final full = resolve(args['path'] ?? '');
+        if (full == null) return notReady();
+        final entries = await ws().listDir(full);
+        if (entries.isEmpty) return 'The folder is empty.';
+        return entries
+            .map((e) => '${e.isDir ? '[dir]  ' : '[file] '}${e.name}'
+                '${e.isDir ? '' : ' (${e.size} bytes)'}')
+            .join('\n');
+      },
+    ),
+    Tool(
+      name: 'read_file',
+      description: 'Return the text contents of a file in the current project.',
+      parameters: {'path': 'file path, relative to the project root'},
+      run: (args) async {
+        final full = resolve(args['path'] ?? '');
+        if (full == null) return notReady();
+        final content = await ws().readFile(full);
+        if (content == null) return 'Error: could not read that file.';
+        const maxChar = 4000;
+        if (content.length > maxChar) {
+          return '${content.substring(0, maxChar)}\n…(truncated, '
+              '${content.length} characters total)';
+        }
+        return content;
+      },
+    ),
+    Tool(
+      name: 'create_file',
+      description: 'Create a new empty file in the current project. Fails if '
+          'a file with that name already exists.',
+      parameters: {
+        'path': 'new file path, relative to the project root',
+        'content': 'initial contents (optional)',
+      },
+      risk: ToolRisk.write,
+      run: (args) async {
+        final full = resolve(args['path'] ?? '');
+        if (full == null) return notReady();
+        final existing = await ws().readFile(full);
+        if (existing != null) {
+          return 'Error: ${args['path']} already exists. Use write_file to '
+              'overwrite it.';
+        }
+        final ok = await ws().writeFile(full, args['content'] ?? '');
+        return ok
+            ? 'Created ${args['path']}.'
+            : 'Error: could not create the file.';
+      },
+    ),
+    Tool(
+      name: 'write_file',
+      description: 'Overwrite a file in the current project with new text, '
+          'creating it (and any folders) if missing. Asks the user first.',
+      parameters: {
+        'path': 'file path, relative to the project root',
+        'content': 'the full new contents of the file',
+      },
+      risk: ToolRisk.write,
+      run: (args) async {
+        final full = resolve(args['path'] ?? '');
+        if (full == null) return notReady();
+        final ok = await ws().writeFile(full, args['content'] ?? '');
+        return ok ? 'Wrote ${args['path']}.' : 'Error: could not write the file.';
+      },
+    ),
+    Tool(
+      name: 'delete_file',
+      description: 'Delete a file (or empty folder) in the current project. '
+          'Asks the user first.',
+      parameters: {'path': 'file path, relative to the project root'},
+      risk: ToolRisk.write,
+      run: (args) async {
+        final full = resolve(args['path'] ?? '');
+        if (full == null) return notReady();
+        final ok = await ws().deleteItem(full);
+        return ok ? 'Deleted ${args['path']}.' : 'Error: could not delete it.';
+      },
+    ),
+    Tool(
+      name: 'rename_file',
+      description: 'Rename a file or folder in the current project. Asks the '
+          'user first.',
+      parameters: {
+        'path': 'current path, relative to the project root',
+        'new_name': 'new name for the item (a bare name, not a path)',
+      },
+      risk: ToolRisk.write,
+      run: (args) async {
+        final full = resolve(args['path'] ?? '');
+        if (full == null) return notReady();
+        final newName = (args['new_name'] ?? '').trim();
+        if (newName.isEmpty || newName.contains('/')) {
+          return 'Error: new_name must be a bare file/folder name.';
+        }
+        final ok = await ws().renameItem(full, newName);
+        return ok ? 'Renamed to $newName.' : 'Error: could not rename it.';
+      },
+    ),
+  ];
+}

@@ -7,11 +7,13 @@ import '../controllers/settings_controller.dart';
 import '../views/home_view.dart';
 import '../views/chat_view.dart';
 import '../views/task_view.dart';
+import '../views/workspace_view.dart';
 
 abstract class AppRoutes {
   static const home = '/';
   static const chat = '/chat';
   static const task = '/task';
+  static const workspace = '/workspace';
 }
 
 class AppPages {
@@ -40,6 +42,10 @@ class AppPages {
       binding: BindingsBuilder(() {
         Get.lazyPut(() => TaskController());
       }),
+    ),
+    GetPage(
+      name: AppRoutes.workspace,
+      page: () => const WorkspaceView(),
     ),
   ];
 }

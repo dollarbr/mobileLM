@@ -25,15 +25,21 @@ import org.json.JSONObject
 class MainActivity : FlutterActivity() {
     private val importChannelName = "com.aichat.ai_chat/model_import"
     private val mediaChannelName = "com.aichat.ai_chat/media"
+    private val workspaceChannelName = "com.aichat.ai_chat/workspace"
+    private val schedulerChannelName = "com.aichat.ai_chat/scheduler"
     private val importRequestCode = 4207
     private val backupTreeRequestCode = 4208
+    private val workspaceTreeRequestCode = 4209
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var importChannel: MethodChannel? = null
     private var mediaChannel: MethodChannel? = null
+    private var workspaceChannel: MethodChannel? = null
+    private var schedulerChannel: MethodChannel? = null
     private var pendingImportResult: MethodChannel.Result? = null
     private var pendingModelsDir: String? = null
     private var pendingBackupResult: MethodChannel.Result? = null
+    private var pendingWorkspaceResult: MethodChannel.Result? = null
     private val monitoredInAppDownloads = ConcurrentHashMap.newKeySet<Long>()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -294,6 +300,250 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+
+        // Workspace channel: generic CRUD against a SAF directory tree. The
+        // workspace root is chosen once via the native folder picker and kept
+        // as a persisted tree URI; every project folder lives underneath it.
+        workspaceChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            workspaceChannelName
+        )
+        workspaceChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "wsPickWorkspace" -> {
+                    Log.i("MobileLMWS", "wsPickWorkspace: opening tree picker; result=$result")
+                    if (pendingWorkspaceResult != null) {
+                        result.error("WS_BUSY", "A folder pick is already running.", null)
+                        return@setMethodCallHandler
+                    }
+                    pendingWorkspaceResult = result
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                                 Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                    }
+                    Log.i("MobileLMWS", "wsPickWorkspace: startActivityForResult code=$workspaceTreeRequestCode")
+                    startActivityForResult(intent, workspaceTreeRequestCode)
+                }
+                // NOTE: this channel is used for lightweight UI + tool calls.
+                // Heavy compute (list/read/write) is cheap at workspace scale, so
+                // it runs directly on the platform thread for simplicity and to
+                // avoid interleaving writes with the model import threads.
+                "wsListDir" -> {
+                    val tree = call.argument<String>("treeUri")
+                    val rel = call.argument<String>("relPath") ?: ""
+                    if (tree.isNullOrBlank()) {
+                        result.error("WS_INVALID", "treeUri is required.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        result.success(listWorkspaceDir(Uri.parse(tree), rel))
+                    } catch (e: Exception) {
+                        result.error("WS_LIST_FAILED", e.message ?: e.toString(), null)
+                    }
+                }
+                "wsMkdir" -> {
+                    val tree = call.argument<String>("treeUri")
+                    val rel = call.argument<String>("relPath") ?: ""
+                    if (tree.isNullOrBlank() || rel.isBlank()) {
+                        result.error("WS_INVALID", "treeUri and relPath are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val docId = resolveWorkspacePath(Uri.parse(tree), rel, create = true, isDir = true)
+                        result.success(docId)
+                    } catch (e: Exception) {
+                        result.error("WS_MKDIR_FAILED", e.message ?: e.toString(), null)
+                    }
+                }
+                "wsReadFile" -> {
+                    val tree = call.argument<String>("treeUri")
+                    val rel = call.argument<String>("relPath") ?: ""
+                    if (tree.isNullOrBlank() || rel.isBlank()) {
+                        result.error("WS_INVALID", "treeUri and relPath are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    thread(name = "ws-read") {
+                        try {
+                            val text = readWorkspaceFile(Uri.parse(tree), rel)
+                            mainHandler.post { result.success(text) }
+                        } catch (e: Exception) {
+                            mainHandler.post {
+                                result.error("WS_READ_FAILED", e.message ?: e.toString(), null)
+                            }
+                        }
+                    }
+                }
+                "wsWriteFile" -> {
+                    val tree = call.argument<String>("treeUri")
+                    val rel = call.argument<String>("relPath") ?: ""
+                    val content = call.argument<String>("content") ?: ""
+                    if (tree.isNullOrBlank() || rel.isBlank()) {
+                        result.error("WS_INVALID", "treeUri and relPath are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        writeWorkspaceFile(Uri.parse(tree), rel, content)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("WS_WRITE_FAILED", e.message ?: e.toString(), null)
+                    }
+                }
+                "wsDelete" -> {
+                    val tree = call.argument<String>("treeUri")
+                    val rel = call.argument<String>("relPath") ?: ""
+                    if (tree.isNullOrBlank() || rel.isBlank()) {
+                        result.error("WS_INVALID", "treeUri and relPath are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val ok = deleteWorkspaceItem(Uri.parse(tree), rel)
+                        result.success(ok)
+                    } catch (e: Exception) {
+                        result.error("WS_DELETE_FAILED", e.message ?: e.toString(), null)
+                    }
+                }
+                "wsRename" -> {
+                    val tree = call.argument<String>("treeUri")
+                    val rel = call.argument<String>("relPath") ?: ""
+                    val newName = call.argument<String>("newName") ?: ""
+                    if (tree.isNullOrBlank() || rel.isBlank() || newName.isBlank()) {
+                        result.error("WS_INVALID", "treeUri, relPath and newName are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val docId = resolveWorkspacePath(Uri.parse(tree), rel, create = false, isDir = false)
+                        val newUri = DocumentsContract.renameDocument(
+                            contentResolver,
+                            DocumentsContract.buildDocumentUriUsingTree(Uri.parse(tree), docId),
+                            newName.trim()
+                        )
+                        if (newUri == null) {
+                            result.error("WS_RENAME_FAILED", "Rename returned null.", null)
+                        } else {
+                            result.success(DocumentsContract.getDocumentId(newUri))
+                        }
+                    } catch (e: Exception) {
+                        result.error("WS_RENAME_FAILED", e.message ?: e.toString(), null)
+                    }
+                }
+                "wsListProjects" -> {
+                    val tree = call.argument<String>("treeUri")
+                    if (tree.isNullOrBlank()) {
+                        result.error("WS_INVALID", "treeUri is required.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val projects = listWorkspaceDir(Uri.parse(tree), "")
+                            .filter { it["isDir"] as? Boolean == true }
+                        result.success(projects)
+                    } catch (e: Exception) {
+                        result.error("WS_LIST_FAILED", e.message ?: e.toString(), null)
+                    }
+                }
+                // Copy everything under [oldTreeUri] into [newTreeUri] so the
+                // user can relocate the whole workspace in Settings.
+                "wsMoveWorkspace" -> {
+                    val oldTree = call.argument<String>("oldTreeUri")
+                    val newTree = call.argument<String>("newTreeUri")
+                    if (oldTree.isNullOrBlank() || newTree.isNullOrBlank()) {
+                        result.error("WS_INVALID", "oldTreeUri and newTreeUri are required.", null)
+                        return@setMethodCallHandler
+                    }
+                    thread(name = "ws-move") {
+                        try {
+                            val moved = moveWorkspace(Uri.parse(oldTree), Uri.parse(newTree))
+                            mainHandler.post { result.success(moved) }
+                        } catch (e: Exception) {
+                            mainHandler.post {
+                                result.error("WS_MOVE_FAILED", e.message ?: e.toString(), null)
+                            }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        schedulerChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            schedulerChannelName
+        )
+        schedulerChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "scheduleTask" -> {
+                    val id = call.argument<String>("id")
+                    val name = call.argument<String>("name")
+                    val prompt = call.argument<String>("prompt")
+                    val modelPath = call.argument<String>("modelPath")
+                    val modelName = call.argument<String>("modelName")
+                    val hour = call.argument<Int>("hour")
+                    val minute = call.argument<Int>("minute")
+                    if (id == null || name == null || prompt == null ||
+                        modelPath == null || hour == null || minute == null) {
+                        result.error("INVALID_ARGS", "Missing scheduler fields.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        requestBatteryExemptionIfNeeded()
+                        val obj = org.json.JSONObject().apply {
+                            put("id", id)
+                            put("name", name)
+                            put("prompt", prompt)
+                            put("modelPath", modelPath)
+                            put("modelName", modelName ?: "")
+                            put("hour", hour)
+                            put("minute", minute)
+                            put("enabled", true)
+                        }
+                        BootReceiver.scheduleTaskFromJson(this, WorkManager.getInstance(this), obj)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SCHEDULE_FAILED", e.message, null)
+                    }
+                }
+                "cancelTask" -> {
+                    val id = call.argument<String>("id")
+                    if (id == null) {
+                        result.error("INVALID_ARGS", "Missing task id.", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        WorkManager.getInstance(this)
+                            .cancelUniqueWork("scheduled_task_$id")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("CANCEL_FAILED", e.message, null)
+                    }
+                }
+                "ensureBatteryExemption" -> {
+                    requestBatteryExemptionIfNeeded()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        try {
+            BootReceiver.rescheduleAll(this)
+        } catch (_: Exception) {}
+    }
+
+    private fun requestBatteryExemptionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                        .setData(Uri.parse("package:$packageName"))
+                    startActivity(intent)
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -596,6 +846,27 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        Log.i("MobileLMWS", "onActivityResult: requestCode=$requestCode resultCode=$resultCode data=${data?.data}")
+        if (requestCode == workspaceTreeRequestCode) {
+            val res = pendingWorkspaceResult
+            pendingWorkspaceResult = null
+            val treeUri = data?.data
+            if (resultCode != RESULT_OK || treeUri == null) {
+                res?.success(null)
+                return
+            }
+            try {
+                contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                )
+            } catch (_: Exception) {
+                // One-shot grant on some providers; operations still work this session.
+            }
+            res?.success(treeUri.toString())
+            return
+        }
         if (requestCode == backupTreeRequestCode) {
             val res = pendingBackupResult
             pendingBackupResult = null
@@ -1070,5 +1341,179 @@ class MainActivity : FlutterActivity() {
 
     private fun sanitizeFilename(filename: String): String {
         return filename.replace(Regex("""[\\/:*?"<>|]"""), "_")
+    }
+
+    // ── Workspace: generic SAF CRUD against a persisted tree ───────────────
+
+    private fun findChildId(treeUri: Uri, parentId: String, name: String): String? {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+        contentResolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null, null, null
+        )?.use { c ->
+            while (c.moveToNext()) {
+                if (c.getString(1) == name) return c.getString(0)
+            }
+        }
+        return null
+    }
+
+    private fun resolveExistingDirId(treeUri: Uri, segments: List<String>): String {
+        var parentId = DocumentsContract.getTreeDocumentId(treeUri)
+        for (segment in segments) {
+            parentId = findChildId(treeUri, parentId, segment)
+                ?: throw IllegalStateException("Folder not found: $segment")
+        }
+        return parentId
+    }
+
+    /// Resolves a workspace-relative path to a document id. When [isDir] the
+    /// whole path is folder chain; otherwise the last segment is the item
+    /// (file or folder) inside its parent chain. With [create] missing folders
+    /// are created on demand, otherwise a missing folder raises.
+    private fun resolveWorkspacePath(treeUri: Uri, relPath: String, create: Boolean, isDir: Boolean): String {
+        val segments = relPath.split('/').filter { it.isNotBlank() }
+        if (isDir) {
+            if (segments.isEmpty()) return DocumentsContract.getTreeDocumentId(treeUri)
+            val uri = if (create) ensureTreePath(treeUri, segments)
+                else DocumentsContract.buildDocumentUriUsingTree(treeUri, resolveExistingDirId(treeUri, segments))
+            return DocumentsContract.getDocumentId(uri!!)
+        }
+        val parentSegs = segments.dropLast(1)
+        val parentId = if (parentSegs.isEmpty())
+            DocumentsContract.getTreeDocumentId(treeUri)
+        else if (create)
+            DocumentsContract.getDocumentId(ensureTreePath(treeUri, parentSegs)!!)
+        else
+            resolveExistingDirId(treeUri, parentSegs)
+        return findChildId(treeUri, parentId, segments.last())
+            ?: throw IllegalStateException("Item not found: ${segments.last()}")
+    }
+
+    private fun listWorkspaceDir(treeUri: Uri, relPath: String): List<Map<String, Any>> {
+        val parentId = resolveWorkspacePath(treeUri, relPath, create = false, isDir = true)
+        val out = mutableListOf<Map<String, Any>>()
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+        contentResolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE),
+            null, null, null
+        )?.use { c ->
+            while (c.moveToNext()) {
+                out.add(mapOf(
+                    "documentId" to c.getString(0),
+                    "name" to (c.getString(1) ?: ""),
+                    "isDir" to (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR),
+                    "size" to c.getLong(3)
+                ))
+            }
+        }
+        return out
+    }
+
+    private fun readWorkspaceFile(treeUri: Uri, relPath: String): String {
+        val segments = relPath.split('/').filter { it.isNotBlank() }
+        val parentSegs = segments.dropLast(1)
+        val parentId = if (parentSegs.isEmpty())
+            DocumentsContract.getTreeDocumentId(treeUri)
+        else
+            resolveExistingDirId(treeUri, parentSegs)
+        val childId = findChildId(treeUri, parentId, segments.last())
+            ?: throw IllegalStateException("File not found: ${segments.last()}")
+        val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+        contentResolver.openInputStream(docUri)?.use { input ->
+            return input.readBytes().toString(Charsets.UTF_8)
+        } ?: throw IllegalStateException("Could not open file '${segments.last()}'")
+    }
+
+    private fun writeWorkspaceFile(treeUri: Uri, relPath: String, content: String) {
+        val segments = relPath.split('/').filter { it.isNotBlank() }
+        val name = segments.last()
+        val parentSegs = segments.dropLast(1)
+        val parentId = if (parentSegs.isEmpty())
+            DocumentsContract.getTreeDocumentId(treeUri)
+        else
+            DocumentsContract.getDocumentId(ensureTreePath(treeUri, parentSegs)!!)
+        val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentId)
+        var childId = findChildId(treeUri, parentId, name)
+        val docUri: Uri
+        if (childId == null) {
+            docUri = DocumentsContract.createDocument(
+                contentResolver, parentUri, "application/octet-stream", name
+            ) ?: throw IllegalStateException("Could not create file '$name'")
+        } else {
+            docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+        }
+        contentResolver.openOutputStream(docUri, "wt")?.use { output ->
+            output.write(content.toByteArray(Charsets.UTF_8))
+        } ?: throw IllegalStateException("Could not open file '$name' for writing")
+    }
+
+    private fun deleteWorkspaceItem(treeUri: Uri, relPath: String): Boolean {
+        val segments = relPath.split('/').filter { it.isNotBlank() }
+        val parentSegs = segments.dropLast(1)
+        val parentId = if (parentSegs.isEmpty())
+            DocumentsContract.getTreeDocumentId(treeUri)
+        else
+            resolveExistingDirId(treeUri, parentSegs)
+        val childId = findChildId(treeUri, parentId, segments.last())
+            ?: throw IllegalStateException("Item not found: ${segments.last()}")
+        return DocumentsContract.deleteDocument(
+            contentResolver,
+            DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+        )
+    }
+
+    /// Copies every file/dir under the old tree into the new one. Used when the
+    /// user relocates the workspace root; the new root becomes the only grant,
+    /// and workspace-relative project paths stay valid afterwards.
+    private fun moveWorkspace(oldTree: Uri, newTree: Uri): Int {
+        var copied = 0
+        fun walk(srcId: String, destId: String) {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(oldTree, srcId)
+            contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null, null, null
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0)
+                    val name = c.getString(1) ?: continue
+                    val mime = c.getString(2) ?: ""
+                    val destParentUri = DocumentsContract.buildDocumentUriUsingTree(newTree, destId)
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        val created = DocumentsContract.createDocument(
+                            contentResolver, destParentUri,
+                            DocumentsContract.Document.MIME_TYPE_DIR, name
+                        ) ?: continue
+                        walk(id, DocumentsContract.getDocumentId(created))
+                    } else {
+                        val target = DocumentsContract.createDocument(
+                            contentResolver, destParentUri, "application/octet-stream", name
+                        ) ?: continue
+                        contentResolver.openInputStream(
+                            DocumentsContract.buildDocumentUriUsingTree(oldTree, id)
+                        )?.use { input ->
+                            contentResolver.openOutputStream(target)?.use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        copied++
+                    }
+                }
+            }
+        }
+        walk(
+            DocumentsContract.getTreeDocumentId(oldTree),
+            DocumentsContract.getTreeDocumentId(newTree)
+        )
+        return copied
     }
 }

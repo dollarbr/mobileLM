@@ -7,10 +7,21 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'dart:convert';
+import 'dart:io';
 
 import '../core/constants.dart';
 import 'inference_android.dart' if (dart.library.html) 'inference_stub.dart'
     as platform;
+
+const _schedulerChannel = MethodChannel('com.aichat.ai_chat/scheduler');
+
+Future<void> _ensureBatteryExemption() async {
+  try {
+    if (!Platform.isAndroid) return;
+    await _schedulerChannel.invokeMethod('ensureBatteryExemption');
+  } catch (_) {}
+}
 
 /// A daily prompt the agent runs on its own, even with the app closed.
 class ScheduledTask {
@@ -21,6 +32,7 @@ class ScheduledTask {
   /// Absolute path snapshotted at creation time — the background isolate
   /// resolves nothing, it just loads what it was handed.
   final String modelPath;
+  final String? modelName;
   final int hour; // 0-23, device-local
   final int minute;
   bool enabled;
@@ -31,6 +43,7 @@ class ScheduledTask {
     required this.name,
     required this.prompt,
     required this.modelPath,
+    this.modelName,
     required this.hour,
     required this.minute,
     this.enabled = true,
@@ -42,6 +55,7 @@ class ScheduledTask {
         'name': name,
         'prompt': prompt,
         'modelPath': modelPath,
+        if (modelName != null) 'modelName': modelName,
         'hour': hour,
         'minute': minute,
         'enabled': enabled,
@@ -53,6 +67,7 @@ class ScheduledTask {
         name: j['name'] as String,
         prompt: j['prompt'] as String,
         modelPath: j['modelPath'] as String,
+        modelName: j['modelName'] as String?,
         hour: j['hour'] as int,
         minute: j['minute'] as int,
         enabled: j['enabled'] as bool? ?? true,
@@ -174,7 +189,7 @@ Future<ScheduledResult> executeScheduledTask(ScheduledTask task) async {
     output = await engine.generate(
       prompt: task.prompt,
       systemPrompt: AppConstants.systemPrompt,
-      modelName: task.name,
+      modelName: task.modelName ?? task.modelPath.split('/').last,
       maxTokens: AppConstants.defaultMaxTokens,
       temperature: AppConstants.defaultTemperature,
     );
@@ -273,6 +288,7 @@ class ScheduledTaskService extends GetxService {
     required String name,
     required String prompt,
     required String modelPath,
+    String? modelName,
     required int hour,
     required int minute,
   }) async {
@@ -281,24 +297,32 @@ class ScheduledTaskService extends GetxService {
       name: name,
       prompt: prompt,
       modelPath: modelPath,
+      modelName: modelName,
       hour: hour,
       minute: minute,
     );
     tasks.add(task);
     await writeTasks(tasks);
     await _syncServiceState();
+    unawaited(_scheduleOnNative(task));
     return task;
   }
 
   Future<void> remove(String id) async {
     tasks.removeWhere((t) => t.id == id);
     await writeTasks(tasks);
+    await _cancelOnNative(id);
     await _syncServiceState();
   }
 
   Future<void> setEnabled(ScheduledTask task, bool enabled) async {
     task.enabled = enabled;
     await writeTasks(tasks);
+    if (!enabled) {
+      await _cancelOnNative(task.id);
+    } else {
+      unawaited(_scheduleOnNative(task));
+    }
     await _syncServiceState();
   }
 
@@ -325,5 +349,28 @@ class ScheduledTaskService extends GetxService {
     } else {
       service.invoke('stopService');
     }
+  }
+
+  Future<void> _scheduleOnNative(ScheduledTask task) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _ensureBatteryExemption();
+      await _schedulerChannel.invokeMethod('scheduleTask', {
+        'id': task.id,
+        'name': task.name,
+        'prompt': task.prompt,
+        'modelPath': task.modelPath,
+        'modelName': task.modelName,
+        'hour': task.hour,
+        'minute': task.minute,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _cancelOnNative(String id) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _schedulerChannel.invokeMethod('cancelTask', {'id': id});
+    } catch (_) {}
   }
 }

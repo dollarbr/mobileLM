@@ -23,10 +23,13 @@ scheduled tasks that run even with the app closed.
   ones get i8mm/SME automatically.
 - **Multimodal in the chat** — images, PDFs, office docs, audio (STT), and
   video (contact-sheet frames) via `libmtmd` + projectors (`mmproj`).
-- **Agent tools** — clock, calculator, device info, clipboard, haptics,
-  share, `web_search` / `read_url`. Write-class tools pause for a human tap
-  before they run. Tool chains are capped (default single hop, up to 8) so
-  small models can't spin forever.
+- **Agent tools** — 18 built-in tools, including clock, calculator, device info,
+  clipboard, haptics, share, file management scoped to the active project
+  (`list_files`, `read_file`, `create_file`, `write_file`, `delete_file`,
+  `rename_file`), web tools (`web_search`, `read_url`), and task management
+  (`schedule_task`, `list_scheduled_tasks`, `cancel_scheduled_task`).
+  Write-class tools pause for a human tap before they run. Tool chains are
+  capped (default single hop, up to 8) so small models can't spin forever.
 - **Scheduled tasks** — a named prompt bound to a model snapshot and a daily
   fire time. Runs in a foreground service with its own engine and empty
   history, posts the result as a notification and into the chat.

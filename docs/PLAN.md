@@ -22,7 +22,7 @@ Repo, plano, identidade visual, LICENSE MIT com atribuição dupla.
 
 ### M1 — Rebase da marca (≈1 semana)
 - Importar codebase privateLM como histórico inicial deste repo.
-- Renomear: app `mobileLM`, applicationId `com.orailnoor.mobilelm`, título, splash.
+- Renomear: app `mobileLM`, applicationId `com.dollarbr.mobilelm`, título, splash.
 - Ícone adaptativo novo a partir de `docs/brand/logo.svg`; tema → paleta Ink/Volt.
 - CI copiada do privateLM (`ci.yml`, `debug-apk.yml`, `release.yml`) com nome novo.
 - **Critério:** app abre, chama local e cloud, APK debug sai por tag de CI.

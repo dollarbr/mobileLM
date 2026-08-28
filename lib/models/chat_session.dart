@@ -5,12 +5,17 @@ class ChatSession {
   final DateTime updatedAt;
   final String? lastMessage;
 
+  /// Name of the project folder this chat works in, relative to the workspace
+  /// root (e.g. "my-project"). Null = no project bound (a general chat).
+  final String? projectPath;
+
   ChatSession({
     required this.id,
     String? title,
     DateTime? createdAt,
     DateTime? updatedAt,
     this.lastMessage,
+    this.projectPath,
   })  : title = title ?? 'New Chat',
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
@@ -21,6 +26,7 @@ class ChatSession {
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
         'lastMessage': lastMessage,
+        'projectPath': projectPath,
       };
 
   factory ChatSession.fromMap(Map<dynamic, dynamic> map) => ChatSession(
@@ -29,12 +35,14 @@ class ChatSession {
         createdAt: DateTime.tryParse(map['createdAt'] ?? '') ?? DateTime.now(),
         updatedAt: DateTime.tryParse(map['updatedAt'] ?? '') ?? DateTime.now(),
         lastMessage: map['lastMessage'],
+        projectPath: map['projectPath'],
       );
 
   ChatSession copyWith({
     String? title,
     DateTime? updatedAt,
     String? lastMessage,
+    String? projectPath,
   }) =>
       ChatSession(
         id: id,
@@ -42,5 +50,6 @@ class ChatSession {
         createdAt: createdAt,
         updatedAt: updatedAt ?? DateTime.now(),
         lastMessage: lastMessage ?? this.lastMessage,
+        projectPath: projectPath ?? this.projectPath,
       );
 }

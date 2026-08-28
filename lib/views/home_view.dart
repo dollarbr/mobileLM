@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../controllers/home_controller.dart';
+import '../services/workspace_service.dart';
 import 'chat_view.dart';
 import 'model_view.dart';
 import 'settings_view.dart';
+import 'workspace_view.dart';
+import 'workspace_setup_view.dart';
 
 class HomeView extends GetView<HomeController> {
   const HomeView({super.key});
@@ -20,6 +23,10 @@ class HomeView extends GetView<HomeController> {
         activeIcon: Icons.arrow_downward_rounded,
         label: 'Models'),
     _NavItem(
+        icon: Icons.workspace_premium_outlined,
+        activeIcon: Icons.workspace_premium,
+        label: 'Workspace'),
+    _NavItem(
         icon: Icons.settings_outlined,
         activeIcon: Icons.settings,
         label: 'Settings'),
@@ -33,6 +40,10 @@ class HomeView extends GetView<HomeController> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final workspace = Get.find<WorkspaceService>();
+    if (workspace.needsSetup.value && workspace.supported) {
+      return const WorkspaceSetupView();
+    }
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
       body: Obx(() {
@@ -41,6 +52,7 @@ class HomeView extends GetView<HomeController> {
           children: const [
             ChatView(),
             ModelView(),
+            WorkspaceView(),
             SettingsView()
           ],
         );
