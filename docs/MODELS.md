@@ -16,6 +16,20 @@ no topo de `lib/controllers/model_controller.dart` — está fora do controller
 de propósito, porque a precedência é o que quebra e precisa de teste
 (`test/model_sections_test.dart`).
 
+### Colapsar e expandir
+
+Toda seção começa **fechada**. A aba abre num índice curto do que o aparelho
+tem — seis cabeçalhos com a contagem ao lado — em vez de trinta e poucos
+cards de uma vez. Tocar no cabeçalho abre; tocar de novo fecha.
+
+O estado é `ModelController.expandedSections`, um conjunto de títulos abertos
+— e não de fechados, justamente para que o padrão seja fechado sem precisar
+semear nada. **Não é persistido**: cada abertura do app volta ao índice. Se um
+dia isso incomodar, é uma chave no Hive, não um redesenho.
+
+O banner do modelo carregado fica acima das seções, então o que está em uso
+continua visível com tudo fechado.
+
 ### Sub-blocos
 
 Dentro de uma seção, `_byModality` agrupa em **Text**, **Vision**,

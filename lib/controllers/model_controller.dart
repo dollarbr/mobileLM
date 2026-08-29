@@ -79,6 +79,11 @@ class ModelController extends GetxController {
   final customModels = <AiModel>[].obs;
   final fileSizes = <String, int>{}.obs;
   final modelScope = 'local'.obs;
+
+  /// Section titles the user has opened. Everything starts folded, so the tab
+  /// opens on a short index of what exists instead of 30-odd cards. Not
+  /// persisted: a fresh launch is a fresh index.
+  final expandedSections = <String>{}.obs;
   final importFileName = ''.obs;
   final importStatus = ''.obs;
   final importCopiedBytes = 0.obs;
@@ -86,6 +91,16 @@ class ModelController extends GetxController {
   final importBytesPerSecond = 0.0.obs;
   final sortSmallestFirst = true.obs;
   final externalDownloadId = Rx<int?>(null);
+
+  void toggleSection(String title) {
+    if (expandedSections.contains(title)) {
+      expandedSections.remove(title);
+    } else {
+      expandedSections.add(title);
+    }
+  }
+
+  bool isSectionExpanded(String title) => expandedSections.contains(title);
 
   void toggleSort() {
     sortSmallestFirst.value = !sortSmallestFirst.value;
