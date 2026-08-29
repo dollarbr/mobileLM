@@ -19,6 +19,46 @@ import 'settings_controller.dart';
 
 enum _ModelLoadAction { cancel, unload, continueLoad }
 
+/// Which section a model belongs to, or null when nothing should show it.
+///
+/// Pure, and separate from the controller, because the order of these tests
+/// *is* the feature: a downloaded custom GGUF must appear under Downloaded
+/// and nowhere else, and the memory cap must never hide a model the user
+/// added by hand or already has on disk.
+String? modelSectionKey({
+  required bool downloaded,
+  required bool custom,
+  required bool image,
+  required bool litert,
+  required bool gguf,
+  required bool fits,
+}) {
+  if (downloaded) return 'downloaded';
+  if (custom) return litert ? 'custom-litert' : 'custom-gguf';
+  if (!fits) return null;
+  if (image) return 'image';
+  if (litert) return 'litert';
+  if (gguf) return 'gguf';
+  return null;
+}
+
+/// A run of models under one sub-heading. [label] is empty when the section
+/// does not split, and the block renders without a heading of its own.
+class ModelBlock {
+  final String label;
+  final List<AiModel> models;
+  const ModelBlock(this.label, this.models);
+}
+
+/// One heading in the Models tab.
+class ModelSection {
+  final String title;
+  final List<ModelBlock> blocks;
+  const ModelSection(this.title, this.blocks);
+
+  int get count => blocks.fold(0, (n, b) => n + b.models.length);
+}
+
 class ModelController extends GetxController {
   final DownloadService _download = Get.find<DownloadService>();
   final LocalImageService _localImage = Get.find<LocalImageService>();
@@ -39,7 +79,6 @@ class ModelController extends GetxController {
   final customModels = <AiModel>[].obs;
   final fileSizes = <String, int>{}.obs;
   final modelScope = 'local'.obs;
-  final localFilter = ''.obs;
   final importFileName = ''.obs;
   final importStatus = ''.obs;
   final importCopiedBytes = 0.obs;
@@ -52,7 +91,6 @@ class ModelController extends GetxController {
     sortSmallestFirst.value = !sortSmallestFirst.value;
   }
 
-  static const localFilters = ['downloaded', 'curated'];
 
   List<AiModel> get displayedModels {
     final active = _inference.loadedModelName.value;
@@ -76,28 +114,87 @@ class ModelController extends GetxController {
     return models;
   }
 
-  List<AiModel> get filteredDisplayedModels {
-    final filter =
-        localFilter.value.isEmpty ? defaultLocalFilter : localFilter.value;
-    return displayedModels.where((model) {
-      switch (filter) {
-        case 'downloaded':
-          return isDownloaded(model.filename);
-        case 'curated':
-        default:
-          // Catalogue picks that fit this phone: nothing sideloaded, and
-          // weights within the 60%-of-RAM line the device service draws.
-          return !model.isImported &&
-              !model.isCustom &&
-              _knownModelBytes(model) > 0 &&
-              _knownModelBytes(model) <=
-                  Get.find<DeviceInfoService>().maxModelBytes;
-      }
-    }).toList();
+  /// The Models tab, split into headings. A model appears under exactly one:
+  /// on disk wins over everything, then hand-added, then the catalogue —
+  /// otherwise a downloaded custom GGUF would show up twice.
+  ///
+  /// Empty sections are dropped, so a phone with no LiteRT model never sees a
+  /// LiteRT heading.
+  List<ModelSection> get modelSections {
+    final models = displayedModels;
+    bool custom(AiModel m) => m.isCustom || m.isImported;
+
+    // Catalogue entries are capped at the 60%-of-RAM line the device service
+    // draws: a curated pick that cannot load is worse than no pick. Models the
+    // user added by hand skip the cap — they asked for them by name.
+    final maxBytes = Get.find<DeviceInfoService>().maxModelBytes;
+    bool fits(AiModel m) =>
+        _knownModelBytes(m) > 0 && _knownModelBytes(m) <= maxBytes;
+
+    final downloaded = <AiModel>[];
+    final gguf = <AiModel>[];
+    final litert = <AiModel>[];
+    final image = <AiModel>[];
+    final customGguf = <AiModel>[];
+    final customLitert = <AiModel>[];
+
+    final buckets = {
+      'downloaded': downloaded,
+      'gguf': gguf,
+      'litert': litert,
+      'image': image,
+      'custom-gguf': customGguf,
+      'custom-litert': customLitert,
+    };
+    for (final m in models) {
+      final key = modelSectionKey(
+        downloaded: isDownloaded(m.filename),
+        custom: custom(m),
+        image: isImageModel(m),
+        litert: isLiteRtModel(m),
+        gguf: isLlamaModel(m),
+        fits: fits(m),
+      );
+      if (key != null) buckets[key]!.add(m);
+    }
+
+    return [
+      ModelSection('Downloaded', _byModality(downloaded)),
+      ModelSection('GGUF', _byModality(gguf)),
+      ModelSection('LiteRT', _byModality(litert)),
+      ModelSection('Image', _byModality(image)),
+      ModelSection('Custom GGUF Models', _byModality(customGguf)),
+      ModelSection('Custom LiteRT Models', _byModality(customLitert)),
+    ].where((s) => s.count > 0).toList();
   }
 
-  String get defaultLocalFilter =>
-      downloadedFiles.isNotEmpty ? 'downloaded' : 'curated';
+  /// Sub-headings inside a section, in the order they should read.
+  ///
+  /// Only what the catalogue can actually tell apart. There is one `vision`
+  /// flag plus the presence of an mmproj file — no field says "audio" or
+  /// "omni", and the LiteRT multimodal files take speech and images through
+  /// the same encoder, so splitting those apart would be guesswork on the
+  /// filename. A section that ends up with a single block renders flat, with
+  /// no sub-heading at all.
+  List<ModelBlock> _byModality(List<AiModel> models) {
+    if (models.isEmpty) return const [];
+    final blocks = <String, List<AiModel>>{};
+    for (final m in models) {
+      final label = isImageModel(m)
+          ? 'Image generation'
+          : isVisionModel(m)
+              ? modalityLabel(m) == 'MULTIMODAL' ? 'Multimodal' : 'Vision'
+              : 'Text';
+      blocks.putIfAbsent(label, () => []).add(m);
+    }
+    if (blocks.length == 1) {
+      return [ModelBlock('', blocks.values.first)];
+    }
+    const order = ['Text', 'Vision', 'Multimodal', 'Image generation'];
+    final sorted = blocks.keys.toList()
+      ..sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
+    return [for (final k in sorted) ModelBlock(k, blocks[k]!)];
+  }
 
   double get importProgress => importTotalBytes.value <= 0
       ? 0.0
@@ -178,10 +275,6 @@ class ModelController extends GetxController {
       customModels.removeWhere(isStaleImport);
       await _saveCustomModels();
     }
-
-    if (localFilter.value.isEmpty) {
-      localFilter.value = defaultLocalFilter;
-    }
   }
 
   bool isDownloaded(String filename) => downloadedFiles.contains(filename);
@@ -221,12 +314,6 @@ class ModelController extends GetxController {
 
   bool isDownloadingModel(String filename) =>
       _download.activeDownloads.containsKey(filename);
-
-  void setLocalFilter(String filter) {
-    if (localFilters.contains(filter)) {
-      localFilter.value = filter;
-    }
-  }
 
   /// What to call this model's extra inputs, for badges and chips.
   ///
@@ -1927,7 +2014,6 @@ class ModelController extends GetxController {
         fileSizes[filename] = await File(destPath).length();
 
         await refreshDownloaded();
-        localFilter.value = 'downloaded';
         importStatus.value = 'Import complete';
         Get.snackbar('Import Successful', 'Model $filename imported.',
             snackPosition: SnackPosition.BOTTOM);
@@ -1973,7 +2059,6 @@ class ModelController extends GetxController {
         fileSizes[filename] = (result?['bytes'] as num?)?.toInt() ??
             await _download.getModelSize(filename);
         await refreshDownloaded();
-        localFilter.value = 'downloaded';
         Get.snackbar('Import Successful', 'Model $filename imported.',
             snackPosition: SnackPosition.BOTTOM);
       }

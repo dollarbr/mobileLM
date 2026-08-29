@@ -71,13 +71,11 @@ class ModelView extends GetView<ModelController> {
 
                 if (controller.modelScope.value == 'local') ...[
                   _buildImportingProgress(context),
-                  _buildLocalFilterChips(context),
-                  const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'LOCAL MODELS (${controller.filteredDisplayedModels.length})',
+                        'LOCAL MODELS (${controller.displayedModels.length})',
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -117,11 +115,11 @@ class ModelView extends GetView<ModelController> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  if (controller.filteredDisplayedModels.isEmpty)
+                  if (controller.modelSections.isEmpty)
                     _buildEmptyLocalState(context)
                   else
-                    ...controller.filteredDisplayedModels
-                        .map((model) => _buildModelCard(context, model)),
+                    ...controller.modelSections
+                        .map((section) => _buildModelSection(context, section)),
                 ] else ...[
                   _buildOnlineProviders(context),
                 ],
@@ -193,77 +191,71 @@ class ModelView extends GetView<ModelController> {
     );
   }
 
-  Widget _buildLocalFilterChips(BuildContext context) {
-    const labels = {
-      'downloaded': 'Downloaded',
-      'curated': 'Curated Models',
-    };
-    return Obx(() {
-      final selected = controller.localFilter.value.isEmpty
-          ? controller.defaultLocalFilter
-          : controller.localFilter.value;
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final entry in labels.entries) ...[
-              InkWell(
-                onTap: () => controller.setLocalFilter(entry.key),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: selected == entry.key
-                        ? AppColors.primary
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: selected == entry.key
-                          ? AppColors.primary
-                          : Theme.of(context).dividerColor.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (selected == entry.key) ...[
-                        const Icon(Icons.check,
-                            size: 16, color: AppColors.onVolt),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        entry.value,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: selected == entry.key
-                              ? AppColors.onVolt
-                              : Theme.of(context).hintColor,
-                        ),
-                      ),
-                    ],
-                  ),
+  /// One heading plus its models. Sub-headings only appear when the section
+  /// actually splits — see ModelController._byModality.
+  Widget _buildModelSection(BuildContext context, ModelSection section) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 10),
+          child: Row(
+            children: [
+              Text(
+                section.title.toUpperCase(),
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).colorScheme.onSurface,
+                  letterSpacing: 1.6,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
+              Text(
+                '${section.count}',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Divider(
+                  height: 0.5,
+                  thickness: 0.5,
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                ),
+              ),
             ],
-          ],
+          ),
         ),
-      );
-    });
+        for (final block in section.blocks) ...[
+          if (block.label.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                block.label,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).hintColor,
+                  letterSpacing: 0.6,
+                ),
+              ),
+            ),
+          ...block.models.map((model) => _buildModelCard(context, model)),
+        ],
+      ],
+    );
   }
 
   Widget _buildEmptyLocalState(BuildContext context) {
-    final filter = controller.localFilter.value.isEmpty
-        ? controller.defaultLocalFilter
-        : controller.localFilter.value;
-    final title = filter == 'downloaded'
-        ? 'No downloaded models yet'
-        : 'No ${filter == 'vision' ? 'vision' : filter == 'image' ? 'image generation' : filter} models found';
-    final subtitle = filter == 'downloaded'
-        ? 'Import a local model or add a downloadable URL.'
-        : 'Try another filter or add a custom model URL.';
+    // Only reached when every section came up empty, which on a fresh install
+    // means nothing has been downloaded and the catalogue found nothing that
+    // fits this phone's memory.
+    const title = 'No models yet';
+    const subtitle = 'Import a local model or add a downloadable URL.';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -293,10 +285,8 @@ class ModelView extends GetView<ModelController> {
               color: Theme.of(context).hintColor,
             ),
           ),
-          if (filter == 'downloaded') ...[
-            const SizedBox(height: 14),
-            _buildLocalActions(context),
-          ],
+          const SizedBox(height: 14),
+          _buildLocalActions(context),
         ],
       ),
     );
