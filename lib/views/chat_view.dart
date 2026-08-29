@@ -10,6 +10,7 @@ import '../controllers/model_controller.dart';
 import '../controllers/home_controller.dart';
 import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
+import '../services/workspace_service.dart';
 import '../ffi/sd_ffi_bindings.dart';
 import '../utils/thought_parser.dart';
 import '../widgets/attachment_preview.dart';
@@ -174,6 +175,10 @@ class ChatView extends GetView<ChatController> {
                         color: const Color(0xFFFF9500),
                         fontWeight: FontWeight.w600)),
               ],
+              if (sid.isNotEmpty && Get.find<WorkspaceService>().isReady) ...[
+                const SizedBox(width: 6),
+                _projectChip(context),
+              ],
             ]),
           ]),
         );
@@ -189,6 +194,43 @@ class ChatView extends GetView<ChatController> {
             onPressed: () => controller.createNewChat()),
       ],
     );
+  }
+
+  /// The project this chat writes into, and the only way to change it.
+  ///
+  /// New chats inherit the open project silently, so without this the first
+  /// project a user picked would be the only one they could ever reach.
+  Widget _projectChip(BuildContext context) {
+    return Obx(() {
+      final project = controller.currentProjectPath.value;
+      final bound = project != null;
+      final accent = bound ? const Color(0xFFB9F53E) : Theme.of(context).hintColor;
+      return InkWell(
+        onTap: controller.changeProjectForCurrentSession,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(bound ? Icons.folder : Icons.folder_off_outlined,
+                size: 11, color: accent),
+            const SizedBox(width: 3),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 90),
+              child: Text(project ?? 'No project',
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: accent,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ]),
+        ),
+      );
+    });
   }
 
   // ── Model Loading ──
@@ -378,8 +420,10 @@ class ChatView extends GetView<ChatController> {
 
   Widget _suggestionChip(BuildContext context, String text, bool isDark) {
     return GestureDetector(
-      onTap: () {
-        controller.createNewChat();
+      // Awaited: createNewChat may stop on the project picker, and sending
+      // before it returns starts a second chat for the same tap.
+      onTap: () async {
+        await controller.createNewChat();
         controller.textController.text = text;
         controller.inputText.value = text;
         controller.sendMessage();

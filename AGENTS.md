@@ -18,6 +18,13 @@ M1 concluído no código: base PrivateLM importada e rebrandada (pacote com.orai
 - Agente multi-passo só atrás de toggle, com teto de iterações (modelos pequenos loopam).
 - Nativo arm64-only; licenças MIT dos upstreams devem ser citadas (README/LICENSE já cobrem).
 
+## Workspace
+
+Pasta raiz via SAF + projetos como subpastas; conversa liga-se a um projeto por
+`ChatSession.projectPath`. Detalhes, ciclo de vida e as armadilhas já pagas em
+[`docs/WORKSPACE.md`](docs/WORKSPACE.md) — leia antes de mexer no picker, no
+`WorkspaceService` ou em `createNewChat`.
+
 ## Identidade
 
 Spec completa em `docs/brand/palette.md`. Ícone: `docs/brand/logo.svg`.

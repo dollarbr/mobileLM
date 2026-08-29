@@ -41,9 +41,18 @@ class HomeView extends GetView<HomeController> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final workspace = Get.find<WorkspaceService>();
-    if (workspace.needsSetup.value && workspace.supported) {
-      return const WorkspaceSetupView();
-    }
+    // Inside an Obx, or the gate never lifts: reading `needsSetup.value` from
+    // a bare build() subscribes to nothing, so picking a folder cleared the
+    // flag and left the setup screen on top of it anyway.
+    return Obx(() {
+      if (workspace.needsSetup.value && workspace.supported) {
+        return const WorkspaceSetupView();
+      }
+      return _buildShell(context, isDark);
+    });
+  }
+
+  Widget _buildShell(BuildContext context, bool isDark) {
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
       body: Obx(() {

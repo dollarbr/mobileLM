@@ -177,19 +177,33 @@ class ChatController extends GetxController {
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
-  Future<void> createNewChat() async {
-    String? projectPath;
+  /// A `createNewChat` already running, if any.
+  ///
+  /// The suggestion chips create a chat and send in the same tap, and
+  /// [sendMessage] itself creates one when no session is open. Without this,
+  /// the second call re-entered while the first was still waiting on the
+  /// project picker and stacked a second picker on top of it — two dialogs,
+  /// two sessions, and the message landing in neither of the chosen projects.
+  Future<void>? _creatingChat;
+
+  Future<void> createNewChat() {
+    final inFlight = _creatingChat;
+    if (inFlight != null) return inFlight;
+    final run = _createNewChat().whenComplete(() => _creatingChat = null);
+    _creatingChat = run;
+    return run;
+  }
+
+  Future<void> _createNewChat() async {
     final workspace = Get.find<WorkspaceService>();
-    if (workspace.isReady) {
-      final projects = await workspace.listProjects();
-      projectPath = await showProjectPicker(projects);
-      if (projectPath == kNoProjectSentinel) projectPath = null;
-      if (projectPath != null && projectPath.isNotEmpty) {
-        // Create the folder on disk if it doesn't exist yet.
-        if (!projects.contains(projectPath)) {
-          await workspace.createProject(projectPath);
-        }
-      }
+    // A project is already open, so the new chat continues inside it. The
+    // picker belongs to *choosing* a project, not to starting a conversation;
+    // asking on every single chat is what made the workspace unusable. The
+    // app bar's project chip is how you change or drop it.
+    String? projectPath = currentProjectPath.value;
+    if (projectPath == null && workspace.isReady) {
+      final answer = await _askForProject(workspace);
+      projectPath = answer == kNoProjectSentinel ? null : answer;
     }
     final id = _uuid.v4();
     final session = ChatSession(
@@ -200,6 +214,45 @@ class ChatController extends GetxController {
     _hive.saveSession(id, session.toMap());
     sessions.insert(0, session);
     openChat(id);
+  }
+
+  /// The picker's answer, with the chosen folder created if it was new.
+  ///
+  /// Returns [kNoProjectSentinel] for an explicit "No project" and null when
+  /// the dialog was dismissed — a distinction that matters when rebinding an
+  /// existing chat, where dismissing must change nothing.
+  Future<String?> _askForProject(WorkspaceService workspace) async {
+    final projects = await workspace.listProjects();
+    final picked = await showProjectPicker(projects);
+    if (picked == null || picked == kNoProjectSentinel) return picked;
+    if (picked.isEmpty) return null;
+    if (!projects.contains(picked)) await workspace.createProject(picked);
+    return picked;
+  }
+
+  /// Rebinds the open chat to another project (or to none). This is the only
+  /// way to leave the project a chat was started in, so it has to stay
+  /// reachable from the chat itself — see the app bar chip.
+  Future<void> changeProjectForCurrentSession() async {
+    final workspace = Get.find<WorkspaceService>();
+    if (!workspace.isReady) return;
+    final sid = currentSessionId.value;
+    if (sid.isEmpty) return;
+    final answer = await _askForProject(workspace);
+    if (answer == null) return; // dismissed — leave the binding alone
+    final picked = answer == kNoProjectSentinel ? null : answer;
+    final index = sessions.indexWhere((s) => s.id == sid);
+    if (index < 0) return;
+    final updated = sessions[index]
+        .copyWith(projectPath: picked, clearProject: picked == null);
+    sessions[index] = updated;
+    _hive.saveSession(sid, updated.toMap());
+    currentProjectPath.value = picked;
+    if (picked != null) {
+      await workspace.openProject(picked);
+    } else {
+      await workspace.goRoot();
+    }
   }
 
   void _resetInferenceContext() {
