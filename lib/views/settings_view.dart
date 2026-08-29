@@ -206,40 +206,8 @@ class SettingsView extends GetView<SettingsController> {
                   },
                 ),
               ]),
-              const SizedBox(height: 10),
-               Obx(() {
-                 try {
-                   final taskCount =
-                       Get.find<ScheduledTaskService>().tasks.length;
-                   return _appleGroupedCard(context, isDark, children: [
-                     _appleListTile(
-                       context,
-                       isDark,
-                       leading: _iconBox(
-                           const Color(0xFF8B7CFF), Icons.schedule_rounded),
-                       title: 'Scheduled tasks',
-                       subtitle: taskCount == 0
-                           ? 'Daily prompts that run on their own'
-                           : '$taskCount daily task${taskCount == 1 ? '' : 's'}',
-                       showDivider: false,
-                       onTap: () => _openScheduledTasksSheet(context, isDark),
-                     ),
-                   ]);
-                 } catch (e) {
-                   return _appleGroupedCard(context, isDark, children: [
-                     _appleListTile(
-                       context,
-                       isDark,
-                       leading: _iconBox(
-                           const Color(0xFFFF0000), Icons.error_outline),
-                       title: 'SCHEDULED TASKS ERROR',
-                       subtitle: '$e',
-                       showDivider: false,
-                       onTap: () => _openScheduledTasksSheet(context, isDark),
-                     ),
-                   ]);
-                 }
-               }),
+               const SizedBox(height: 10),
+              _scheduledTasksTile(context, isDark),
               const SizedBox(height: 10),
               _sectionLabel(context, 'DIAGNOSTICS'),
               _appleGroupedCard(context, isDark, children: [
@@ -310,6 +278,49 @@ class SettingsView extends GetView<SettingsController> {
   }
 
   // ── Apple grouped card container ──
+  Widget _scheduledTasksTile(BuildContext context, bool isDark) {
+    final taskCount = Get.find<ScheduledTaskService>().tasks.length;
+    return _appleGroupedCard(context, isDark, children: [
+      _appleListTile(
+        context,
+        isDark,
+        leading: _iconBox(const Color(0xFF8B7CFF), Icons.schedule_rounded),
+        title: 'Scheduled tasks',
+        subtitle: taskCount == 0
+            ? 'Daily prompts that run on their own'
+            : '$taskCount daily task${taskCount == 1 ? '' : 's'}',
+        showDivider: false,
+        onTap: () => _openScheduledTasksSheet(context, isDark),
+      ),
+    ]);
+  }
+
+  Widget _scheduledTaskNotificationTile(BuildContext context, bool isDark) {
+    final hive = Get.find<HiveService>();
+    final showNotif = hive.getSetting<bool>(
+          AppConstants.keyScheduledTaskNotifications,
+          defaultValue: true,
+        ) ?? true;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Show background notification'),
+      subtitle: const Text(
+          'Display a persistent notification while tasks are\n'
+          'scheduled or model is kept loaded in the background.'),
+      trailing: Switch(
+        value: showNotif,
+        onChanged: (v) async {
+          await hive.setSetting(
+              AppConstants.keyScheduledTaskNotifications, v);
+          if (!v) {
+            await Get.find<ImageGenerationNotificationService>()
+                .cancelScheduledNotification();
+          }
+        },
+      ),
+    );
+  }
+
   Widget _appleGroupedCard(BuildContext context, bool isDark,
       {required List<Widget> children}) {
     return Container(
@@ -453,32 +464,8 @@ class SettingsView extends GetView<SettingsController> {
                         ],
                       ),
                     )),
-                const SizedBox(height: 8),
-                Obx(() {
-                  final hive = Get.find<HiveService>();
-                  final showNotif = hive.getSetting<bool>(
-                        AppConstants.keyScheduledTaskNotifications,
-                        defaultValue: true,
-                      ) ?? true;
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Show background notification'),
-                    subtitle: const Text(
-                        'Display a persistent notification while tasks are\n'
-                        'scheduled or model is kept loaded in the background.'),
-                    trailing: Switch(
-                      value: showNotif,
-                      onChanged: (v) async {
-                        await hive.setSetting(
-                            AppConstants.keyScheduledTaskNotifications, v);
-                        if (!v) {
-                          await Get.find<ImageGenerationNotificationService>()
-                              .cancelScheduledNotification();
-                        }
-                      },
-                    ),
-                  );
-                }),
+                 const SizedBox(height: 8),
+                _scheduledTaskNotificationTile(context, isDark),
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: () async {
