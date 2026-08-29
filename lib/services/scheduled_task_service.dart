@@ -22,7 +22,7 @@ Future<void> _ensureBatteryExemption() async {
   } catch (_) {}
 }
 
-/// A daily prompt the agent runs on its own, even with the app closed.
+/// A prompt the agent runs on a schedule, even with the app closed.
 class ScheduledTask {
   final String id;
   final String name;
@@ -34,6 +34,13 @@ class ScheduledTask {
   final String? modelName;
   final int hour; // 0-23, device-local
   final int minute;
+
+  /// How often the task runs. 'daily' runs once per day at hour:minute.
+  /// 'hourly' runs at minute past every hour. 'every2h' / 'every4h' /
+  /// 'every6h' / 'every8h' run every N hours at the given minute offset.
+  final String frequency; // daily | hourly | every2h | every4h | every6h | every8h
+  final bool keepModelLoaded; // keep engine alive between runs
+
   bool enabled;
   String? lastRunAt; // ISO8601 of the last completed attempt
 
@@ -45,6 +52,8 @@ class ScheduledTask {
     this.modelName,
     required this.hour,
     required this.minute,
+    this.frequency = 'daily',
+    this.keepModelLoaded = false,
     this.enabled = true,
     this.lastRunAt,
   });
@@ -57,6 +66,8 @@ class ScheduledTask {
         if (modelName != null) 'modelName': modelName,
         'hour': hour,
         'minute': minute,
+        'frequency': frequency,
+        'keepModelLoaded': keepModelLoaded,
         'enabled': enabled,
         'lastRunAt': lastRunAt,
       };
@@ -69,9 +80,47 @@ class ScheduledTask {
         modelName: j['modelName'] as String?,
         hour: j['hour'] as int,
         minute: j['minute'] as int,
+        frequency: j['frequency'] as String? ?? 'daily',
+        keepModelLoaded: j['keepModelLoaded'] as bool? ?? false,
         enabled: j['enabled'] as bool? ?? true,
         lastRunAt: j['lastRunAt'] as String?,
       );
+
+  /// Human-readable frequency label.
+  String get frequencyLabel {
+    switch (frequency) {
+      case 'hourly':
+        return 'Hourly';
+      case 'every2h':
+        return 'Every 2h';
+      case 'every4h':
+        return 'Every 4h';
+      case 'every6h':
+        return 'Every 6h';
+      case 'every8h':
+        return 'Every 8h';
+      default:
+        return 'Daily';
+    }
+  }
+
+  /// How many minutes between runs.
+  int get intervalMinutes {
+    switch (frequency) {
+      case 'hourly':
+        return 60;
+      case 'every2h':
+        return 120;
+      case 'every4h':
+        return 240;
+      case 'every6h':
+        return 360;
+      case 'every8h':
+        return 480;
+      default:
+        return 1440; // daily
+    }
+  }
 }
 
 /// One finished (or failed) run, waiting to surface in the chat.
@@ -111,15 +160,23 @@ class ScheduledResult {
       );
 }
 
-/// Due = today's fire time has passed and the task has not run since it.
+/// Due = next fire time has passed and the task has not run since it.
 bool isTaskDue(ScheduledTask task, DateTime now) {
   if (!task.enabled) return false;
-  final fireTime =
-      DateTime(now.year, now.month, now.day, task.hour, task.minute);
-  if (now.isBefore(fireTime)) return false;
-  final last = task.lastRunAt;
-  if (last != null && DateTime.parse(last).isAfter(fireTime)) return false;
-  return true;
+  if (task.frequency == 'daily') {
+    final fireTime =
+        DateTime(now.year, now.month, now.day, task.hour, task.minute);
+    if (now.isBefore(fireTime)) return false;
+    final last = task.lastRunAt;
+    if (last != null && DateTime.parse(last).isAfter(fireTime)) return false;
+    return true;
+  }
+  // Sub-daily: check if interval has elapsed since last run.
+  final last = task.lastRunAt != null ? DateTime.parse(task.lastRunAt!) : null;
+  final sinceLast = last == null
+      ? Duration.zero
+      : now.difference(last);
+  return sinceLast.inMinutes >= task.intervalMinutes;
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────
@@ -238,6 +295,67 @@ Future<void> notifyTaskResult(String name, String snippet) async {
   }
 }
 
+Future<void> notifyTaskScheduled(
+  String name, {
+  int hour = 0,
+  int minute = 0,
+  String frequency = 'daily',
+  bool keepModelLoaded = false,
+}) async {
+  try {
+    final plugin = FlutterLocalNotificationsPlugin();
+    await plugin.initialize(
+        const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')));
+    await plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(const AndroidNotificationChannel(
+          'scheduled_tasks',
+          'Scheduled tasks',
+          description: 'Results from scheduled agent tasks',
+          importance: Importance.high,
+        ));
+    final timeStr = '${hour.toString().padLeft(2, '0')}:'
+        '${minute.toString().padLeft(2, '0')}';
+    final freqLabel = _frequencyLabel(frequency);
+    final extra = keepModelLoaded ? ' · Model kept loaded' : '';
+    final body = 'Running $freqLabel at $timeStr$extra';
+    await plugin.show(
+      (-name.hashCode) & 0x7fffffff,
+      'mobileLM task scheduled · $name',
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'scheduled_tasks',
+          'Scheduled tasks',
+          channelDescription: 'Results from scheduled agent tasks',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  } catch (_) {
+    // Notifications are sugar; never fail a run over them.
+  }
+}
+
+String _frequencyLabel(String freq) {
+  switch (freq) {
+    case 'hourly':
+      return 'hourly';
+    case 'every2h':
+      return 'every 2h';
+    case 'every4h':
+      return 'every 4h';
+    case 'every6h':
+      return 'every 6h';
+    case 'every8h':
+      return 'every 8h';
+    default:
+      return 'daily';
+  }
+}
+
 /// Tick installed inside the shared background-service isolate. Every 30 s it
 /// fires any enabled task whose daily moment has arrived. The foreground
 /// notification keeps Android from reaping us mid-generation.
@@ -290,6 +408,8 @@ class ScheduledTaskService extends GetxService {
     String? modelName,
     required int hour,
     required int minute,
+    String frequency = 'daily',
+    bool keepModelLoaded = false,
   }) async {
     final task = ScheduledTask(
       id: const Uuid().v4(),
@@ -299,11 +419,20 @@ class ScheduledTaskService extends GetxService {
       modelName: modelName,
       hour: hour,
       minute: minute,
+      frequency: frequency,
+      keepModelLoaded: keepModelLoaded,
     );
     tasks.add(task);
     await writeTasks(tasks);
     await _syncServiceState();
     unawaited(_scheduleOnNative(task));
+    unawaited(notifyTaskScheduled(
+      task.name,
+      hour: task.hour,
+      minute: task.minute,
+      frequency: task.frequency,
+      keepModelLoaded: task.keepModelLoaded,
+    ));
     return task;
   }
 
@@ -312,6 +441,18 @@ class ScheduledTaskService extends GetxService {
     await writeTasks(tasks);
     await _cancelOnNative(id);
     await _syncServiceState();
+  }
+
+  Future<ScheduledTask?> update(ScheduledTask updated) async {
+    final idx = tasks.indexWhere((t) => t.id == updated.id);
+    if (idx < 0) return null;
+    tasks[idx] = updated;
+    await writeTasks(tasks);
+    // Reschedule with new params.
+    await _cancelOnNative(updated.id);
+    unawaited(_scheduleOnNative(updated));
+    await _syncServiceState();
+    return updated;
   }
 
   Future<void> setEnabled(ScheduledTask task, bool enabled) async {
@@ -362,6 +503,8 @@ class ScheduledTaskService extends GetxService {
         'modelName': task.modelName,
         'hour': task.hour,
         'minute': task.minute,
+        'frequency': task.frequency,
+        'keepModelLoaded': task.keepModelLoaded,
       });
     } catch (_) {}
   }

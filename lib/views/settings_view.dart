@@ -402,10 +402,10 @@ class SettingsView extends GetView<SettingsController> {
                       title: Text(t.name,
                           style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
                       subtitle: Text(
-                        'Daily ${t.hour.toString().padLeft(2, '0')}:'
+                        '${t.frequencyLabel} ${t.hour.toString().padLeft(2, '0')}:'
                         '${t.minute.toString().padLeft(2, '0')}'
                         '${t.modelName == null ? "" : " · ${t.modelName}"}'
-                        ' · ${t.prompt}',
+                        '${t.keepModelLoaded ? " · model kept loaded" : ""}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -414,11 +414,25 @@ class SettingsView extends GetView<SettingsController> {
                         children: [
                           Switch(
                             value: t.enabled,
-                            onChanged: (v) => service.setEnabled(t, v),
+                            onChanged: (v) async {
+                              await service.setEnabled(t, v);
+                              if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () async {
+                              final edited = await _editScheduledTaskDialog(
+                                  sheetCtx, service, t);
+                              if (edited && sheetCtx.mounted) Navigator.pop(sheetCtx);
+                            },
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete_outline),
-                            onPressed: () => service.remove(t.id),
+                            onPressed: () {
+                              service.remove(t.id);
+                              if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                            },
                           ),
                         ],
                       ),
@@ -444,6 +458,8 @@ class SettingsView extends GetView<SettingsController> {
     final nameCtl = TextEditingController();
     final promptCtl = TextEditingController();
     TimeOfDay time = const TimeOfDay(hour: 8, minute: 0);
+    String frequency = 'daily';
+    bool keepModelLoaded = false;
     final modelCtrl = Get.find<ModelController>();
     final downloaded = modelCtrl.downloadedFiles.toList();
     if (downloaded.isEmpty) {
@@ -457,7 +473,7 @@ class SettingsView extends GetView<SettingsController> {
       context: context,
       builder: (dlgCtx) => StatefulBuilder(
         builder: (dlgCtx, setState) => AlertDialog(
-          title: const Text('New daily task'),
+          title: const Text('New task'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -470,18 +486,46 @@ class SettingsView extends GetView<SettingsController> {
                 minLines: 3,
                 maxLines: 5,
                 decoration: const InputDecoration(
-                    labelText: 'Prompt to run every day'),
+                    labelText: 'Prompt to run'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: frequency,
+                decoration: const InputDecoration(labelText: 'Frequency'),
+                items: const [
+                  DropdownMenuItem(value: 'daily', child: Text('Daily')),
+                  DropdownMenuItem(value: 'hourly', child: Text('Hourly')),
+                  DropdownMenuItem(value: 'every2h', child: Text('Every 2h')),
+                  DropdownMenuItem(value: 'every4h', child: Text('Every 4h')),
+                  DropdownMenuItem(value: 'every6h', child: Text('Every 6h')),
+                  DropdownMenuItem(value: 'every8h', child: Text('Every 8h')),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => frequency = v);
+                },
               ),
               const SizedBox(height: 8),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.schedule_rounded),
                 title: Text(time.format(dlgCtx)),
+                subtitle: frequency == 'hourly' ||
+                        frequency.startsWith('every')
+                    ? const Text('At this minute past each interval')
+                    : const Text('At this time every day'),
                 onTap: () async {
                   final picked = await showTimePicker(
                       context: dlgCtx, initialTime: time);
                   if (picked != null) setState(() => time = picked);
                 },
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                title: const Text('Keep model loaded between runs'),
+                subtitle: const Text(
+                    'Faster execution, but uses more RAM and battery'),
+                value: keepModelLoaded,
+                onChanged: (v) => setState(() => keepModelLoaded = v ?? false),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -524,10 +568,145 @@ class SettingsView extends GetView<SettingsController> {
         modelName: selectedModel,
         hour: time.hour,
         minute: time.minute,
+        frequency: frequency,
+        keepModelLoaded: keepModelLoaded,
       );
-      // First run may need notification + battery exemptions.
       await Get.find<ImageGenerationNotificationService>().ensurePermission();
       Get.snackbar('Scheduled tasks', 'Task created.',
+          snackPosition: SnackPosition.BOTTOM);
+      return true;
+    } catch (e) {
+      Get.snackbar('Scheduled tasks', 'Failed: $e',
+          snackPosition: SnackPosition.BOTTOM);
+      return false;
+    }
+  }
+
+  Future<bool> _editScheduledTaskDialog(
+      BuildContext context, ScheduledTaskService service,
+      ScheduledTask task) async {
+    final nameCtl = TextEditingController(text: task.name);
+    final promptCtl = TextEditingController(text: task.prompt);
+    TimeOfDay time = TimeOfDay(hour: task.hour, minute: task.minute);
+    String frequency = task.frequency;
+    bool keepModelLoaded = task.keepModelLoaded;
+    final modelCtrl = Get.find<ModelController>();
+    final downloaded = modelCtrl.downloadedFiles.toList();
+    String selectedModel = task.modelName ?? downloaded.firstOrNull ?? '';
+    var ok = false;
+    await showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (dlgCtx, setState) => AlertDialog(
+          title: const Text('Edit task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtl,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              TextField(
+                controller: promptCtl,
+                minLines: 3,
+                maxLines: 5,
+                decoration: const InputDecoration(
+                    labelText: 'Prompt to run'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: frequency,
+                decoration: const InputDecoration(labelText: 'Frequency'),
+                items: const [
+                  DropdownMenuItem(value: 'daily', child: Text('Daily')),
+                  DropdownMenuItem(value: 'hourly', child: Text('Hourly')),
+                  DropdownMenuItem(value: 'every2h', child: Text('Every 2h')),
+                  DropdownMenuItem(value: 'every4h', child: Text('Every 4h')),
+                  DropdownMenuItem(value: 'every6h', child: Text('Every 6h')),
+                  DropdownMenuItem(value: 'every8h', child: Text('Every 8h')),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => frequency = v);
+                },
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.schedule_rounded),
+                title: Text(time.format(dlgCtx)),
+                subtitle: frequency == 'hourly' ||
+                        frequency.startsWith('every')
+                    ? const Text('At this minute past each interval')
+                    : const Text('At this time every day'),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                      context: dlgCtx, initialTime: time);
+                  if (picked != null) setState(() => time = picked);
+                },
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                title: const Text('Keep model loaded between runs'),
+                subtitle: const Text(
+                    'Faster execution, but uses more RAM and battery'),
+                value: keepModelLoaded,
+                onChanged: (v) => setState(() => keepModelLoaded = v ?? false),
+              ),
+              if (downloaded.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedModel.isEmpty ? null : selectedModel,
+                  decoration: const InputDecoration(labelText: 'Model'),
+                  hint: const Text('Select model'),
+                  items: downloaded
+                      .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => selectedModel = v);
+                  },
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (nameCtl.text.trim().isEmpty ||
+                    promptCtl.text.trim().isEmpty) return;
+                ok = true;
+                Navigator.pop(dlgCtx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!ok) return false;
+    try {
+      final modelPath = selectedModel.isNotEmpty
+          ? await Get.find<DownloadService>().modelPath(selectedModel)
+          : task.modelPath;
+      final modelName = selectedModel.isEmpty ? null : selectedModel;
+      final updated = ScheduledTask(
+        id: task.id,
+        name: nameCtl.text.trim(),
+        prompt: promptCtl.text.trim(),
+        modelPath: modelPath,
+        modelName: modelName,
+        hour: time.hour,
+        minute: time.minute,
+        frequency: frequency,
+        keepModelLoaded: keepModelLoaded,
+        enabled: task.enabled,
+        lastRunAt: task.lastRunAt,
+      );
+      await service.update(updated);
+      Get.snackbar('Scheduled tasks', 'Task updated.',
           snackPosition: SnackPosition.BOTTOM);
       return true;
     } catch (e) {
