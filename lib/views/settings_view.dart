@@ -599,7 +599,6 @@ class SettingsView extends GetView<SettingsController> {
         frequency: frequency,
         keepModelLoaded: keepModelLoaded,
       );
-      await Get.find<ImageGenerationNotificationService>().ensurePermission();
       Get.snackbar('Scheduled tasks', 'Task created.',
           snackPosition: SnackPosition.BOTTOM);
       return true;
