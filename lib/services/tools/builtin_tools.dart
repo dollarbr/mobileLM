@@ -308,35 +308,35 @@ List<Tool> buildFileTools({
         'path': 'new file path, relative to the project root',
         'content': 'initial contents (optional)',
       },
-      risk: ToolRisk.write,
-      run: (args) async {
-        final full = resolve(args['path'] ?? '');
-        if (full == null) return notReady();
-        final existing = await ws().readFile(full);
-        if (existing != null) {
-          return 'Error: ${args['path']} already exists. Use write_file to '
-              'overwrite it.';
-        }
-        final ok = await ws().writeFile(full, args['content'] ?? '');
-        return ok
-            ? 'Created ${args['path']}.'
-            : 'Error: could not create the file.';
-      },
-    ),
-    Tool(
-      name: 'write_file',
-      description: 'Overwrite a file in the current project with new text, '
-          'creating it (and any folders) if missing. Asks the user first.',
-      parameters: {
-        'path': 'file path, relative to the project root',
-        'content': 'the full new contents of the file',
-      },
-      risk: ToolRisk.write,
-      run: (args) async {
-        final full = resolve(args['path'] ?? '');
-        if (full == null) return notReady();
-        final ok = await ws().writeFile(full, args['content'] ?? '');
-        return ok ? 'Wrote ${args['path']}.' : 'Error: could not write the file.';
+       risk: ToolRisk.write,
+       run: (args) async {
+         final full = resolve(args['path'] ?? '');
+         if (full == null) return notReady();
+         final existing = await ws().readFile(full);
+         if (existing != null) {
+           return 'Error: ${args['path']} already exists. Use write_file to '
+               'overwrite it.';
+         }
+         final err = await ws().writeFile(full, args['content'] ?? '');
+         return err == null
+             ? 'Created ${args['path']}.'
+             : 'Error: $err';
+       },
+     ),
+     Tool(
+       name: 'write_file',
+       description: 'Overwrite a file in the current project with new text, '
+           'creating it (and any folders) if missing. Asks the user first.',
+       parameters: {
+         'path': 'file path, relative to the project root',
+         'content': 'the full new contents of the file',
+       },
+       risk: ToolRisk.write,
+       run: (args) async {
+         final full = resolve(args['path'] ?? '');
+         if (full == null) return notReady();
+         final err = await ws().writeFile(full, args['content'] ?? '');
+         return err == null ? 'Wrote ${args['path']}.' : 'Error: $err';
       },
     ),
     Tool(

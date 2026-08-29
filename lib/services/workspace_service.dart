@@ -135,19 +135,19 @@ class WorkspaceService extends GetxService {
 
   Future<bool> createFile(String name, {String content = ''}) async {
     if (name.trim().isEmpty) return false;
-    final ok = await ws.writeFile(
+    final err = await ws.writeFile(
       treeUri: treeUri.value!,
       relPath: childRelPath(name.trim()),
       content: content,
     );
-    if (ok) await refresh();
-    return ok;
+    if (err == null) await refresh();
+    return err == null;
   }
 
   Future<String?> readFile(String relPath) =>
       ws.readFile(treeUri: treeUri.value!, relPath: relPath);
 
-  Future<bool> writeFile(String relPath, String content) =>
+  Future<String?> writeFile(String relPath, String content) =>
       ws.writeFile(treeUri: treeUri.value!, relPath: relPath, content: content);
 
   Future<bool> deleteItem(String relPath) async {
