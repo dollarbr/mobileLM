@@ -15,7 +15,7 @@ if (hasReleaseKeystore) {
     FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
 }
 val allowDebugReleaseSigning =
-    System.getenv("PRIVATELM_ALLOW_DEBUG_RELEASE_SIGNING") == "true"
+    System.getenv("MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING") == "true"
 val isReleaseBuild = gradle.startParameter.taskNames.any {
     it.contains("release", ignoreCase = true)
 }

@@ -51,11 +51,11 @@ jobs:
       # build silently overwrote the first and no per-ABI file ever existed.
       - name: Build APKs
         env:
-          PRIVATELM_ALLOW_DEBUG_RELEASE_SIGNING: "true"
+          MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING: "true"
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=utf-8 -Dkotlin.daemon.jvm.options=-Xmx4g"
         run: |
           flutter build apk --release --split-per-abi \
-            --target-platform android-arm,android-arm64
+            --target-platform android-arm64
 
       - name: Name APKs after the version
         env:
@@ -63,8 +63,7 @@ jobs:
         run: |
           cd build/app/outputs/flutter-apk
           ls -1 # surfaces a naming mismatch here rather than in the mv below
-          mv app-arm64-v8a-release.apk    "mobilelm-$TAG-arm64-v8a.apk"
-          mv app-armeabi-v7a-release.apk  "mobilelm-$TAG-armeabi-v7a.apk"
+          mv app-arm64-v8a-release.apk  "mobilelm-$TAG-arm64-v8a.apk"
           ls -lh mobilelm-*.apk
 
       - name: Generate release notes from commits
@@ -98,8 +97,7 @@ jobs:
             section 'Other'       "$(log | grep -Ev "$known" | fmt)"
 
             printf '### Downloads\n'
-            printf -- '- `arm64-v8a` — most phones from 2017 onward\n'
-            printf -- '- `armeabi-v7a` — older 32-bit devices\n\n'
+            printf -- '- `arm64-v8a` — most phones from 2017 onward\n\n'
 
             if [ -n "$prev" ]; then
               printf '**Full diff:** %s/compare/%s...%s\n' \

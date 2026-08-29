@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:privatelm/services/tools/calculator.dart';
-import 'package:privatelm/services/tools/tool_call_parser.dart';
-import 'package:privatelm/services/tools/tool_registry.dart';
+import 'package:mobilelm/services/tools/calculator.dart';
+import 'package:mobilelm/services/tools/tool_call_parser.dart';
+import 'package:mobilelm/services/tools/tool_registry.dart';
 
 void main() {
   group('ToolCallParser', () {

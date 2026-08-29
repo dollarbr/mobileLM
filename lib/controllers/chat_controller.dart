@@ -820,7 +820,6 @@ class ChatController extends GetxController {
             prompt: effectiveText,
             systemPrompt: _effectiveSystemPrompt,
             conversationHistory: history,
-            source: 'chat',
             imagePath: imagePath,
             audioPath: audioPath,
             onToken: (token) {
@@ -923,7 +922,6 @@ class ChatController extends GetxController {
               prompt: 'Tool result for ${call.name}: $toolResult',
               systemPrompt: _effectiveSystemPrompt,
               conversationHistory: convo,
-              source: 'chat',
               onToken: (token) {
                 streamingResponse.value += token;
                 trackThoughtTiming();

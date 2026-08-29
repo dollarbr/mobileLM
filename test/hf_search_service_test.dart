@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:privatelm/services/hf_search_service.dart';
+import 'package:mobilelm/services/hf_search_service.dart';
 
 /// Serves one canned JSON body so the parsing can be tested without network.
 class _CannedAdapter implements HttpClientAdapter {

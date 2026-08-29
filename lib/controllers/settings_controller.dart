@@ -1,14 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import '../core/colors.dart';
 import '../core/constants.dart';
 import '../services/hive_service.dart';
-import '../services/app_log_service.dart';
 import '../services/local_image_service.dart';
 import '../ffi/sd_ffi_bindings.dart';
 import 'package:sd_flutter_android/sd_flutter_android.dart';
@@ -43,8 +40,6 @@ class SettingsController extends GetxController {
   final deepSeekModel = 'deepseek-v4-flash'.obs;
   final customCloudModel = ''.obs;
   final globalSystemPrompt = AppConstants.systemPrompt.obs;
-  final nvidiaModels = <String>[].obs;
-  final isLoadingNvidiaModels = false.obs;
   final temperature = 0.20.obs;
   final topP = 0.9.obs;
   final topK = 40.obs;
@@ -424,7 +419,6 @@ class SettingsController extends GetxController {
         nvidiaKey.value = trimmed;
         nvidiaKeyController.text = trimmed;
         await _hive.setSetting(AppConstants.keyNvidiaKey, trimmed);
-        await refreshNvidiaModels();
         break;
       case 'openrouter':
         openRouterKey.value = trimmed;
@@ -667,36 +661,6 @@ class SettingsController extends GetxController {
     }
     return AppConstants.systemPrompt;
   }
-
-  Future<void> refreshNvidiaModels() async {
-    if (nvidiaKey.value.trim().isEmpty) return;
-    isLoadingNvidiaModels.value = true;
-    try {
-      final response = await http.get(
-        Uri.parse('${AppConstants.nvidiaEndpoint}/models'),
-        headers: {'Authorization': 'Bearer ${nvidiaKey.value.trim()}'},
-      );
-      if (response.statusCode != 200) {
-        Get.find<AppLogService>().warning(
-          'NVIDIA model list request failed',
-          details: '${response.statusCode}: ${response.body}',
-        );
-        return;
-      }
-      final data = jsonDecode(response.body);
-      final rawModels = data['data'] as List? ?? [];
-      nvidiaModels.value = rawModels
-          .map((model) => model is Map ? model['id']?.toString() : null)
-          .whereType<String>()
-          .toList();
-    } catch (e) {
-      Get.find<AppLogService>()
-          .warning('NVIDIA model list request failed', details: e);
-    } finally {
-      isLoadingNvidiaModels.value = false;
-    }
-  }
-
   void debouncedSetCloudModel(String provider, String model) {
     _modelDebounceTimer?.cancel();
     _modelDebounceTimer = Timer(const Duration(milliseconds: 800), () {

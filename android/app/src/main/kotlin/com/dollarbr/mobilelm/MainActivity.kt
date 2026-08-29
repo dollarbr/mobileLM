@@ -8,12 +8,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.os.Environment
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
+import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.work.WorkManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -314,7 +316,6 @@ class MainActivity : FlutterActivity() {
         workspaceChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "wsPickWorkspace" -> {
-                    Log.i("MobileLMWS", "wsPickWorkspace: opening tree picker; result=$result")
                     if (pendingWorkspaceResult != null) {
                         result.error("WS_BUSY", "A folder pick is already running.", null)
                         return@setMethodCallHandler
@@ -326,7 +327,6 @@ class MainActivity : FlutterActivity() {
                                  Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
                                  Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
                     }
-                    Log.i("MobileLMWS", "wsPickWorkspace: startActivityForResult code=$workspaceTreeRequestCode")
                     startActivityForResult(intent, workspaceTreeRequestCode)
                 }
                 // NOTE: this channel is used for lightweight UI + tool calls.
@@ -848,7 +848,6 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        Log.i("MobileLMWS", "onActivityResult: requestCode=$requestCode resultCode=$resultCode data=${data?.data}")
         if (requestCode == workspaceTreeRequestCode) {
             val res = pendingWorkspaceResult
             pendingWorkspaceResult = null

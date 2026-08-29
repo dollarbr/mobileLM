@@ -117,7 +117,7 @@ String _formatBytes(int bytes) {
 
 /// The on-device runtimes this app has, as a hub query.
 ///
-/// Two formats rather than one because privateLM ships both llama.cpp and
+/// Two formats rather than one because mobileLM ships both llama.cpp and
 /// LiteRT-LM, and a GGUF-only browser hid half of what it can actually load.
 enum HfFormat {
   any('Any', ''),

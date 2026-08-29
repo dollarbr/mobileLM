@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:privatelm/services/video_contact_sheet.dart';
+import 'package:mobilelm/services/video_contact_sheet.dart';
 
 /// Writes a solid-colour JPEG and returns its path — stands in for a frame the
 /// platform decoder handed back.

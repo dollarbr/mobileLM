@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:privatelm/services/tools/builtin_tools.dart';
-import 'package:privatelm/services/tools/tool_registry.dart';
+import 'package:mobilelm/services/tools/builtin_tools.dart';
+import 'package:mobilelm/services/tools/tool_registry.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
