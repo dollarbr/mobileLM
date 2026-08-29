@@ -38,11 +38,14 @@ class ChatSession {
         projectPath: map['projectPath'],
       );
 
+  /// [clearProject] unbinds the chat from its folder. A null [projectPath]
+  /// cannot say that on its own — it means "leave it alone".
   ChatSession copyWith({
     String? title,
     DateTime? updatedAt,
     String? lastMessage,
     String? projectPath,
+    bool clearProject = false,
   }) =>
       ChatSession(
         id: id,
@@ -50,6 +53,6 @@ class ChatSession {
         createdAt: createdAt,
         updatedAt: updatedAt ?? DateTime.now(),
         lastMessage: lastMessage ?? this.lastMessage,
-        projectPath: projectPath ?? this.projectPath,
+        projectPath: clearProject ? null : (projectPath ?? this.projectPath),
       );
 }

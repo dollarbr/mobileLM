@@ -95,4 +95,7 @@ reference_local_diffusion/
 RELEASE_NOTES.md
 
 # Local session docs (never committed)
-docs/
+docs/*
+
+# ...except the durable architecture notes, which belong in the repo
+!docs/WORKSPACE.md

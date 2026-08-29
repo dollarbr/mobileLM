@@ -30,6 +30,11 @@ scheduled tasks that run even with the app closed.
   (`schedule_task`, `list_scheduled_tasks`, `cancel_scheduled_task`).
   Write-class tools pause for a human tap before they run. Tool chains are
   capped (default single hop, up to 8) so small models can't spin forever.
+- **Workspace projects** — pick one folder on the device once; every project
+  is a subfolder inside it, and a chat binds to a project so the file tools
+  are scoped to it. New chats stay in the project you are already in; the
+  project chip in the chat header changes or drops that binding. See
+  [docs/WORKSPACE.md](docs/WORKSPACE.md).
 - **Scheduled tasks** — a named prompt bound to a model snapshot and a daily
   fire time. Runs in a foreground service with its own engine and empty
   history, posts the result as a notification and into the chat.
