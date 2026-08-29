@@ -41,6 +41,7 @@ HfSearchService _serving(Object body) {
 }
 
 void main() {
+  _quantAwareTests();
   test('an empty query browses the index instead of returning nothing',
       () async {
     final service = _serving([
@@ -189,5 +190,41 @@ void main() {
     expect(files.single.isMultimodal, isFalse);
     expect(files.single.projectors, isEmpty);
     expect(files.single.recommendedProjector, isNull);
+  });
+}
+
+void _quantAwareTests() {
+  group('quantisation-aware detection', () {
+    test('catches the markers each vendor actually ships', () {
+      // The marker sits on the repo for Google and on the file for Liquid.
+      expect(isQuantizationAware('google/gemma-4-E2B-it-qat-q4_0-gguf'), isTrue);
+      expect(isQuantizationAware('LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf'), isTrue);
+      expect(isQuantizationAware('bartowski/google_gemma-3-4b-it-qat-GGUF'),
+          isTrue);
+      // Suffixed recipes still lead with the marker.
+      expect(isQuantizationAware('some-model-QAT-SFT-GGUF'), isTrue);
+      expect(isQuantizationAware('some-model-QAT_RLHF'), isTrue);
+      expect(isQuantizationAware('a QAFT build'), isTrue);
+      // Spelled out, either spelling.
+      expect(isQuantizationAware('Quantization-Aware Training'), isTrue);
+      expect(isQuantizationAware('quantisation aware distillation'), isTrue);
+    });
+
+    test('does not fire on names that merely contain the letters', () {
+      // All three were measured against the hub and are not quantisation
+      // formats: a model name, a user handle, and a merge suffix.
+      expect(isQuantizationAware('mradermacher/Qabalah-12B-GGUF'), isFalse);
+      expect(isQuantizationAware('bralynn/qafast'), isFalse);
+      expect(isQuantizationAware('Ex0bit/Gemma4-26B-A4B-PRISM-PRO-DQ-GGUF'),
+          isFalse);
+      expect(isQuantizationAware('Qatar-news-7B'), isFalse);
+      expect(isQuantizationAware('llama-3.2-1b-instruct-q4_k_m.gguf'), isFalse);
+    });
+
+    test('the facet counts toward the Filters badge', () {
+      expect(const HfFilters().activeCount, 0);
+      expect(const HfFilters(quantAware: true).activeCount, 1);
+      expect(const HfFilters().copyWith(quantAware: true).quantAware, isTrue);
+    });
   });
 }

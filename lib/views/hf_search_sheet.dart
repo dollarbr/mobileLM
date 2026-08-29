@@ -715,6 +715,18 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       ),
                   ],
                 ),
+                _label(theme, 'QUANTISATION'),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  value: _f.quantAware,
+                  onChanged: (v) =>
+                      setState(() => _f = _f.copyWith(quantAware: v)),
+                  title: const Text('Quantisation-aware only'),
+                  subtitle: const Text(
+                      'QAT, QAD, QAFT — trained for 4-bit, so a Q4_0 build '
+                      'holds much closer to full precision'),
+                ),
                 _label(theme, 'THIS DEVICE'),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
