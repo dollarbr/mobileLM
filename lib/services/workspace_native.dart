@@ -88,19 +88,21 @@ Future<String?> readFile({
   }
 }
 
-Future<bool> writeFile({
+Future<String?> writeFile({
   required String treeUri,
   required String relPath,
   required String content,
 }) async {
   try {
-    await _channel.invokeMethod<bool>(
+    final result = await _channel.invokeMethod<bool>(
       'wsWriteFile',
       {'treeUri': treeUri, 'relPath': relPath, 'content': content},
     );
-    return true;
-  } catch (_) {
-    return false;
+    return result == true ? null : 'Unknown write error';
+  } on PlatformException catch (e) {
+    return 'Write error: ${e.message}';
+  } catch (e) {
+    return 'Write error: $e';
   }
 }
 
