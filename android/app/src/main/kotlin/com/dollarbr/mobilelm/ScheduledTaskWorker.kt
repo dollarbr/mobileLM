@@ -1,14 +1,8 @@
 package com.dollarbr.mobilelm
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
-import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import java.io.File
 import java.io.FileInputStream
@@ -27,8 +21,6 @@ class ScheduledTaskWorker(
         val modelPath = inputData.getString(KEY_MODEL_PATH) ?: ""
         val modelName = inputData.getString(KEY_MODEL_NAME)
 
-        setForeground(createForegroundInfo(taskName))
-
         appendResult(
             taskId = taskId,
             output = "PENDING: ${
@@ -37,38 +29,6 @@ class ScheduledTaskWorker(
         )
 
         return Result.success()
-    }
-
-    private fun createForegroundInfo(taskName: String): ForegroundInfo {
-        val channelId = "scheduled_tasks"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val channel = NotificationChannel(
-                channelId,
-                "Scheduled tasks",
-                NotificationManager.IMPORTANCE_HIGH,
-            )
-            channel.description = "Results from scheduled agent tasks"
-            manager.createNotificationChannel(channel)
-        }
-
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        val notification = NotificationCompat.Builder(context, channelId)
-            .setContentTitle("mobileLM · $taskName")
-            .setContentText("Running scheduled task...")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build()
-
-        return ForegroundInfo(NOTIFICATION_ID, notification)
     }
 
     private fun appendResult(taskId: String, output: String) {
@@ -153,7 +113,6 @@ class ScheduledTaskWorker(
 
     companion object {
         const val TAG = "ScheduledTaskWorker"
-        const val NOTIFICATION_ID = 0x1234
         const val KEY_TASK_ID = "taskId"
         const val KEY_TASK_NAME = "taskName"
         const val KEY_PROMPT = "prompt"
