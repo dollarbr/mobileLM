@@ -100,3 +100,4 @@ docs/*
 # ...except the durable architecture notes, which belong in the repo
 !docs/WORKSPACE.md
 !docs/PRIVATELM_REFERENCE.md
+!docs/MODELS.md

@@ -191,6 +191,110 @@ If asked about yourself, you can mention you're a local AI assistant that priori
       'template': 'litert',
       'runtime': 'litert',
     },
+    // Quantisation-aware models: the weights were trained knowing they would
+    // end up 4-bit, so a Q4_0 build holds far closer to the full-precision
+    // model than a plain post-training quant of the same size. Q4_0 is also
+    // the layout llama.cpp repacks for ARM dot-product and i8mm kernels, so
+    // it is the fastest 4-bit path on a phone. Vendors name the recipe
+    // differently — Google says QAT, Liquid says QAD — same idea.
+    {
+      'name': 'LFM2.5 230M (QAD Q4_0)',
+      'filename': 'LFM2.5-230M-QAD-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-230M-GGUF/resolve/main/LFM2.5-230M-QAD-Q4_0.gguf',
+      'size': '0.15 GB',
+      'description':
+          'Quantisation-aware 4-bit. Smallest model here — runs on anything',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'LFM2.5 350M (QAD Q4_0)',
+      'filename': 'LFM2.5-350M-QAD-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/main/LFM2.5-350M-QAD-Q4_0.gguf',
+      'size': '0.22 GB',
+      'description': 'Quantisation-aware 4-bit, tuned for edge devices',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'LFM2.5 1.2B Instruct (QAD Q4_0)',
+      'filename': 'LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf',
+      'size': '0.70 GB',
+      'description':
+          'Quantisation-aware 4-bit. Multilingual, and the sweet spot for most phones',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'LFM2.5 2.6B (QAD Q4_0)',
+      'filename': 'LFM2.5-2.6B-QAD-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-QAD-Q4_0.gguf',
+      'size': '1.59 GB',
+      'description': 'Quantisation-aware 4-bit, the largest LFM2.5 that still fits comfortably',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'Gemma 3 1B Instruct (QAT Q4_0)',
+      'filename': 'gemma-3-1B-it-QAT-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/lmstudio-community/gemma-3-1B-it-qat-GGUF/resolve/main/gemma-3-1B-it-QAT-Q4_0.gguf',
+      'size': '0.72 GB',
+      'description':
+          "Quantisation-aware 4-bit. Google's own QAT weights, mirrored ungated",
+      'template': 'gemma',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'Gemma 3 4B Instruct (QAT Q4_0)',
+      'filename': 'google_gemma-3-4b-it-qat-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/bartowski/google_gemma-3-4b-it-qat-GGUF/resolve/main/google_gemma-3-4b-it-qat-Q4_0.gguf',
+      'size': '2.37 GB',
+      'description':
+          'Quantisation-aware 4-bit with vision. Needs a 0.85 GB projector',
+      'template': 'gemma',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/bartowski/google_gemma-3-4b-it-qat-GGUF/resolve/main/mmproj-google_gemma-3-4b-it-qat-f16.gguf',
+      'mmprojFilename': 'mmproj-google_gemma-3-4b-it-qat-f16.gguf',
+    },
+    {
+      'name': 'Gemma 4 E2B Instruct (QAT Q4_0)',
+      'filename': 'gemma-4-E2B_q4_0-it.gguf',
+      'url':
+          'https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/main/gemma-4-E2B_q4_0-it.gguf',
+      'size': '3.35 GB',
+      'description':
+          'Quantisation-aware 4-bit — text, images and audio. Needs a 0.99 GB projector',
+      'template': 'gemma',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/main/gemma-4-E2B-it-mmproj.gguf',
+      'mmprojFilename': 'gemma-4-E2B-it-mmproj.gguf',
+    },
+    {
+      'name': 'Gemma 4 E4B Instruct (QAT Q4_0)',
+      'filename': 'gemma-4-E4B_q4_0-it.gguf',
+      'url':
+          'https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/main/gemma-4-E4B_q4_0-it.gguf',
+      'size': '5.15 GB',
+      'description':
+          'Quantisation-aware 4-bit — text, images and audio. Needs a 0.99 GB projector and a roomy phone',
+      'template': 'gemma',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/main/gemma-4-E4B-it-mmproj.gguf',
+      'mmprojFilename': 'gemma-4-E4B-it-mmproj.gguf',
+    },
     {
       'name': 'Gemma 4 E2B Instruct (GGUF)',
       'filename': 'gemma-4-E2B-it-Q4_0.gguf',
