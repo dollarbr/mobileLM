@@ -903,7 +903,6 @@ class InferenceEngine {
 
     return completer.future;
   }
-  }
 
   Future<void> _ensureLiteRtConversation({
     required String prompt,
