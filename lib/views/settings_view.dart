@@ -212,6 +212,7 @@ class SettingsView extends GetView<SettingsController> {
                  try {
                    final taskCount =
                        Get.find<ScheduledTaskService>().tasks.length;
+                   Get.find<AppLogService>().info('SettingsObx: taskCount=$taskCount');
                    return _appleGroupedCard(context, isDark, children: [
                      _appleListTile(
                        context,
@@ -226,7 +227,8 @@ class SettingsView extends GetView<SettingsController> {
                        onTap: () => _openScheduledTasksSheet(context, isDark),
                      ),
                    ]);
-                 } catch (e) {
+                 } catch (e, st) {
+                   Get.find<AppLogService>().error('SettingsObx error: $e', details: st);
                    return _appleGroupedCard(context, isDark, children: [
                      _appleListTile(
                        context,
