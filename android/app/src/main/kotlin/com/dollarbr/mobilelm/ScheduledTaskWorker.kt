@@ -36,8 +36,6 @@ class ScheduledTaskWorker(
                 if (modelName.isNullOrBlank()) modelPath else "$modelName|$modelPath"
             }|||$prompt"
         )
-        showResultNotification(taskName, "Scheduled task triggered. Open mobileLM to run it.")
-        openApp()
 
         return Result.success()
     }
@@ -74,19 +72,8 @@ class ScheduledTaskWorker(
         return ForegroundInfo(NOTIFICATION_ID, notification)
     }
 
-    private fun showResultNotification(taskName: String, snippet: String) {
-        val channelId = "scheduled_tasks"
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val notification = NotificationCompat.Builder(context, channelId)
-            .setContentTitle("mobileLM · $taskName")
-            .setContentText(snippet)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setAutoCancel(true)
-            .build()
-        manager.notify(taskName.hashCode() and 0x7fffffff, notification)
-    }
-
     private fun appendResult(taskId: String, output: String) {
+        @Suppress("UNCHECKED_CAST")
         try {
             val resultsFile = File(context.filesDir, "scheduled_results.json")
             val list = mutableListOf<Map<String, Any?>>()
@@ -118,16 +105,6 @@ class ScheduledTaskWorker(
             }
         } catch (e: RuntimeException) {
             Log.w(TAG, "Failed to append scheduled result: $e")
-        }
-    }
-
-    private fun openApp() {
-        try {
-            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-            intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            context.startActivity(intent)
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "Failed to open app: $e")
         }
     }
 
