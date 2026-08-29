@@ -560,7 +560,7 @@ packages:
     source: hosted
     version: "3.0.0"
   llama_flutter_android:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "local_plugins/llama_flutter_android"
       relative: true

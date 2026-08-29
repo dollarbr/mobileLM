@@ -83,6 +83,11 @@ android {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Local plugins
+    implementation(project(":llama_flutter_android"))
+    implementation(project(":sd_flutter_android"))
+    implementation(project(":flutter_litert_lm"))
 }
 
 flutter {
