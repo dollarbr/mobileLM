@@ -729,6 +729,44 @@ class InferenceEngine {
       temperature: temperature,
     );
 
+    // Retry up to 2 times on Status Code: 13 (INTERNAL_ERROR)
+    const maxRetries = 2;
+    String lastError = '';
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        print('[Inference] Retrying LiteRT-LM generation (attempt ${attempt + 1})');
+        await Future.delayed(Duration(seconds: attempt));
+      }
+      try {
+        return await _doGenerateLiteRt(
+          prompt: prompt,
+          conversationHistory: conversationHistory,
+          systemPrompt: systemPrompt,
+          maxTokens: maxTokens,
+          temperature: temperature,
+          imagePath: imagePath,
+          audioPath: audioPath,
+          onToken: onToken,
+        );
+      } catch (e) {
+        lastError = e.toString();
+        if (!lastError.contains('Status Code: 13') || attempt == maxRetries) break;
+      }
+    }
+    return 'ERROR: LiteRT-LM generation failed after $maxRetries retries. Try a smaller model or shorter prompt. Error: $lastError';
+  }
+
+  Future<String> _doGenerateLiteRt({
+    required String prompt,
+    List<Map<String, String>>? conversationHistory,
+    required String systemPrompt,
+    required int maxTokens,
+    required double temperature,
+    String? imagePath,
+    String? audioPath,
+    void Function(String token)? onToken,
+  }) async {
+
     final completer = Completer<String>();
     final buffer = StringBuffer();
     bool completed = false;
@@ -864,6 +902,7 @@ class InferenceEngine {
     });
 
     return completer.future;
+  }
   }
 
   Future<void> _ensureLiteRtConversation({
