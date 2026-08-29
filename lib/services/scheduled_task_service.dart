@@ -4,11 +4,10 @@ import 'dart:io';
 
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
-import 'dart:convert';
-import 'dart:io';
 
 import '../core/constants.dart';
 import 'inference_android.dart' if (dart.library.html) 'inference_stub.dart'
