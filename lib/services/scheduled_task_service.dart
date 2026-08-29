@@ -38,7 +38,7 @@ class ScheduledTask {
   /// How often the task runs. 'daily' runs once per day at hour:minute.
   /// 'hourly' runs at minute past every hour. 'every2h' / 'every4h' /
   /// 'every6h' / 'every8h' run every N hours at the given minute offset.
-  final String frequency; // daily | hourly | every2h | every4h | every6h | every8h
+  final String frequency; // daily | hourly | every2h | every4h | every6h | every8h | once
   final bool keepModelLoaded; // keep engine alive between runs
 
   bool enabled;
@@ -99,13 +99,15 @@ class ScheduledTask {
         return 'Every 6h';
       case 'every8h':
         return 'Every 8h';
+      case 'once':
+        return 'Just once';
       default:
         return 'Daily';
     }
   }
 
-  /// How many minutes between runs.
-  int get intervalMinutes {
+  /// How many minutes between runs. 'once' returns null to signal single-run.
+  int? get intervalMinutes {
     switch (frequency) {
       case 'hourly':
         return 60;
@@ -117,6 +119,8 @@ class ScheduledTask {
         return 360;
       case 'every8h':
         return 480;
+      case 'once':
+        return null; // single-run task
       default:
         return 1440; // daily
     }
@@ -171,12 +175,22 @@ bool isTaskDue(ScheduledTask task, DateTime now) {
     if (last != null && DateTime.parse(last).isAfter(fireTime)) return false;
     return true;
   }
+  if (task.frequency == 'once') {
+    // Single-run: due only once, at the specified time, and not yet run.
+    final fireTime =
+        DateTime(now.year, now.month, now.day, task.hour, task.minute);
+    if (now.isBefore(fireTime)) return false;
+    // If already run, never due again.
+    final last = task.lastRunAt;
+    if (last != null && DateTime.parse(last).isAfter(fireTime.subtract(const Duration(seconds: 1)))) return false;
+    return true;
+  }
   // Sub-daily: check if interval has elapsed since last run.
   final last = task.lastRunAt != null ? DateTime.parse(task.lastRunAt!) : null;
   final sinceLast = last == null
       ? Duration.zero
       : now.difference(last);
-  return sinceLast.inMinutes >= task.intervalMinutes;
+  return sinceLast.inMinutes >= (task.intervalMinutes ?? 1440);
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────
@@ -351,9 +365,20 @@ String _frequencyLabel(String freq) {
       return 'every 6h';
     case 'every8h':
       return 'every 8h';
+    case 'once':
+      return 'once (single run)';
     default:
       return 'daily';
   }
+}
+
+/// Cancel a native WorkManager task by id. Standalone so it can be called
+/// from both the main-isolate service and the background scheduler loop.
+Future<void> _cancelTaskOnNative(String id) async {
+  if (!Platform.isAndroid) return;
+  try {
+    await _schedulerChannel.invokeMethod('cancelTask', {'id': id});
+  } catch (_) {}
 }
 
 /// Tick installed inside the shared background-service isolate. Every 30 s it
@@ -378,6 +403,12 @@ void startSchedulerLoop(ServiceInstance service) {
           await writeResults(all);
           await notifyTaskResult(task.name,
               result.output.length > 120 ? result.output.substring(0, 120) : result.output);
+          // One-time tasks self-delete after running.
+          if (task.frequency == 'once') {
+            tasks.removeWhere((t) => t.id == task.id);
+            await writeTasks(tasks);
+            await _cancelTaskOnNative(task.id);
+          }
         } finally {
           _runInProgress = false;
         }
