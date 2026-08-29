@@ -20,7 +20,6 @@ import '../services/tools/builtin_tools.dart';
 import '../services/device_info_native.dart' as platform_info;
 import '../services/image_generation_notification_service.dart';
 import '../services/scheduled_task_service.dart';
-import '../services/app_log_service.dart';
 import '../ffi/sd_ffi_bindings.dart';
 import 'log_view.dart';
 
@@ -212,7 +211,6 @@ class SettingsView extends GetView<SettingsController> {
                  try {
                    final taskCount =
                        Get.find<ScheduledTaskService>().tasks.length;
-                   Get.find<AppLogService>().info('SettingsObx: taskCount=$taskCount');
                    return _appleGroupedCard(context, isDark, children: [
                      _appleListTile(
                        context,
@@ -222,21 +220,20 @@ class SettingsView extends GetView<SettingsController> {
                        title: 'Scheduled tasks',
                        subtitle: taskCount == 0
                            ? 'Daily prompts that run on their own'
-                           : '${taskCount} daily task${taskCount == 1 ? '' : 's'}',
+                           : '$taskCount daily task${taskCount == 1 ? '' : 's'}',
                        showDivider: false,
                        onTap: () => _openScheduledTasksSheet(context, isDark),
                      ),
                    ]);
-                 } catch (e, st) {
-                   Get.find<AppLogService>().error('SettingsObx error: $e', details: st);
+                 } catch (e) {
                    return _appleGroupedCard(context, isDark, children: [
                      _appleListTile(
                        context,
                        isDark,
                        leading: _iconBox(
-                           const Color(0xFF8B7CFF), Icons.schedule_rounded),
-                       title: 'Scheduled tasks',
-                       subtitle: 'Error: $e',
+                           const Color(0xFFFF0000), Icons.error_outline),
+                       title: 'SCHEDULED TASKS ERROR',
+                       subtitle: '$e',
                        showDivider: false,
                        onTap: () => _openScheduledTasksSheet(context, isDark),
                      ),
@@ -386,7 +383,6 @@ class SettingsView extends GetView<SettingsController> {
   void _openScheduledTasksSheet(BuildContext context, bool isDark) {
     try {
       final service = Get.find<ScheduledTaskService>();
-      Get.find<AppLogService>().info('_openScheduledTasksSheet: tasks=${service.tasks.length}');
       showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -498,7 +494,6 @@ class SettingsView extends GetView<SettingsController> {
       ),
     );
     } catch (e, st) {
-      Get.find<AppLogService>().error('_openScheduledTasksSheet error: $e', details: st);
       if (context.mounted) {
         Get.snackbar('Error', '$e', snackPosition: SnackPosition.BOTTOM);
       }
