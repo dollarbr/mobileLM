@@ -1331,6 +1331,14 @@ class ModelController extends GetxController {
       await unloadModel();
       return;
     }
+
+    // Check memory before proceeding with load
+    final contextSize = Get.find<DeviceInfoService>().recommendedContextSize;
+    final hasMemory = await _checkMemoryBeforeLoad(
+      fileBytes: fileBytes,
+      contextSize: contextSize,
+    );
+    if (!hasMemory) return;
     if (isLiteRt && !await _confirmLiteRtGpuWarning()) return;
 
     if (isImageModel(model ??
@@ -1870,6 +1878,60 @@ class ModelController extends GetxController {
   }
 
   bool _isLowMemoryBytes(int bytes) => bytes < 768 * 1024 * 1024;
+
+  /// Estimate memory needed for a model: file size + KV cache overhead.
+  /// KV cache is roughly contextSize * numLayers * 2 * 2 bytes per token
+  /// (float16 per head per layer). We use a conservative multiplier.
+  int _estimateMemoryUsage(int fileBytes, int contextSize) {
+    // Heuristic: model weights take ~1x file bytes at runtime (dequantized),
+    // KV cache takes ~contextSize * 0.001 bytes per token as overhead.
+    final weightsEstimate = fileBytes * 2; // quantized -> fp16/fp32 estimate
+    final kvCacheEstimate = contextSize * 4096; // generous KV cache estimate
+    return weightsEstimate + kvCacheEstimate;
+  }
+
+  /// Check if there's enough memory to load a model. If not and another
+  /// model is loaded, auto-unload it and show a snackbar.
+  Future<bool> _checkMemoryBeforeLoad({
+    required int fileBytes,
+    required int contextSize,
+  }) async {
+    try {
+      final device = Get.find<DeviceInfoService>();
+      await device.refreshMemoryInfo();
+      final availableBytes =
+          (device.availableRamGB.value * 1024 * 1024 * 1024).round();
+      final estimatedUsage = _estimateMemoryUsage(fileBytes, contextSize);
+
+      if (availableBytes > 0 && estimatedUsage > 0) {
+        final ratio = estimatedUsage / availableBytes;
+        if (ratio > 0.8) {
+          // More than 80% of available RAM would be used
+          final loadedName = _inference.loadedModelName.value;
+          if (_inference.isModelLoaded.value && loadedName.isNotEmpty) {
+            // Auto-unload current model to make room
+            Get.find<AppLogService>().info(
+              'Auto-unloading $loadedName: insufficient RAM for new model',
+            );
+            await unloadModel();
+            Get.snackbar(
+              'Memory Optimized',
+              'Unloaded "$loadedName" to free memory for the new model.',
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor:
+                  const Color(0xFFFF9500).withValues(alpha: 0.15),
+              colorText: const Color(0xFFFF9500),
+              duration: const Duration(seconds: 4),
+            );
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      Get.find<AppLogService>().error('Memory check failed', details: e);
+    }
+    return true;
+  }
 
   Future<double> _refreshAvailableRamGb() async {
     try {
