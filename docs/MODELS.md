@@ -60,6 +60,23 @@ apenas contêm aquelas letras (`meditron_sr_qaft_7b` é um fine-tune médico,
 `PRISM-PRO-DQ` é sufixo de merge, `Qabalah-12B` é o nome do modelo). Nenhum é
 um formato de quantização publicado.
 
+### O filtro no sheet do Hugging Face
+
+`QUANTISATION → Quantisation-aware only`. O predicado é `isQuantizationAware`
+em `lib/services/hf_search_service.dart`, e casa **tokens inteiros**, nunca
+substring: três letras pegam coisa demais senão — `Qabalah-12B` é nome de
+modelo, `qafast` é handle de usuário, `PRISM-PRO-DQ` é sufixo de merge. Os
+testes em `test/hf_search_service_test.dart` fixam esses três como negativos.
+
+O marcador pode estar **no repo ou só no arquivo**: a Google publica
+`google/gemma-4-E2B-it-qat-q4_0-gguf`, mas a LiquidAI publica
+`LiquidAI/LFM2.5-1.2B-Instruct-GGUF` com `…-QAD-Q4_0.gguf` dentro. Por isso o
+filtro lê o id, as tags e a lista de arquivos — e só quando ele está ligado a
+busca pede `full=true` no Hub, que triplica o payload (11 KB → 32 KB por
+página de 20).
+
+Para estender: `_quantAwareMarkers`, um lugar só.
+
 ### Regras para adicionar ao catálogo
 
 - **Verificar a URL antes de commitar.** Os repos oficiais

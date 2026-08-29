@@ -88,6 +88,18 @@ class HfFile {
       _formatBytes(sizeBytes + (projector?.sizeBytes ?? 0));
 }
 
+/// The marker can sit on the repo or on any file inside it, so both are read.
+bool _repoIsQuantAware(Map<dynamic, dynamic> raw) {
+  final id = (raw['id'] ?? raw['modelId'] ?? '').toString();
+  if (isQuantizationAware(id)) return true;
+  final tags = (raw['tags'] as List?)?.join(' ') ?? '';
+  if (isQuantizationAware(tags)) return true;
+  final siblings = raw['siblings'] as List?;
+  if (siblings == null) return false;
+  return siblings.whereType<Map>().any(
+      (f) => isQuantizationAware((f['rfilename'] ?? '').toString()));
+}
+
 String _quantOf(String filename) {
   final match =
       RegExp(r'(IQ|Q)\d+(_[A-Z0-9]+)*|BF16|F16|F32', caseSensitive: false)
@@ -121,6 +133,33 @@ enum HfFormat {
   final String tag;
 }
 
+/// Whether a repo or file name advertises weights that were trained knowing
+/// they would be quantised — quantisation-aware training, distillation or
+/// fine-tuning. Each vendor names its own recipe: Google ships QAT, Liquid
+/// ships QAD, and suffixed forms like `QAT-SFT` or `QAT_RLHF` turn up too.
+///
+/// Matching is on whole tokens, never substrings, because three letters catch
+/// far too much otherwise: `Qabalah-12B` is a model name and `qafast` is a
+/// user handle, neither has anything to do with quantisation.
+bool isQuantizationAware(String text) {
+  final lower = text.toLowerCase();
+  if (lower.contains('quantization-aware') ||
+      lower.contains('quantization aware') ||
+      lower.contains('quantisation-aware') ||
+      lower.contains('quantisation aware')) {
+    return true;
+  }
+  for (final token in lower.split(RegExp(r'[^a-z0-9]+'))) {
+    if (_quantAwareMarkers.contains(token)) return true;
+  }
+  return false;
+}
+
+/// Deliberately short. `dq` and `qab` were measured against the hub and match
+/// nothing but merge suffixes and model names, so they stay out — a filter
+/// that returns noise is worse than one that misses.
+const _quantAwareMarkers = {'qat', 'qad', 'qaft'};
+
 /// The Hugging Face facets this app can act on, as one value.
 ///
 /// Only facets the hub's public model API honours are here — the web UI offers
@@ -135,7 +174,14 @@ class HfFilters {
     this.pipelineTag = '',
     this.fitsDevice = true,
     this.nameQuery = '',
+    this.quantAware = false,
   });
+
+  /// Keep only quantisation-aware builds. Applied client-side over the repo id
+  /// and its file list: the hub has no facet for it, and the marker often
+  /// appears only on the file — LiquidAI's repos are named `…-GGUF` and carry
+  /// `…-QAD-Q4_0.gguf` inside.
+  final bool quantAware;
 
   /// Substring the repo name/owner must contain (case-insensitive). Applied
   /// client-side: the hub API has no "name contains" facet.
@@ -180,6 +226,7 @@ class HfFilters {
       (minParamsB == null ? 0 : 1) +
       (maxParamsB == null ? 0 : 1) +
       (pipelineTag.isEmpty ? 0 : 1) +
+      (quantAware ? 1 : 0) +
       tags.length;
 
   HfFilters copyWith({
@@ -193,10 +240,12 @@ class HfFilters {
     bool clearMin = false,
     bool clearMax = false,
     String? nameQuery,
+    bool? quantAware,
   }) {
     return HfFilters(
       format: format ?? this.format,
       nameQuery: nameQuery ?? this.nameQuery,
+      quantAware: quantAware ?? this.quantAware,
       author: author ?? this.author,
       minParamsB: clearMin ? null : (minParamsB ?? this.minParamsB),
       maxParamsB: clearMax ? null : (maxParamsB ?? this.maxParamsB),
@@ -277,6 +326,9 @@ class HfSearchService {
         if (filters.author.isNotEmpty) 'author': filters.author,
         if (filters.pipelineTag.isNotEmpty) 'pipeline_tag': filters.pipelineTag,
         if (range != null) 'num_parameters': range,
+        // Only when the filter is on: `full` triples the payload, and it is
+        // the only way to see file names without a request per repo.
+        if (filters.quantAware) 'full': true,
       },
       options: Options(
         receiveTimeout: _timeout,
@@ -287,6 +339,7 @@ class HfSearchService {
 
     return (response.data ?? [])
         .whereType<Map>()
+        .where((raw) => !filters.quantAware || _repoIsQuantAware(raw))
         .map((raw) => HfRepo(
               id: (raw['id'] ?? raw['modelId'] ?? '').toString(),
               downloads: (raw['downloads'] as num?)?.toInt() ?? 0,
