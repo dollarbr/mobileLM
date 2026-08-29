@@ -371,7 +371,7 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
                     leading: const Icon(Icons.folder),
                     title: Text(p),
                     onTap: () {
-                      Get.find<WorkspaceService>().openFolder(p);
+                      Get.find<WorkspaceService>().openProject(p);
                       Get.back();
                     },
                   ),
