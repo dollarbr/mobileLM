@@ -499,6 +499,7 @@ class SettingsView extends GetView<SettingsController> {
                   DropdownMenuItem(value: 'every4h', child: Text('Every 4h')),
                   DropdownMenuItem(value: 'every6h', child: Text('Every 6h')),
                   DropdownMenuItem(value: 'every8h', child: Text('Every 8h')),
+                  DropdownMenuItem(value: 'once', child: Text('Just once')),
                 ],
                 onChanged: (v) {
                   if (v != null) setState(() => frequency = v);
@@ -509,10 +510,11 @@ class SettingsView extends GetView<SettingsController> {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.schedule_rounded),
                 title: Text(time.format(dlgCtx)),
-                subtitle: frequency == 'hourly' ||
-                        frequency.startsWith('every')
-                    ? const Text('At this minute past each interval')
-                    : const Text('At this time every day'),
+                subtitle: frequency == 'once'
+                    ? const Text('Run this single time at the chosen hour')
+                    : frequency == 'hourly' || frequency.startsWith('every')
+                        ? const Text('At this minute past each interval')
+                        : const Text('At this time every day'),
                 onTap: () async {
                   final picked = await showTimePicker(
                       context: dlgCtx, initialTime: time);
