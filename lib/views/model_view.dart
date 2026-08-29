@@ -191,61 +191,85 @@ class ModelView extends GetView<ModelController> {
     );
   }
 
-  /// One heading plus its models. Sub-headings only appear when the section
-  /// actually splits — see ModelController._byModality.
+  /// One heading plus its models, folded away until tapped.
+  ///
+  /// Everything starts closed: six headings read as an index of what the
+  /// phone can run, where thirty cards read as a wall. Sub-headings appear
+  /// only when the section actually splits — see ModelController._byModality.
   Widget _buildModelSection(BuildContext context, ModelSection section) {
+    final open = controller.isSectionExpanded(section.title);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 6, bottom: 10),
-          child: Row(
-            children: [
-              Text(
-                section.title.toUpperCase(),
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Theme.of(context).colorScheme.onSurface,
-                  letterSpacing: 1.6,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${section.count}',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+        InkWell(
+          onTap: () => controller.toggleSection(section.title),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  open ? Icons.expand_more : Icons.chevron_right,
+                  size: 18,
                   color: Theme.of(context).hintColor,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Divider(
-                  height: 0.5,
-                  thickness: 0.5,
-                  color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                const SizedBox(width: 4),
+                Text(
+                  section.title.toUpperCase(),
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onSurface,
+                    letterSpacing: 1.6,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).hintColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${section.count}',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).hintColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Divider(
+                    height: 0.5,
+                    thickness: 0.5,
+                    color:
+                        Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        for (final block in section.blocks) ...[
-          if (block.label.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                block.label,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).hintColor,
-                  letterSpacing: 0.6,
+        if (open)
+          for (final block in section.blocks) ...[
+            if (block.label.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8, top: 2),
+                child: Text(
+                  block.label,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).hintColor,
+                    letterSpacing: 0.6,
+                  ),
                 ),
               ),
-            ),
-          ...block.models.map((model) => _buildModelCard(context, model)),
-        ],
+            ...block.models.map((model) => _buildModelCard(context, model)),
+          ],
       ],
     );
   }
