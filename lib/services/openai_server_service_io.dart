@@ -196,7 +196,6 @@ class OpenAiServerService {
           systemPrompt: parsed.systemPrompt ??
               _defaultSystemPrompt(inference.loadedModelName.value),
           conversationHistory: parsed.history,
-          source: 'server',
           imagePath: parsed.imagePath,
           audioPath: parsed.audioPath,
         );
@@ -239,7 +238,6 @@ class OpenAiServerService {
         final text = await inference.generate(
           prompt: prompt,
           systemPrompt: _defaultSystemPrompt(inference.loadedModelName.value),
-          source: 'server',
         );
         await _json(request, {
           'id': 'cmpl-${_id()}',
@@ -447,7 +445,6 @@ class OpenAiServerService {
       systemPrompt: parsed.systemPrompt ??
           _defaultSystemPrompt(inference.loadedModelName.value),
       conversationHistory: parsed.history,
-      source: 'server',
       imagePath: parsed.imagePath,
       audioPath: parsed.audioPath,
       onToken: emit,
@@ -488,7 +485,6 @@ class OpenAiServerService {
     final result = await inference.generate(
       prompt: prompt,
       systemPrompt: _defaultSystemPrompt(inference.loadedModelName.value),
-      source: 'server',
       onToken: emit,
     );
     if (!emitted && result.isNotEmpty) emit(result);

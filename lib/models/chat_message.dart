@@ -13,8 +13,6 @@ class ChatMessage {
   final String? filePath;
   final String? fileType;
   final int? fileSize;
-  final String? cmdOutput; // Result of CMD: execution
-  final bool isCommand;
   final double? tokensPerSec;
   final int? thoughtDurationSeconds;
   final int? imageGenDurationMs; // Time taken to generate image locally
@@ -41,8 +39,6 @@ class ChatMessage {
     this.filePath,
     this.fileType,
     this.fileSize,
-    this.cmdOutput,
-    this.isCommand = false,
     this.tokensPerSec,
     this.thoughtDurationSeconds,
     this.imageGenDurationMs,
@@ -61,8 +57,6 @@ class ChatMessage {
         'filePath': filePath,
         'fileType': fileType,
         'fileSize': fileSize,
-        'cmdOutput': cmdOutput,
-        'isCommand': isCommand,
         'tokensPerSec': tokensPerSec,
         'thoughtDurationSeconds': thoughtDurationSeconds,
         'imageGenDurationMs': imageGenDurationMs,
@@ -82,8 +76,6 @@ class ChatMessage {
         fileType: map['fileType'],
         fileSize:
             map['fileSize'] != null ? (map['fileSize'] as num).toInt() : null,
-        cmdOutput: map['cmdOutput'],
-        isCommand: map['isCommand'] ?? false,
         tokensPerSec: map['tokensPerSec'] != null
             ? (map['tokensPerSec'] as num).toDouble()
             : null,

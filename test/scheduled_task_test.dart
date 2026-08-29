@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:privatelm/services/scheduled_task_service.dart';
+import 'package:mobilelm/services/scheduled_task_service.dart';
 
 void main() {
   final model = '/tmp/model.gguf';

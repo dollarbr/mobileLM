@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:privatelm/models/chat_session.dart';
+import 'package:mobilelm/models/chat_session.dart';
 
 void main() {
   test('a chat keeps its project unless asked to drop it', () {

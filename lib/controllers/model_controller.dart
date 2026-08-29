@@ -792,7 +792,7 @@ class ModelController extends GetxController {
 
   /// Vendor/family folder names for the on-disk layout, relative to the
   /// tree root — the same tree backupConfigs writes:
-  /// `<root>/settings/privatelm-config.json` plus
+  /// `<root>/settings/mobilelm-config.json` plus
   /// `<root>/<Vendor>/<Family>/<file>` for the weights. GGUF metadata wins
   /// when it carries general.organization; otherwise the filename decides.
   /// Returns segments AFTER the tree root: [vendor, family].
@@ -900,21 +900,21 @@ class ModelController extends GetxController {
       // Configs first: small, and the part that makes the copy meaningful.
       final template = await buildConfigTemplate();
       final tmp = File(
-          '${(await getTemporaryDirectory()).path}/privatelm-config.json');
+          '${(await getTemporaryDirectory()).path}/mobilelm-config.json');
       await tmp.writeAsString(jsonEncode(template));
-      _fileSizes = {'privatelm-config.json': await tmp.length()};
-      _backupOffsets = {'privatelm-config.json': 0};
+      _fileSizes = {'mobilelm-config.json': await tmp.length()};
+      _backupOffsets = {'mobilelm-config.json': 0};
       backupTotalFiles.value = 1 + (includeModels ? modelFiles.length : 0);
-      backupFile.value = 'settings/privatelm-config.json';
+      backupFile.value = 'settings/mobilelm-config.json';
       final cfgOutcome = await _download.copyToBackupDirectory(
         treeUri: treeUri,
-        name: 'privatelm-config.json',
+        name: 'mobilelm-config.json',
         sourcePath: tmp.path,
         parentDocUri: settingsDoc,
       );
       await tmp.delete();
       if (cfgOutcome == 0) {
-        throw Exception('Could not write privatelm-config.json');
+        throw Exception('Could not write mobilelm-config.json');
       }
       backupDoneFiles.value = 1;
 
@@ -1055,7 +1055,7 @@ class ModelController extends GetxController {
   Future<int> _applyTemplateFile(File file) async {
     final config =
         jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-    if (config['type'] != 'privatelm-config') {
+    if (config['type'] != 'mobilelm-config') {
       throw Exception('Not a mobileLM config backup.');
     }
     final settingsCount = (config['settings'] as Map?)?.length ?? 0;
@@ -1178,7 +1178,7 @@ class ModelController extends GetxController {
       }
     }
     return {
-      'type': 'privatelm-config',
+      'type': 'mobilelm-config',
       'version': 1,
       'exportedAt': DateTime.now().toIso8601String(),
       'appVersion': Get.find<SettingsController>().appVersion.value,

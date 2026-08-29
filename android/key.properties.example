@@ -1,6 +1,6 @@
 # Copy this file to android/key.properties and keep the real values private.
 # Every published update must use the same keystore and alias.
-storeFile=/absolute/path/to/privatelm-release.jks
+storeFile=/absolute/path/to/mobilelm-release.jks
 storePassword=change-me
-keyAlias=privatelm
+keyAlias=mobilelm
 keyPassword=change-me

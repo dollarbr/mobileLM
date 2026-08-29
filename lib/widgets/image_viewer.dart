@@ -74,7 +74,7 @@ class _ImageViewerState extends State<ImageViewer> {
     setState(() => _isSharing = true);
     try {
       final tempDir = await getTemporaryDirectory();
-      final fileName = 'privatelm_${DateTime.now().millisecondsSinceEpoch}.png';
+      final fileName = 'mobilelm_${DateTime.now().millisecondsSinceEpoch}.png';
       final file = File('${tempDir.path}/$fileName');
       await file.writeAsBytes(_bytes);
       await Share.shareXFiles(

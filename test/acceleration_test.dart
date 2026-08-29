@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:privatelm/services/acceleration.dart';
+import 'package:mobilelm/services/acceleration.dart';
 
 void main() {
   group('planAcceleration', () {

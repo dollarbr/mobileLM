@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:privatelm/controllers/model_controller.dart';
+import 'package:mobilelm/controllers/model_controller.dart';
 
 void main() {
   // The order of the tests inside modelSectionKey is the feature, so this

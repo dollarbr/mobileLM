@@ -33,8 +33,6 @@ class InferenceService extends GetxService {
   final contextTokensUsed = 0.obs;
   final contextTokensTotal = 0.obs;
   final modelLoadProgress = 0.0.obs;
-  final generationSource = ''.obs;
-  final streamingText = ''.obs;
   final gpuName = ''.obs;
   final gpuLayersUsed = 0.obs;
   final isGpuAccelerated = false.obs;
@@ -279,7 +277,6 @@ class InferenceService extends GetxService {
     required String prompt,
     String? systemPrompt,
     List<Map<String, String>>? conversationHistory,
-    String source = 'chat',
     String? imagePath,
     String? audioPath,
     void Function(String token)? onToken,
@@ -303,8 +300,6 @@ class InferenceService extends GetxService {
     isGenerating.value = true;
     tokenCount.value = 0;
     tokensPerSecond.value = 0.0;
-    generationSource.value = source;
-    streamingText.value = '';
 
     final startTime = DateTime.now();
     DateTime? firstVisibleTokenAt;
@@ -343,7 +338,6 @@ class InferenceService extends GetxService {
         onToken: (token) {
           firstVisibleTokenAt ??= DateTime.now();
           tokenCount.value++;
-          streamingText.value += token;
           final speedStart = firstVisibleTokenAt ?? startTime;
           final elapsedSeconds =
               DateTime.now().difference(speedStart).inMilliseconds / 1000.0;
@@ -366,7 +360,6 @@ class InferenceService extends GetxService {
 
       await refreshContextInfo();
       isGenerating.value = false;
-      generationSource.value = '';
 
       // Detect Tensor SoC + Gemma Q4_K_M corruption: model outputs only
       // special tokens and terminates immediately with empty result.
@@ -387,8 +380,6 @@ class InferenceService extends GetxService {
       return result;
     } catch (e) {
       isGenerating.value = false;
-      generationSource.value = '';
-      streamingText.value = '';
       tokenFlushTimer?.cancel();
       flushTokenBuffer();
       Get.find<AppLogService>().error('Local generation failed', details: e);
@@ -399,8 +390,6 @@ class InferenceService extends GetxService {
   Future<void> stopGeneration() async {
     isGenerating.value = false;
     tokenCount.value = 0;
-    generationSource.value = '';
-    streamingText.value = '';
     final engine = _engine;
     if (engine != null) {
       unawaited(engine.stop().timeout(const Duration(seconds: 1)).catchError(
