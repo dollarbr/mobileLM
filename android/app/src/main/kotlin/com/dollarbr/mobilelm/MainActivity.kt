@@ -17,6 +17,7 @@ import android.util.Log
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.work.WorkManager
+import com.write4me.llama_flutter_android.LlamaFlutterAndroidPlugin
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -48,6 +49,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        flutterEngine.plugins.add(LlamaFlutterAndroidPlugin())
         importChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, importChannelName)
         importChannel?.setMethodCallHandler { call, result ->
             when (call.method) {

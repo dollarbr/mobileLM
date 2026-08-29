@@ -91,6 +91,7 @@ android {
         implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
         implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
         implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+        implementation("androidx.core:core-ktx:1.12.0")
         
         testImplementation("org.jetbrains.kotlin:kotlin-test")
         testImplementation("org.mockito:mockito-core:5.0.0")
