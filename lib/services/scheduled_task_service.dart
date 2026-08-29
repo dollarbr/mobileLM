@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants.dart';
+import 'hive_service.dart';
+import 'image_generation_notification_service.dart';
 import 'inference_android.dart' if (dart.library.html) 'inference_stub.dart'
     as platform;
 
@@ -515,10 +517,32 @@ class ScheduledTaskService extends GetxService {
   Future<void> _syncServiceState() async {
     if (!Platform.isAndroid) return;
     final service = FlutterBackgroundService();
-    if (tasks.any((t) => t.enabled)) {
-      if (!await service.isRunning()) await service.startService();
+    final hasEnabledTask = tasks.any((t) => t.enabled);
+    final hasKeepModel = tasks.any((t) => t.keepModelLoaded);
+    if (hasEnabledTask || hasKeepModel) {
+      if (!await service.isRunning()) {
+        await service.startService();
+        // Switch foreground notification from "Image generation running" to
+        // the scheduled-tasks one as soon as the service boots.
+        _sendScheduledForeground(service, tasks);
+        // Show persistent low-key notification so user knows the service is
+        // alive (model kept loaded / tasks pending).
+        final showNotif = Get.find<HiveService>().getSetting<bool>(
+              AppConstants.keyScheduledTaskNotifications,
+              defaultValue: true,
+            ) ?? true;
+        if (showNotif && hasEnabledTask) {
+          final anyName = tasks.where((t) => t.enabled).firstOrNull?.name ?? '';
+          if (anyName.isNotEmpty) {
+            await Get.find<ImageGenerationNotificationService>()
+                .showScheduledNotification(taskName: anyName);
+          }
+        }
+      }
     } else {
       service.invoke('stopService');
+      await Get.find<ImageGenerationNotificationService>()
+          .cancelScheduledNotification();
     }
   }
 
@@ -545,5 +569,23 @@ class ScheduledTaskService extends GetxService {
     try {
       await _schedulerChannel.invokeMethod('cancelTask', {'id': id});
     } catch (_) {}
+  }
+
+  /// Tell the background isolate to show the scheduled-tasks foreground
+  /// notification instead of "Image generation running".
+  void _sendScheduledForeground(
+      FlutterBackgroundService service, List<ScheduledTask> currentTasks) {
+    final enabled =
+        currentTasks.where((t) => t.enabled).toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
+    final names = enabled.map((t) => t.name).join(', ');
+    service.invoke('scheduledNotification', {
+      'data': {
+        'title': 'mobileLM · $names',
+        'content': enabled.isEmpty
+            ? 'Background service running'
+            : '${enabled.length} task(s) scheduled',
+      },
+    });
   }
 }

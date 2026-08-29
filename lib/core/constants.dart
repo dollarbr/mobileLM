@@ -58,6 +58,7 @@ class AppConstants {
   static const String keyTemperature = 'temperature';
   static const String keyMaxTokens = 'max_tokens';
   static const String keyContextSize = 'context_size';
+  static const String keyScheduledTaskNotifications = 'scheduled_task_notifications';
   static const String keyServerApiKey = 'server_api_key';
   static const String keyServerUseApiKey = 'server_use_api_key';
   static const String keyImageSteps = 'image_steps';

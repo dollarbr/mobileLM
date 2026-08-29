@@ -438,6 +438,32 @@ class SettingsView extends GetView<SettingsController> {
                       ),
                     )),
                 const SizedBox(height: 8),
+                Obx(() {
+                  final hive = Get.find<HiveService>();
+                  final showNotif = hive.getSetting<bool>(
+                        AppConstants.keyScheduledTaskNotifications,
+                        defaultValue: true,
+                      ) ?? true;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Show background notification'),
+                    subtitle: const Text(
+                        'Display a persistent notification while tasks are\n'
+                        'scheduled or model is kept loaded in the background.'),
+                    trailing: Switch(
+                      value: showNotif,
+                      onChanged: (v) async {
+                        await hive.setSetting(
+                            AppConstants.keyScheduledTaskNotifications, v);
+                        if (!v) {
+                          await Get.find<ImageGenerationNotificationService>()
+                              .cancelScheduledNotification();
+                        }
+                      },
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: () async {
                     final created = await _createScheduledTaskDialog(

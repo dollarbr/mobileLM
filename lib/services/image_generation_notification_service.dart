@@ -11,8 +11,11 @@ import 'scheduled_task_service.dart';
 class ImageGenerationNotificationService {
   static const int _progressNotificationId = 4201;
   static const int _foregroundNotificationId = 4202;
+  static const int _scheduledNotificationId = 4203;
   static const String _channelId = 'image_generation_progress';
   static const String _channelName = 'Image generation';
+  static const String _scheduledChannelId = 'mobilelm_scheduled';
+  static const String _scheduledChannelName = 'mobileLM scheduled tasks';
 
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
@@ -23,17 +26,25 @@ class ImageGenerationNotificationService {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: android);
     await _notifications.initialize(settings);
-    await _notifications
+    final specific = await _notifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(
-          const AndroidNotificationChannel(
-            _channelId,
-            _channelName,
-            description: 'Progress updates for local image generation',
-            importance: Importance.low,
-          ),
-        );
+            AndroidFlutterLocalNotificationsPlugin>();
+    await specific?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _channelId,
+        _channelName,
+        description: 'Progress updates for local image generation',
+        importance: Importance.low,
+      ),
+    );
+    await specific?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _scheduledChannelId,
+        _scheduledChannelName,
+        description: 'Scheduled agent tasks running in background',
+        importance: Importance.low,
+      ),
+    );
     _initialized = true;
   }
 
@@ -173,6 +184,46 @@ class ImageGenerationNotificationService {
     FlutterBackgroundService().invoke('stopService');
   }
 
+  // ── Scheduled task notification helpers ──────────────────────────
+
+  /// Show (or clear) the persistent scheduled-task notification.
+  /// Pass [taskName] null to dismiss.
+  Future<void> showScheduledNotification({
+    required String taskName,
+    bool keepModelLoaded = false,
+  }) async {
+    if (!Platform.isAndroid) return;
+    await init();
+    final now = DateTime.now();
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}';
+    final body = 'Running scheduled task · $timeStr'
+        '${keepModelLoaded ? ' · model kept loaded' : ''}';
+    await _notifications.show(
+      _scheduledNotificationId,
+      'mobileLM · $taskName',
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _scheduledChannelId,
+          _scheduledChannelName,
+          channelDescription: 'Scheduled agent tasks running in background',
+          importance: Importance.low,
+          priority: Priority.low,
+          ongoing: true,
+          autoCancel: false,
+          onlyAlertOnce: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> cancelScheduledNotification() async {
+    if (!Platform.isAndroid) return;
+    await _notifications.cancel(_scheduledNotificationId);
+  }
+
   Future<void> _showProgress({
     required String title,
     required String body,
@@ -230,6 +281,17 @@ void imageGenerationBackgroundStart(ServiceInstance service) async {
           'You can leave the app. We will notify you when it finishes.';
       service.setForegroundNotificationInfo(
         title: 'Image generation running',
+        content: content,
+      );
+    });
+    // Scheduled-tasks-only mode: keep a low-key notification when no
+    // image generation is in progress but background tasks need the engine.
+    service.on('scheduledNotification').listen((event) {
+      final data = event?['data'] as Map? ?? {};
+      final title = data['title'] as String? ?? 'mobileLM';
+      final content = data['content'] as String? ?? '';
+      service.setForegroundNotificationInfo(
+        title: title,
         content: content,
       );
     });
