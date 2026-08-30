@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
 import '../controllers/settings_controller.dart';
 import '../core/colors.dart';
+import '../controllers/chat_controller.dart';
 import 'server_view.dart';
 import '../core/constants.dart';
 import '../services/inference_service.dart';
@@ -904,9 +905,19 @@ class SettingsView extends GetView<SettingsController> {
   Widget _buildToolsCard(BuildContext context, bool isDark) {
     final enabled = controller.toolsEnabled.value;
     final accent = isDark ? const Color(0xFFB9F53E) : AppColors.primary;
-    final catalogue = buildDefaultToolRegistry().all.toList();
-    // Alphabetical for the local tools; read_url then web_search pinned last,
-    // with the custom-endpoint fields right under web_search.
+    // Build the full registry (core + file + photo tools) so the count in
+    // the subtitle matches what the model actually sees — otherwise it can
+    // show "22 of 16" when file/photo tools are counted in on.length but not
+    // in the visible catalogue.
+    final chat = Get.find<ChatController>();
+    final catalogue = buildDefaultToolRegistry(
+      customSearchUrl: controller.customSearchUrl.value,
+      customSearchToken: controller.customSearchToken.value,
+      extra: [
+        ...buildFileTools(projectPath: () => chat.currentProjectPath.value),
+        ...buildPhotoTools(projectPath: () => chat.currentProjectPath.value),
+      ],
+    ).all.toList();
     final others = catalogue
         .where((t) => t.name != 'web_search' && t.name != 'read_url')
         .toList()
