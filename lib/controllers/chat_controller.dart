@@ -1143,7 +1143,10 @@ class ChatController extends GetxController {
       enabled: settings.enabledTools,
       customSearchUrl: settings.customSearchUrl.value,
       customSearchToken: settings.customSearchToken.value,
-      extra: buildFileTools(projectPath: () => currentProjectPath.value),
+      extra: [
+        ...buildFileTools(projectPath: () => currentProjectPath.value),
+        ...buildPhotoTools(projectPath: () => currentProjectPath.value),
+      ],
     );
   }
 

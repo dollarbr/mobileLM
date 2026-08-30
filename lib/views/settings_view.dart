@@ -156,9 +156,17 @@ class SettingsView extends GetView<SettingsController> {
                   _buildThinkingCard(context, isDark),
                   const Divider(height: 0.5, indent: 16),
                   _buildComputeCard(context, isDark),
-                  const Divider(height: 0.5, indent: 16),
-                  _buildToolsCard(context, isDark),
                 ],
+              ),
+              const SizedBox(height: 10),
+              _CollapsibleGroup(
+                isDark: isDark,
+                icon: Icons.handyman_rounded,
+                title: 'Tools',
+                subtitle: controller.toolsEnabled.value
+                    ? '${controller.enabledTools.length} enabled'
+                    : 'Off',
+                children: [_buildToolsCard(context, isDark)],
               ),
               const SizedBox(height: 10),
               _CollapsibleGroup(

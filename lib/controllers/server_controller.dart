@@ -27,7 +27,7 @@ class ServerController extends GetxController {
 
   late final TextEditingController apiKeyCtrl;
 
-  static const int port = 8080;
+  static const int port = 8888;
 
   @override
   void onInit() {

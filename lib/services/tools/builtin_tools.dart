@@ -1,10 +1,17 @@
 import 'dart:io';
 
+import 'package:battery_plus/battery_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:light_sensor/light_sensor.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 
 import '../download_service.dart';
 import '../inference_service.dart';
@@ -13,6 +20,12 @@ import '../workspace_service.dart';
 import 'calculator.dart';
 import 'tool_registry.dart';
 import 'web_tools.dart';
+
+// Singleton accessor instances to avoid repeated instantiation.
+final _battery = Battery();
+final _screenBrightness = ScreenBrightness();
+final _wifi = NetworkInfo();
+final _lightSensor = LightSensor();
 
 /// Every tool the app can offer, offline ones first.
 ///
@@ -86,6 +99,77 @@ List<Tool> _coreTools(
             return '${i.name} ${i.model} — ${i.systemName} ${i.systemVersion}';
           }
           return 'Unknown platform: ${Platform.operatingSystem}';
+        },
+      ),
+      Tool(
+        name: 'battery_status',
+        description: "Report the device's current battery level (0–100) and "
+            'charging state (charging, discharging, full, not_charging).',
+        run: (_) async {
+          final battery = _battery;
+          try {
+            final level = await battery.batteryLevel;
+            final state = await battery.batteryState;
+            final stateLabel = switch (state) {
+              BatteryState.charging => 'charging',
+              BatteryState.discharging => 'discharging',
+              BatteryState.full => 'full',
+              BatteryState.connectedNotCharging => 'connected_not_charging',
+              _ => 'unknown',
+            };
+            return 'Battery: ${level}% — $stateLabel';
+          } catch (e) {
+            return 'Error reading battery: $e';
+          }
+        },
+      ),
+      Tool(
+        name: 'screen_brightness',
+        description: 'Report the current system screen brightness as a "0.0–1.0" '
+            'value; 1.0 is full brightness.',
+        run: (_) async {
+          try {
+            final brightness = await _screenBrightness.system;
+            return 'Screen brightness: ${(brightness * 100).toStringAsFixed(0)}% '
+                '(${brightness.toStringAsFixed(2)} of 1.0)';
+          } catch (e) {
+            return 'Error reading brightness: $e';
+          }
+        },
+      ),
+      Tool(
+        name: 'wifi_status',
+        description: 'Report whether Wi-Fi is enabled and, if connected, the SSID '
+            'and IP address. Needs location permission on Android 8+.',
+        run: (_) async {
+          try {
+            final ssid = await _wifi.getWifiName();
+            final ip = await _wifi.getWifiIP();
+            if (ssid == null && ip == null) {
+              return 'Wi-Fi is disabled or not connected.';
+            }
+            return 'Wi-Fi connected — SSID: ${ssid ?? "?"}, IP: ${ip ?? "?"}';
+          } catch (e) {
+            return 'Error reading Wi-Fi status: $e';
+          }
+        },
+      ),
+      Tool(
+        name: 'ambient_light',
+        description: 'Report the current ambient light level in lux using the '
+            'device light sensor (returns 0 if unavailable).',
+        run: (_) async {
+          try {
+            final hasSensor = await LightSensor.hasSensor();
+            if (!hasSensor) return 'No light sensor on this device.';
+            final lux = await LightSensor.luxStream().firstWhere(
+              (v) => v > 0,
+              orElse: () => 0,
+            );
+            return 'Ambient light: $lux lux';
+          } catch (e) {
+            return 'Ambient light sensor unavailable: $e';
+          }
         },
       ),
       Tool(
@@ -370,6 +454,44 @@ List<Tool> buildFileTools({
         }
         final ok = await ws().renameItem(full, newName);
         return ok ? 'Renamed to $newName.' : 'Error: could not rename it.';
+      },
+    ),
+  ];
+}
+
+/// Camera tool scoped to the active chat's project folder. Like the file tools
+/// it needs a project path, so it is built alongside [buildFileTools] in the
+/// chat controller rather than in [buildDefaultToolRegistry].
+List<Tool> buildPhotoTools({
+  required String? Function() projectPath,
+}) {
+  WorkspaceService ws() => Get.find<WorkspaceService>();
+
+  String notReady() =>
+      'Error: no project folder is open. Open one before taking a photo.';
+
+  return [
+    Tool(
+      name: 'take_photo',
+      description: 'Take a photo with the device camera and save it to the '
+          "current project folder. Asks the user first. Returns the file path.",
+      risk: ToolRisk.write,
+      run: (args) async {
+        final picker = ImagePicker();
+        final result = await picker.pickImage(source: ImageSource.camera);
+        if (result == null) return 'No photo taken.';
+        final bytes = await result.readAsBytes();
+        final path = projectPath();
+        if (path == null || path.isEmpty) return notReady();
+        final imgDecoded = img.decodeImage(bytes);
+        if (imgDecoded == null) return 'Error: could not decode image.';
+        final now = DateTime.now();
+        final name = 'photo_${now.millisecondsSinceEpoch}.jpg';
+        final full = '$path/$name';
+        final err = await ws().writeFile(full, String.fromCharCodes(bytes));
+        return err == null
+            ? 'Photo saved to $name (${imgDecoded.width}×${imgDecoded.height}).'
+            : 'Error saving photo: $err';
       },
     ),
   ];
