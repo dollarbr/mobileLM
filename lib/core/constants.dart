@@ -61,6 +61,8 @@ class AppConstants {
   static const String keyScheduledTaskNotifications = 'scheduled_task_notifications';
   static const String keyServerApiKey = 'server_api_key';
   static const String keyServerUseApiKey = 'server_use_api_key';
+  static const String keyServerPort = 'server_port';
+  static const int defaultServerPort = 8080;
   static const String keyImageSteps = 'image_steps';
   static const String keyImageGenForceCpu = 'image_gen_force_cpu';
   /// CPU threads for llama.cpp. 0 means "half the cores".

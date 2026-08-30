@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 
 import '../controllers/server_controller.dart';
 import '../core/colors.dart';
+import '../core/constants.dart';
 
 class ServerView extends GetView<ServerController> {
   const ServerView({super.key});
@@ -116,6 +118,60 @@ class ServerView extends GetView<ServerController> {
                                   fontSize: 13,
                                   color: Theme.of(context).hintColor)),
                         ])),
+                  ])),
+            ]),
+            const SizedBox(height: 12),
+
+            // Port
+            _sectionLabel(context, 'PORT'),
+            _groupedCard(isDark, children: [
+              Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(
+                        'Port the server listens on. Default is 8080; if '
+                        'occupied the app will fall back to the next free '
+                        'port and notify you.',
+                        style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: isDark
+                                ? const Color(0xFF8E8E93)
+                                : const Color(0xFF8E8E93))),
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: controller.portCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              signed: false),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onChanged: (v) {
+                            final n = int.tryParse(v);
+                            if (n != null && n > 0 && n < 65536) {
+                              controller.serverPort.value = n;
+                            }
+                          },
+                          onSubmitted: (_) => controller.saveSettings(),
+                          decoration: const InputDecoration(
+                            labelText: 'Port',
+                            hintText: '8080',
+                            prefixIcon: Icon(Icons.portrait, size: 18),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () {
+                          controller.portCtrl.text =
+                              AppConstants.defaultServerPort.toString();
+                          controller.serverPort.value =
+                              AppConstants.defaultServerPort;
+                        },
+                        child: const Text('Reset'),
+                      ),
+                    ]),
                   ])),
             ]),
             const SizedBox(height: 12),
