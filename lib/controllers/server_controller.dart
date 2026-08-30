@@ -67,7 +67,8 @@ class ServerController extends GetxController {
   /// Returns true when [port] is free to bind on all interfaces.
   static Future<bool> isPortFree(int port) async {
     try {
-      await ServerSocket.bind(InternetAddress.anyIPv4, port);
+      final socket = await ServerSocket.bind(InternetAddress.anyIPv4, port);
+      await socket.close();
       return true;
     } catch (_) {
       return false;
@@ -92,27 +93,25 @@ class ServerController extends GetxController {
       return;
     }
 
+    // Make sure any previously-stale server is fully cleaned up before
+    // trying a new bind.  stopServer sets _server to null and force-closes
+    // the old HttpServer, but the platform socket can linger in TIME_WAIT.
+    // We close it here explicitly so the new bind has the best chance.
+    await _server.stop();
+
     // Persist whatever port the user typed before probing.
     await saveSettings();
 
-    // If the configured port is busy, find the next free one and inform
-    // the user so they know their setting was respected but couldn't be used.
+    // Probe the user's chosen port. If it is busy, walk forward until we
+    // find one that is free — and tell the user what happened.
     final configured = serverPort.value;
-    if (configured != _defaultPort && !await isPortFree(configured)) {
+    if (!await isPortFree(configured)) {
       final chosen = await findAvailablePort(configured + 1);
       serverPort.value = chosen;
       Get.snackbar(
         'Port occupied',
         'Port $configured is already in use. Server will run on $chosen.',
         snackPosition: SnackPosition.BOTTOM,
-      );
-    } else if (configured != _defaultPort) {
-      // Port is free — just let the user know it was applied.
-      Get.snackbar(
-        'Server port set',
-        'Will listen on port $configured.',
-        snackPosition: SnackPosition.BOTTOM,
-        duration: const Duration(seconds: 2),
       );
     }
 
