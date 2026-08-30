@@ -35,6 +35,11 @@ dependencies:
   path_provider: ^2.1.0
   permission_handler: ^11.3.0
 
+  # Device sensors / status
+  battery_plus: ^5.0.0
+  screen_brightness: ^2.0.0
+  light_sensor: ^3.0.2
+
   # Image Support
   image_picker: ^1.1.0
   share_plus: ^10.0.0
@@ -62,6 +67,7 @@ dependencies:
   device_info_plus: ^12.4.0
   llama_flutter_android:
     path: local_plugins/llama_flutter_android
+  network_info_plus: ^7.0.0
 
 dev_dependencies:
   flutter_test:
