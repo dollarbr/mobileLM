@@ -17,6 +17,7 @@ import '../services/hive_service.dart';
 import '../services/local_image_service.dart';
 import '../services/device_info_service.dart';
 import '../services/workspace_service.dart';
+import '../services/privileged_service.dart';
 import '../services/tools/builtin_tools.dart';
 import '../services/device_info_native.dart' as platform_info;
 import '../services/image_generation_notification_service.dart';
@@ -916,6 +917,7 @@ class SettingsView extends GetView<SettingsController> {
       extra: [
         ...buildFileTools(projectPath: () => chat.currentProjectPath.value),
         ...buildPhotoTools(projectPath: () => chat.currentProjectPath.value),
+        ...privilegedToolsIfReady(),
       ],
     ).all.toList();
     final others = catalogue

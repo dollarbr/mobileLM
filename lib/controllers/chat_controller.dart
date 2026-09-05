@@ -34,6 +34,7 @@ import '../services/tools/tool_call_parser.dart';
 import '../services/tools/tool_registry.dart';
 import '../utils/thought_parser.dart';
 import '../services/workspace_service.dart';
+import '../services/privileged_service.dart';
 import '../widgets/project_picker_dialog.dart';
 
 const int _visionImageMaxSide = 768;
@@ -1146,6 +1147,7 @@ class ChatController extends GetxController {
       extra: [
         ...buildFileTools(projectPath: () => currentProjectPath.value),
         ...buildPhotoTools(projectPath: () => currentProjectPath.value),
+        ...privilegedToolsIfReady(),
       ],
     );
   }
