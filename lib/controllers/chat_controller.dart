@@ -869,15 +869,44 @@ class ChatController extends GetxController {
           if (toolResult.startsWith(ToolRegistry.confirmMarker)) {
             if (generationId != _generationSerial) return;
             streamingResponse.value = '';
+            final tool = _tools.byName(call.name);
+            final command = tool?.preview?.call(call.arguments);
+            final identity = Get.isRegistered<PrivilegedService>()
+                ? Get.find<PrivilegedService>().identity.value
+                : '';
             final argsText = call.arguments.entries
                 .map((e) => '${e.key}: "${e.value}"')
                 .join('\n');
             final allowed = await Get.dialog<bool>(
                   AlertDialog(
-                    title: const Text('Confirm tool'),
-                    content: Text(
-                      '${call.name} wants to change something on this device.'
-                      '${argsText.isEmpty ? '' : '\n\n$argsText'}',
+                    title: Text(call.name),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(command == null
+                            ? '${call.name} wants to change something on '
+                                'this device.'
+                            : 'This runs a privileged command.'),
+                        if (argsText.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(argsText),
+                        ],
+                        // A tool name is not something a person can judge in
+                        // the second they spend on a dialog. The command is.
+                        if (command != null) ...[
+                          const SizedBox(height: 10),
+                          const Text('Runs:'),
+                          SelectableText(
+                            command,
+                            style: const TextStyle(fontFamily: 'monospace'),
+                          ),
+                        ],
+                        if (command != null && identity.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text('as $identity'),
+                        ],
+                      ],
                     ),
                     actions: [
                       TextButton(
