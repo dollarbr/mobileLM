@@ -30,6 +30,25 @@ Pasta raiz via SAF + projetos como subpastas; conversa liga-se a um projeto por
 [`docs/WORKSPACE.md`](docs/WORKSPACE.md) — leia antes de mexer no picker, no
 `WorkspaceService` ou em `createNewChat`.
 
+## Alternativas de stack já avaliadas
+
+**Llamatik** ([ferranpons/Llamatik](https://github.com/ferranpons/Llamatik), MIT,
+`com.llamatik:library:1.10.1` no Maven Central) é uma biblioteca Kotlin Multiplatform que
+embrulha llama.cpp + whisper.cpp + stable-diffusion.cpp numa API só, com multimodal por
+`mmproj` e Multi-Token Prediction. Trocaria os três plugins vendorizados de
+`local_plugins/` por uma dependência.
+
+**Está parado, e a razão é concreta: Llamatik não fala LiteRT-LM.** Sem isso caem os
+modelos `.litertlm` (5 dos 24 do catálogo, incluindo gemma-4 E2B/E4B) e toda a escada
+NPU → GPU → CPU. Também não tem o dispatch por variante ARM
+(`GGML_CPU_ALL_VARIANTS`) que evita SIGILL em aparelhos pré-2017. Manter um plugin
+LiteRT à parte anularia o ganho de consolidar.
+
+Estudo completo (em português) na raiz do workspace: `docs/KMP_MIGRATION_ANALYSIS.md`
+(começa por um fact-check datado), `docs/KMP_MIGRATION_PLAN.md`,
+`docs/KMP_BUILD_LIMITATIONS.md`. **Reabrir só se o Llamatik ganhar LiteRT** ou se o
+caminho NPU for abandonado de vez.
+
 ## Identidade
 
 Spec completa em `docs/brand/palette.md`. Ícone: `docs/brand/logo.svg`.
