@@ -101,4 +101,5 @@ docs/*
 !docs/WORKSPACE.md
 !docs/PRIVATELM_REFERENCE.md
 !docs/MODELS.md
+!docs/SHIZUKU.md
 !docs/superpowers/

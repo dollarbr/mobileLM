@@ -49,6 +49,14 @@ Estudo completo (em português) na raiz do workspace: `docs/KMP_MIGRATION_ANALYS
 `docs/KMP_BUILD_LIMITATIONS.md`. **Reabrir só se o Llamatik ganhar LiteRT** ou se o
 caminho NPU for abandonado de vez.
 
+## Tools privilegiadas (Shizuku)
+
+Oito tools de leitura e settings que só existem quando há Shizuku. **O app nunca
+chama `su` nem exige root** — decisão de produto. Detalhes, os quatro estados, a
+regra de argv-nunca-string-de-shell e o teto de saída em
+[`docs/SHIZUKU.md`](docs/SHIZUKU.md) — leia antes de mexer em
+`privileged_commands.dart` ou no `ShizukuShell`.
+
 ## Identidade
 
 Spec completa em `docs/brand/palette.md`. Ícone: `docs/brand/logo.svg`.
