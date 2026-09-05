@@ -57,4 +57,22 @@ Dark-first, accent Volt `#B9F53E`, Pulse `#8B7CFF` com parcimônia.
 ## Comandos (valem a partir do M1)
 
 Flutter padrão: `flutter pub get`, `flutter analyze --no-fatal-infos --no-fatal-warnings`,
-`flutter test`, tag `<x.y.z>` dispara release de APKs split-per-abi.
+`flutter test`.
+
+## CI e release
+
+Três workflows, todos ativos: `ci.yml` (analyze + test, ~2 min), `debug-apk.yml`
+(APK debug arm64 por push, ~22 min) e `release.yml` (dispara na tag).
+
+Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
+`+build`: `0.1.0+1` → tag `0.1.0`. O workflow falha de propósito se divergirem.
+As notas saem agrupadas por prefixo de Conventional Commit; o que não casa com
+nenhum prefixo cai em "Other", então nada some.
+
+**Todo workflow que compila precisa liberar disco antes.** Os nativos vendorizados
+— llama.cpp com backend Vulkan e seus ~300 objetos de shader, LiteRT, Stable
+Diffusion — enchem os ~14 GB livres do runner com intermediários, e o release ainda
+soma R8. O `release.yml` ficou a vida toda sem esse passo (nunca havia rodado) e
+morreria em `No space left on device` na primeira tag; corrigido em `ea9a828`.
+
+Sem keystore no CI: `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`.
