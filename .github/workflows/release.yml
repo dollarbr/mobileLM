@@ -31,6 +31,18 @@ jobs:
           fi
           echo "Version $TAG"
 
+      # Same reason as debug-apk.yml: the vendored native builds (llama.cpp
+      # Vulkan and its ~300 shader objects, LiteRT, SD) fill the runner's
+      # ~14 GB of free disk with intermediates, and a release build adds R8 on
+      # top. Without this the job dies on "No space left on device".
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/share/swift /usr/share/miniconda 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
