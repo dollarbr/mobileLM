@@ -24,12 +24,25 @@
     <!-- Camera for take_photo tool -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Shizuku: the privileged shell for the adb/shizuku tool block. The app
+         never asks for root; Shizuku itself may be running as one. -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+
+
     <application
         android:label="mobileLM"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:largeHeap="true"
         android:extractNativeLibs="true">
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -81,5 +94,8 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Android 11+ hides other packages unless declared, and without this
+             the Shizuku installed-check reports "not installed" forever. -->
+        <package android:name="moe.shizuku.privileged.api" />
     </queries>
 </manifest>

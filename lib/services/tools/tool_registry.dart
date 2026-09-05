@@ -8,6 +8,11 @@ enum ToolRisk {
   /// Changes device state (clipboard, files, messages…). Runs only after an
   /// explicit human approval in the UI.
   write,
+
+  /// Runs through a privileged shell. Confirms even when it only reads: a
+  /// logcat dump carries notifications, tokens and other apps' content, so
+  /// there is no "just looking" tier for shell privilege.
+  privileged,
 }
 
 /// One thing the model can ask the app to do.
@@ -26,6 +31,10 @@ class Tool {
 
   final ToolRisk risk;
 
+  /// The real command this call will run, for the confirmation dialog.
+  /// Without it the user approves a tool name rather than an action.
+  final String Function(Map<String, String> args)? preview;
+
   const Tool({
     required this.name,
     required this.description,
@@ -33,6 +42,7 @@ class Tool {
     required this.run,
     this.requiresNetwork = false,
     this.risk = ToolRisk.safe,
+    this.preview,
   });
 
   String get signature => parameters.isEmpty
@@ -83,8 +93,9 @@ $lines''';
   /// A failing tool returns its error as a normal result rather than throwing:
   /// the model can then say what went wrong, which beats the turn dying.
   ///
-  /// A [ToolRisk.write] tool runs only with [confirmed]; otherwise the result
-  /// is [confirmMarker], which the caller turns into an approval dialog.
+  /// Anything that is not [ToolRisk.safe] runs only with [confirmed];
+  /// otherwise the result is [confirmMarker], which the caller turns into an
+  /// approval dialog.
   Future<String> execute(
     String name,
     Map<String, String> args, {
@@ -94,7 +105,7 @@ $lines''';
     if (tool == null) {
       return 'Error: no tool named "$name". Available: ${_tools.keys.join(", ")}.';
     }
-    if (tool.risk == ToolRisk.write && !confirmed) {
+    if (tool.risk != ToolRisk.safe && !confirmed) {
       return confirmMarker;
     }
     try {

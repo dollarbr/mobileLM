@@ -25,6 +25,7 @@ import 'services/crash_reporting_service.dart';
 import 'services/image_generation_notification_service.dart';
 import 'services/scheduled_task_service.dart';
 import 'services/workspace_service.dart';
+import 'services/privileged_service.dart';
 import 'core/constants.dart';
 
 void main() {
@@ -105,6 +106,9 @@ void main() {
     Get.put(ModelController());
     final workspace = Get.put(WorkspaceService());
     await workspace.initialize();
+    // Probed once at boot; the Settings card re-checks on demand. A missing
+    // Shizuku is the normal case, not an error.
+    await Get.put(PrivilegedService()).refresh();
 
     // Auto-configure inference settings based on device RAM
     _autoConfigureForDevice();

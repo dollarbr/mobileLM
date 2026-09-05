@@ -34,6 +34,11 @@ if (file("google-services.json").exists()) {
 android {
     namespace = "com.dollarbr.mobilelm"
     compileSdk = flutter.compileSdkVersion
+
+    // The privileged shell talks to Shizuku's UserService over AIDL.
+    buildFeatures {
+        aidl = true
+    }
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -82,6 +87,11 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // Privileged shell. The app never invokes su and never requires root;
+    // Shizuku is the only privileged path.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // Local plugins

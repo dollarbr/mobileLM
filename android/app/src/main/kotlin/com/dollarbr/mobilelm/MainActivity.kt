@@ -32,6 +32,8 @@ class MainActivity : FlutterActivity() {
     private val mediaChannelName = "com.aichat.ai_chat/media"
     private val workspaceChannelName = "com.aichat.ai_chat/workspace"
     private val schedulerChannelName = "com.aichat.ai_chat/scheduler"
+    private val privilegedChannelName = "com.aichat.ai_chat/privileged"
+    private val shizukuPermissionCode = 4711
     private val importRequestCode = 4207
     private val backupTreeRequestCode = 4208
     private val workspaceTreeRequestCode = 4209
@@ -41,6 +43,8 @@ class MainActivity : FlutterActivity() {
     private var mediaChannel: MethodChannel? = null
     private var workspaceChannel: MethodChannel? = null
     private var schedulerChannel: MethodChannel? = null
+    private var privilegedChannel: MethodChannel? = null
+    private val shizukuShell by lazy { ShizukuShell(this) }
     private var pendingImportResult: MethodChannel.Result? = null
     private var pendingModelsDir: String? = null
     private var pendingBackupResult: MethodChannel.Result? = null
@@ -50,6 +54,29 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         flutterEngine.plugins.add(LlamaFlutterAndroidPlugin())
+
+        privilegedChannel =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, privilegedChannelName)
+        privilegedChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "probe" -> result.success(shizukuShell.probe())
+                "requestPermission" -> {
+                    shizukuShell.requestPermission(shizukuPermissionCode)
+                    result.success(null)
+                }
+                "run" -> {
+                    val argv = call.argument<List<String>>("argv") ?: emptyList()
+                    val timeout = (call.argument<Number>("timeoutMs") ?: 20000).toLong()
+                    // The binder call blocks; keeping it off the platform thread is
+                    // the same lesson nativeGenerate already taught this codebase.
+                    Thread {
+                        val out = shizukuShell.run(argv, timeout)
+                        runOnUiThread { result.success(out) }
+                    }.start()
+                }
+                else -> result.notImplemented()
+            }
+        }
         importChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, importChannelName)
         importChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
