@@ -17,6 +17,7 @@ import '../services/hive_service.dart';
 import '../services/local_image_service.dart';
 import '../services/device_info_service.dart';
 import '../services/workspace_service.dart';
+import '../services/privileged_service.dart';
 import '../services/tools/builtin_tools.dart';
 import '../services/device_info_native.dart' as platform_info;
 import '../services/image_generation_notification_service.dart';
@@ -168,6 +169,14 @@ class SettingsView extends GetView<SettingsController> {
                     ? '${controller.enabledTools.length} enabled'
                     : 'Off',
                 children: [_buildToolsCard(context, isDark)],
+              ),
+              const SizedBox(height: 10),
+              _CollapsibleGroup(
+                isDark: isDark,
+                icon: Icons.terminal_rounded,
+                title: 'ADB / Shizuku',
+                subtitle: Get.find<PrivilegedService>().state.value.label,
+                children: [_buildShizukuCard(context, isDark)],
               ),
               const SizedBox(height: 10),
               _CollapsibleGroup(
@@ -902,6 +911,67 @@ class SettingsView extends GetView<SettingsController> {
   ///
   /// The catalogue is read from [buildDefaultToolRegistry] with no filter, so a
   /// tool added there shows up here without touching this file.
+  /// The privileged block's own card: its tools are useless without a binder,
+  /// and the three not-ready states each need a different action from the
+  /// user, so they get told which one applies.
+  Widget _buildShizukuCard(BuildContext context, bool isDark) {
+    final service = Get.find<PrivilegedService>();
+    return Obx(() {
+      final state = service.state.value;
+      final identity = service.identity.value;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            state == ShizukuState.ready && identity.isNotEmpty
+                ? '${state.label} · $identity'
+                : state.label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          if (state.hint.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              state.hint,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+          ],
+          if (state == ShizukuState.ready) ...[
+            const SizedBox(height: 6),
+            Text(
+              'The privileged tools are listed under Tools. Every one of them '
+              'asks before it runs, reads included.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(children: [
+            if (state == ShizukuState.needsPermission) ...[
+              FilledButton(
+                onPressed: service.requestPermission,
+                child: const Text('Grant permission'),
+              ),
+              const SizedBox(width: 8),
+            ],
+            OutlinedButton(
+              onPressed: service.refresh,
+              child: const Text('Re-check'),
+            ),
+          ]),
+        ],
+      );
+    });
+  }
+
   Widget _buildToolsCard(BuildContext context, bool isDark) {
     final enabled = controller.toolsEnabled.value;
     final accent = isDark ? const Color(0xFFB9F53E) : AppColors.primary;
@@ -916,6 +986,7 @@ class SettingsView extends GetView<SettingsController> {
       extra: [
         ...buildFileTools(projectPath: () => chat.currentProjectPath.value),
         ...buildPhotoTools(projectPath: () => chat.currentProjectPath.value),
+        ...privilegedToolsIfReady(),
       ],
     ).all.toList();
     final others = catalogue

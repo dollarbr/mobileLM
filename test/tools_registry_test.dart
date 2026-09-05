@@ -33,4 +33,32 @@ void main() {
         .execute('clipboard_write', {'text': 'x'}, confirmed: true);
     expect(out, isNot(ToolRegistry.confirmMarker));
   });
+
+  test('a privileged tool is gated even though it only reads', () async {
+    final registry = ToolRegistry([
+      Tool(
+        name: 'peek',
+        description: 'reads something privileged',
+        risk: ToolRisk.privileged,
+        run: (_) async => 'data',
+      ),
+    ]);
+
+    // Shell privilege has no "just looking" mode: logcat carries other apps'
+    // content, so a read confirms exactly like a write does.
+    expect(await registry.execute('peek', {}), ToolRegistry.confirmMarker);
+    expect(await registry.execute('peek', {}, confirmed: true), 'data');
+  });
+
+  test('preview renders the command a confirmation dialog should show', () {
+    final tool = Tool(
+      name: 'peek',
+      description: 'x',
+      risk: ToolRisk.privileged,
+      preview: (args) => 'getprop ${args['key']}',
+      run: (_) async => '',
+    );
+
+    expect(tool.preview!({'key': 'ro.build.id'}), 'getprop ro.build.id');
+  });
 }
