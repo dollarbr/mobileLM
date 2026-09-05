@@ -29,33 +29,43 @@ para isso.
 desinstalar, congelar, limpar dados, force-stop) e automação de tela (`input`,
 `screencap`, `am start`). Voltam num v2 se voltarem.
 
-**Fora de sempre:** cliente ADB embutido no app. O adb é como o Shizuku ganha
-privilégio, não um provedor concorrente; reimplementar o protocolo ADB com RSA e
-pareamento é semanas de trabalho para resolver um problema que o Shizuku já
-resolveu.
+**Fora de sempre — duas coisas:**
+
+*Cliente ADB embutido no app.* O adb é como o Shizuku ganha privilégio, não um
+provedor concorrente; reimplementar o protocolo ADB com RSA e pareamento é
+semanas de trabalho para resolver um problema que o Shizuku já resolveu.
+
+*Root.* **O app nunca invoca `su` nem exige aparelho rooteado**, em nenhum
+caminho. Decisão de produto, não limitação técnica. O Shizuku em si pode ter sido
+iniciado como root pelo usuário — nesse caso os comandos rodam com uid 0 e o app
+apenas *reporta* isso; o que ele não faz é pedir.
 
 ## Canal privilegiado
 
-Interface Kotlin `PrivilegedShell`:
+Um provedor só, então **sem interface**: uma classe `ShizukuShell` no Kotlin.
+Abstrair dois casos quando existe um é abstração especulativa, e a segunda
+implementação que a justificaria (root) está descartada por decisão de produto.
 
-- `probe(): Status { available: Bool, identity: shell(2000) | root(0) | none }`
-- `run(cmd, timeoutMs): Result { stdout, stderr, exit }`
+```
+probe(): Status { available: Bool, identity: shell(2000) | root(0) | none }
+run(cmd, timeoutMs): Result { stdout, stderr, exit }
+```
 
-Duas implementações:
+`dev.rikka.shizuku:api:13.1.5` e `:provider:13.1.5`. Provider no manifesto com
+authority `${applicationId}.shizuku`.
 
-**`ShizukuShell`** — `dev.rikka.shizuku:api:13.1.5` e `:provider:13.1.5`. Provider
-no manifesto com authority `${applicationId}.shizuku`. A execução vai por um
-**`UserService` AIDL**, não por `Shizuku.newProcess`: o README do Shizuku-API diz
-*"Prepare to remove `Shizuku#newProcess`, developers should have to use
-`UserService` instead"*. Permissão pelo fluxo padrão — `checkSelfPermission` →
+A execução vai por um **`UserService` AIDL**, não por `Shizuku.newProcess`: o
+README do Shizuku-API diz *"Prepare to remove `Shizuku#newProcess`, developers
+should have to use `UserService` instead"*.
+
+Permissão pelo fluxo padrão — `checkSelfPermission` →
 `shouldShowRequestPermissionRationale` → `requestPermission(code)` com listener.
 
-**`RootShell`** — `Runtime.exec(["su", "-c", cmd])`.
-
-**Ordem de sondagem: Shizuku, depois root.** A concessão do Shizuku é explícita,
-revogável por app e silenciosa depois de dada; `su` dispara o diálogo do
-superusuário a cada processo novo em algumas ROMs. E o Shizuku pode já estar
-rodando como root, caso em que se ganha uid 0 sem pedir nada.
+`identity` vem do uid que o próprio Shizuku reporta (`Shizuku.getUid()`, a
+confirmar na API 13.1.5). Importa porque o mesmo comando faz coisas diferentes
+sob 2000 e sob 0, e o diálogo de confirmação precisa ser honesto sobre qual dos
+dois está ativo. **O app nunca escolhe: quem escolhe é como o usuário iniciou o
+Shizuku.**
 
 **Todo `run` tem timeout.** Esta base já pagou o preço de uma chamada nativa
 bloqueante sem prazo (`nativeGenerate`, mutex + `g_stop_flag`); não repetir.
@@ -84,7 +94,7 @@ final String Function(Map<String, String> args)? preview;
 
 `PrivilegedService` (GetxService) expõe `status` reativo e `identity`.
 
-Sem Shizuku e sem root, **o bloco inteiro some do prompt**. Isso segue o que o
+Sem Shizuku disponível e autorizado, **o bloco inteiro some do prompt**. Isso segue o que o
 `tool_registry.dart` já argumenta para o filtro `enabled`: um modelo avisado de
 uma tool que depois se recusa a rodar desperdiça um turno discutindo consigo
 mesmo.
@@ -130,8 +140,11 @@ Cada regra dessas tem teste.
 
 Grupo "ADB / Shizuku" nas Settings, ao lado do grupo Tools existente:
 
-- cabeçalho de estado: `Indisponível` / `Shizuku · shell 2000` / `Root · uid 0`
+- cabeçalho de estado: `Shizuku não encontrado` / `Shizuku parado` /
+  `Aguardando permissão` / `Ativo · shell 2000` / `Ativo · root 0`
 - botão "Conceder permissão" quando há binder mas falta permissão
+- quando não há binder, um link explicando que o Shizuku é um app separado e
+  precisa ser iniciado por depuração sem fio uma vez por boot
 - toggles por tool, desabilitados quando não há canal
 
 Diálogo de confirmação mostra nome da tool, argumentos, **o comando real** e sob
