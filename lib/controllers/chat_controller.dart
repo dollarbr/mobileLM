@@ -384,12 +384,11 @@ class ChatController extends GetxController {
     final model = modelName.toLowerCase();
     
     // Known vision keywords in cloud model names
-    final isVision = model.contains('vision') || 
-                     model.contains('-vl') || 
-                     model.contains('gpt-4o') || 
-                     || 
-                     model.contains('gemini') || 
-                     model.contains('pixtral') || 
+    final isVision = model.contains('vision') ||
+                     model.contains('-vl') ||
+                     model.contains('gpt-4o') ||
+                     model.contains('gemini') ||
+                     model.contains('pixtral') ||
                      model.contains('llava') ||
                      model.contains('omni');
                      
