@@ -329,7 +329,7 @@ class InferenceService extends GetxService {
       final result = await _engine!.generate(
         prompt: prompt,
         conversationHistory: conversationHistory,
-        systemPrompt: systemPrompt ?? AppConstants.systemPrompt,
+        systemPrompt: systemPrompt ?? 'prompt_system'.tr,
         modelName: loadedModelName.value,
         maxTokens: maxTokens,
         temperature: temperature,

@@ -393,8 +393,7 @@ class ChatController extends GetxController {
                      model.contains('omni');
                      
     if (!isVision) {
-      Get.snackbar(
-        'Warning: Text-Only Model',
+      Get.snackbar('warning_text_only_model'.tr,
         'The selected model ($modelName) might not support images. If you get an error, switch to a vision model (like Gemini, GPT-4o, or equivalent.).',
         snackPosition: SnackPosition.TOP,
         duration: const Duration(seconds: 6),
@@ -454,8 +453,7 @@ class ChatController extends GetxController {
 
       // Reject unsupported or extension-less files
       if (extension.isEmpty || fileType == 'file') {
-        Get.snackbar(
-          'Unsupported file',
+        Get.snackbar('unsupported_file'.tr,
           'Only images, video, audio, PDF, DOCX, and text/code files are supported.',
           snackPosition: SnackPosition.BOTTOM,
         );
@@ -472,8 +470,7 @@ class ChatController extends GetxController {
             ? null
             : await compute(VideoContactSheet.compose, frames);
         if (sheet == null) {
-          Get.snackbar(
-            'Video not attached',
+          Get.snackbar('video_not_attached'.tr,
             'No frames could be read from this video.',
             snackPosition: SnackPosition.BOTTOM,
           );
@@ -560,7 +557,7 @@ class ChatController extends GetxController {
       }
     } catch (e) {
       Get.find<AppLogService>().warning('File attachment failed', details: e);
-      Get.snackbar('File not attached', '$e',
+      Get.snackbar('file_not_attached'.tr, e.toString(),
           snackPosition: SnackPosition.BOTTOM);
     }
   }
@@ -1232,19 +1229,19 @@ class ChatController extends GetxController {
   String _defaultAttachmentPrompt(String? fileType) {
     switch (fileType) {
       case 'image':
-        return 'Describe this image.';
+        return 'describe_image'.tr;
       case 'pdf':
-        return 'Summarize this PDF.';
+        return 'summarize_pdf'.tr;
       case 'docx':
-        return 'Summarize this document.';
+        return 'summarize_document'.tr;
       case 'video':
-        return 'Describe what happens in this video.';
+        return 'describe_video'.tr;
       case 'audio':
-        return 'Transcribe or analyze this audio.';
+        return 'transcribe_audio'.tr;
       case 'text':
-        return 'Review this file.';
+        return 'review_file'.tr;
       default:
-        return 'Review this attachment.';
-    }
+        return 'review_attachment'.tr;
   }
+    }
 }

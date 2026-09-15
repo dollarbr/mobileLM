@@ -27,6 +27,7 @@ import 'services/scheduled_task_service.dart';
 import 'services/workspace_service.dart';
 import 'services/privileged_service.dart';
 import 'core/constants.dart';
+import 'l10n/app_translation.dart';
 
 void main() {
   final appLogBuffer = <String>[];
@@ -44,7 +45,7 @@ void main() {
     }
     appLogBuffer.clear();
 
-    appLog.info('App started');
+    appLog.info('app_started'.tr);
 
     // Initialize Firebase before any Firebase-dependent services
     try {
@@ -52,7 +53,7 @@ void main() {
       //   options: DefaultFirebaseOptions.currentPlatform,
       // );
     } catch (e) {
-      appLog.error('[Firebase] Initialization failed', details: e);
+      appLog.error('[firebase] Initialization failed'.tr, details: e);
     }
 
     // Support phones and tablets in portrait or landscape.
@@ -85,7 +86,7 @@ void main() {
       FlutterError.presentError(details);
       appLog.error(
         details.exceptionAsString(),
-        details: details.stack?.toString() ?? 'No stack',
+        details: details.stack?.toString() ?? 'no_stack'.tr,
       );
       crashReporting.recordFlutterFatal(details);
     };
@@ -211,6 +212,9 @@ class MobileLMApp extends StatelessWidget {
       final scale = settings.fontScale.value; // read here → Obx tracks it
       return GetMaterialApp(
         title: 'mobileLM',
+        translations: AppTranslation(),
+        locale: Get.deviceLocale,
+        fallbackLocale: Locale('pt', 'BR'),
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
