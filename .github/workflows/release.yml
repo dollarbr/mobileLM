@@ -64,7 +64,7 @@ jobs:
       - name: Build APKs
         env:
           MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING: "true"
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=utf-8 -Dkotlin.daemon.jvm.options=-Xmx4g"
+          GRADLE_OPTS: "-Dorg.gradle.workers.max=4 -Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=utf-8 -Dkotlin.daemon.jvm.options=-Xmx4g"
         run: |
           flutter build apk --release --split-per-abi \
             --target-platform android-arm64
