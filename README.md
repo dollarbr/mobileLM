@@ -84,3 +84,13 @@ Gradle/CMake on first build — no extra setup beyond Flutter + Android SDK/NDK.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## 🔒 Release Signing Security
+
+Para garantir a segurança da cadeia de suprimentos, **builds de release assinados são permitidos apenas em ambientes de CI verificáveis** (GitHub Actions). Isso impede que chaves de release vazem acidentalmente em ambientes de desenvolvimento.
+
+- **Localmente**: Use `flutter run` (debug) ou `flutter build apk --release` (release build *não-assinado*) para testes. Assinatura de release é bloqueada por padrão.
+- **No CI**: O workflow `release.yml` recupera o keystore de release dos GitHub Secrets (`RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_PASSWORD`) e realiza o signing de forma segura.
+- **Nunca** armazene `android/key.properties` ou arquivos `.jks` no repositório ou em ambientes locais não seguros.
+
+---
