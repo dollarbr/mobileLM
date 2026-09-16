@@ -20,6 +20,7 @@ import '../workspace_service.dart';
 import 'calculator.dart';
 import 'tool_registry.dart';
 import 'web_tools.dart';
+import "../document_extractor_service.dart";
 
 // Singleton accessor instances to avoid repeated instantiation.
 final _battery = Battery();
@@ -320,6 +321,28 @@ List<Tool> _coreTools(
           await service.remove(match.id);
           return 'Cancelled "${match.name}".';
         },
+      ),
+      Tool(
+        name: 'pdf_to_md',
+        description: 'Extracts text from a PDF file and returns it as markdown (plain text).',
+        parameters: {
+          'path': 'Path to the PDF file',
+          'password': 'Optional password for protected PDFs',
+        },
+        run: (args) async {
+          final path = args['path']; 
+          if (path == null || path.isEmpty) return 'Error: path is required'; 
+          final password = args['password']; 
+          try {
+            final text = await DocumentExtractorService.extractPdf(path, password: password); 
+            // Return as markdown: plain text is valid markdown
+            return text;
+          } catch (e) {
+            return 'Error extracting PDF: $e'; 
+          }
+        },
+        requiresNetwork: false,
+        risk: ToolRisk.safe,
       ),
     ];
 

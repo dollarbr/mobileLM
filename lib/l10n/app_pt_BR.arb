@@ -1,0 +1,7 @@
+{
+  "@@locale": "pt_BR",
+  "helloWorld": "Olá Mundo",
+  "@helloWorld": {
+    "description": "Uma saudação padrão de Olá Mundo"
+  }
+}

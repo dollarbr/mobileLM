@@ -12,7 +12,7 @@ class DocumentExtractorService {
   static Future<String> extractText(String path, String extension) async {
     switch (extension.toLowerCase()) {
       case 'pdf':
-        return _extractPdf(path);
+        return extractPdf(path);
       case 'docx':
         return _extractDocx(path);
       case 'txt':
@@ -39,16 +39,17 @@ class DocumentExtractorService {
   }
 
   /// Extract text from a PDF file using Syncfusion PDF.
-  static Future<String> _extractPdf(String path) async {
-    final bytes = await File(path).readAsBytes();
-    final document = PdfDocument(inputBytes: bytes);
-    try {
-      final extractor = PdfTextExtractor(document);
-      return extractor.extractText();
-    } finally {
-      document.dispose();
-    }
-  }
+   /// Extract text from a PDF file using Syncfusion PDF.
+   static Future<String> extractPdf(String path, {String? password}) async {
+     final bytes = await File(path).readAsBytes();
+     final document = PdfDocument(inputBytes: bytes, password: password);
+     try {
+       final extractor = PdfTextExtractor(document);
+       return extractor.extractText();
+     } finally {
+       document.dispose();
+     }
+   }
 
   /// Extract text from a DOCX file using pure Dart (archive + xml).
   static Future<String> _extractDocx(String path) async {
