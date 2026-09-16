@@ -23,18 +23,15 @@ jobs:
       - name: Check tag matches pubspec version
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          pubspec=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml | head -1)
-          if [ "$pubspec" != "$TAG" ]; then
-            echo "::error::Tag $TAG does not match pubspec version $pubspec"
-            exit 1
-          fi
-          echo "Version $TAG"
-
-      # Same reason as debug-apk.yml: the vendored native builds (llama.cpp
-      # Vulkan and its ~300 shader objects, LiteRT, SD) fill the runner's
-      # ~14 GB of free disk with intermediates, and a release build adds R8 on
-      # top. Without this the job dies on "No space left on device".
+    run: |
+      # Remove leading 'v' if present
+      TAG_VERSION="${TAG#v}"
+      pubspec=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml | head -1)
+      if [ "$pubspec" != "$TAG_VERSION" ]; then
+        echo "::error::Tag $TAG does not match pubspec version $pubspec (expected $TAG_VERSION)"
+        exit 1
+      fi
+      echo "Version $TAG_VERSION"
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
