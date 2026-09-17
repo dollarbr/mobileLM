@@ -26,7 +26,7 @@ jobs:
     run: |
       # Remove leading 'v' if present
       TAG_VERSION="${TAG#v}"
-      pubspec=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml | head -1)
+      pubspec=$(sed -n "s/^version: *\\([^+]*\\)).*/\1/p" pubspec.yaml | head -1)
       if [ "$pubspec" != "$TAG_VERSION" ]; then
         echo "::error::Tag $TAG does not match pubspec version $pubspec (expected $TAG_VERSION)"
         exit 1
