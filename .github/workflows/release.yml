@@ -26,7 +26,7 @@ jobs:
         run: |
           # Remove leading 'v' if present
           TAG_VERSION="${TAG#v}"
-          pubspec=$(sed -n "s/^version: *\\([^+]*\\)).*/\1/p" pubspec.yaml | head -1)
+          pubspec=$(sed -n "s/^version: *[[:space:]]*\\\\([^+]*\\\\)/\1/p" pubspec.yaml | head -1)
           if [ "$pubspec" != "$TAG_VERSION" ]; then
             echo "::error::Tag $TAG does not match pubspec version $pubspec (expected $TAG_VERSION)"
             exit 1
@@ -67,9 +67,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # One build with --split-per-abi, not two builds. Without that flag a
-      # single --target-platform emits plain app-release.apk, so the second
-      # build silently overwrote the first and no per-ABI file ever existed.
       - name: Verify CI environment for release signing
         run: |
           echo "Checking CI environment..."
