@@ -58,7 +58,9 @@ jobs:
           mkdir -p android/keystore
           echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > android/keystore/mobilelm_release.jks
           chmod 600 android/keystore/mobilelm_release.jks
-          echo "storeFile=android/keystore/mobilelm_release.jks" > android/key.properties
+          # storeFile goes through file() in android/app/build.gradle.kts, which
+          # resolves relative paths against android/app — hence the absolute path.
+          echo "storeFile=$GITHUB_WORKSPACE/android/keystore/mobilelm_release.jks" > android/key.properties
           echo "storePassword=$RELEASE_STORE_PASSWORD" >> android/key.properties
           echo "keyPassword=$RELEASE_KEY_PASSWORD" >> android/key.properties
           echo "keyAlias=mobilelm_release" >> android/key.properties
