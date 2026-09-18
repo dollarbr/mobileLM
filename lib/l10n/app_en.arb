@@ -3,5 +3,21 @@
   "helloWorld": "Hello World",
   "@helloWorld": {
     "description": "A standard hello world greeting"
+  },
+  "pdf_password_required": "PDF Password Required",
+  "@pdf_password_required": {
+    "description": "Title for PDF password dialog"
+  },
+  "enter_password": "Enter password",
+  "@enter_password": {
+    "description": "Hint text for PDF password field"
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button text"
+  },
+  "ok": "OK",
+  "@ok": {
+    "description": "OK button text"
   }
 }

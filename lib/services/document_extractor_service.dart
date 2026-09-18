@@ -5,14 +5,16 @@ import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
-/// Extracts plain text from document files (PDF, DOCX) so they can be
+/// Extracts text from document files (PDF, DOCX) so they can be
 /// fed into local or cloud LLMs as context.
+/// PDF text is returned as markdown (plain text is valid markdown).
 class DocumentExtractorService {
   /// Extract text from a file based on its extension.
-  static Future<String> extractText(String path, String extension) async {
+  /// For PDF files, an optional [password] can be provided for protected documents.
+  static Future<String> extractText(String path, String extension, {String? password}) async {
     switch (extension.toLowerCase()) {
       case 'pdf':
-        return extractPdf(path);
+        return extractPdf(path, password: password);
       case 'docx':
         return _extractDocx(path);
       case 'txt':
