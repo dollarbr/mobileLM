@@ -56,8 +56,15 @@ jobs:
       - name: Decode and import release keystore
         run: |
           mkdir -p android/keystore
+          # Decode the base64 keystore and validate it's a valid file
           echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > android/keystore/mobilelm_release.jks
+          if [ ! -s android/keystore/mobilelm_release.jks ]; then
+            echo "::error::Decoded keystore file is empty or missing"
+            exit 1
+          fi
           chmod 600 android/keystore/mobilelm_release.jks
+          # Optional: validate it's a valid keystore (requires keytool which may not be available)
+          # keytool -list -keystore android/keystore/mobilelm_release.jks -storepass "$RELEASE_STORE_PASSWORD" || echo "::warning::Keystore validation failed"
           # storeFile goes through file() in android/app/build.gradle.kts, which
           # resolves relative paths against android/app — hence the absolute path.
           echo "storeFile=$GITHUB_WORKSPACE/android/keystore/mobilelm_release.jks" > android/key.properties
