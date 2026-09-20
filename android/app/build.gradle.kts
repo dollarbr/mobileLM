@@ -19,20 +19,20 @@ val allowDebugReleaseSigning =
 val isReleaseBuild = gradle.startParameter.taskNames.any {
     it.contains("release", ignoreCase = true)
 }
-    val isCI = System.getenv().containsKey("GITHUB_ACTIONS") || System.getenv().containsKey("CI")
-    if (isReleaseBuild) {
-        if (!isCI) {
-            throw GradleException(
-                "Release builds are ONLY allowed in CI environments. " +
-                        "For local testing, use debug builds or assembleRelease WITHOUT signing."
-            )
-        }
-        if (!hasReleaseKeystore) {
-            throw GradleException(
-                "Release signing is not configured. The CI workflow must provide android/key.properties via secrets."
-            )
-        }
+val isCI = System.getenv().containsKey("GITHUB_ACTIONS") || System.getenv().containsKey("CI")
+if (isReleaseBuild) {
+    if (!isCI) {
+        throw GradleException(
+            "Release builds are ONLY allowed in CI environments. " +
+                    "For local testing, use debug builds or assembleRelease WITHOUT signing."
+        )
     }
+    if (!hasReleaseKeystore) {
+        throw GradleException(
+            "Release signing is not configured. The CI workflow must provide android/key.properties via secrets."
+        )
+    }
+}
 
 if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
