@@ -27,9 +27,12 @@ if (isReleaseBuild) {
                     "For local testing, use debug builds or assembleRelease WITHOUT signing."
         )
     }
-    if (!hasReleaseKeystore) {
+    // Fall back to debug signing if no release keystore is configured.
+    // This matches the pre-0.2.3 behavior and allows unsigned releases in CI.
+    if (!hasReleaseKeystore && !allowDebugReleaseSigning) {
         throw GradleException(
-            "Release signing is not configured. The CI workflow must provide android/key.properties via secrets."
+            "Release signing is not configured. Set MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true " +
+            "or provide android/key.properties via CI secrets."
         )
     }
 }
