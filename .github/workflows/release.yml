@@ -24,15 +24,17 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          # Remove leading 'v' if present
-          TAG_VERSION="${TAG#v}"
-          pubspec=$(grep "^version:" pubspec.yaml | sed -e "s/version://" -e "s/[[:space:]]//g" -e "s/+.*//")
-          if [ "$pubspec" != "$TAG_VERSION" ]; then
-            echo "::error::Tag $TAG does not match pubspec version $pubspec (expected $TAG_VERSION)"
+          pubspec=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml | head -1)
+          if [ "$pubspec" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match pubspec version $pubspec"
             exit 1
           fi
-          echo "Version $TAG_VERSION"
+          echo "Version $TAG"
 
+      # Same reason as debug-apk.yml: the vendored native builds (llama.cpp
+      # Vulkan and its ~300 shader objects, LiteRT, SD) fill the runner's
+      # ~14 GB of free disk with intermediates, and a release build adds R8 on
+      # top. Without this the job dies on "No space left on device".
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
@@ -53,39 +55,12 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Decode and import release keystore
-        run: |
-          mkdir -p android/keystore
-          # Decode the base64 keystore and validate it's a valid file
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > android/keystore/mobilelm_release.jks
-          if [ ! -s android/keystore/mobilelm_release.jks ]; then
-            echo "::error::Decoded keystore file is empty or missing"
-            exit 1
-          fi
-          chmod 600 android/keystore/mobilelm_release.jks
-          # Optional: validate it's a valid keystore (requires keytool which may not be available)
-          # keytool -list -keystore android/keystore/mobilelm_release.jks -storepass "$RELEASE_STORE_PASSWORD" || echo "::warning::Keystore validation failed"
-          # storeFile goes through file() in android/app/build.gradle.kts, which
-          # resolves relative paths against android/app — hence the absolute path.
-          echo "storeFile=$GITHUB_WORKSPACE/android/keystore/mobilelm_release.jks" > android/key.properties
-          echo "storePassword=$RELEASE_STORE_PASSWORD" >> android/key.properties
-          echo "keyPassword=$RELEASE_KEY_PASSWORD" >> android/key.properties
-          echo "keyAlias=mobilelm_release" >> android/key.properties
-          chmod 600 android/key.properties
-
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Verify CI environment for release signing
-        run: |
-          echo "Checking CI environment..."
-          if [ -z "$GITHUB_ACTIONS" ] && [ -z "$CI" ]; then
-            echo "Error: Release signing is only allowed in CI environments."
-            echo "For local testing, use: flutter build apk --debug"
-            exit 1
-          fi
-          echo "CI environment verified: GITHUB_ACTIONS=$GITHUB_ACTIONS, CI=$CI"
-
+      # One build with --split-per-abi, not two builds. Without that flag a
+      # single --target-platform emits plain app-release.apk, so the second
+      # build silently overwrote the first and no per-ABI file ever existed.
       - name: Build APKs
         env:
           MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING: "true"
