@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 import '../controllers/settings_controller.dart';
+import '../controllers/cloud_model_controller.dart';
 import '../core/constants.dart';
 import '../models/chat_message.dart';
 import '../models/chat_session.dart';
@@ -96,6 +97,18 @@ class ChatController extends GetxController {
   final isListening = false.obs;
   final sttAvailable = false.obs;
   final _speech = stt.SpeechToText();
+
+  // Cloud token timing
+  final _cloudTokenCount = 0.obs;
+  DateTime? _cloudFirstTokenAt;
+  DateTime? _cloudGenStart;
+  final cloudTokensPerSecond = 0.0.obs;
+  /// Milliseconds from cloud generation start to first token.
+  final cloudTtftMillis = 0.obs;
+  /// Total tokens in the last cloud generation.
+  final cloudTotalTokens = 0.obs;
+  /// Total wall-clock ms of the last cloud generation.
+  final cloudTotalMs = 0.obs;
 
   final textController = TextEditingController();
   final scrollController = ScrollController();
@@ -833,24 +846,37 @@ class ChatController extends GetxController {
           {'role': 'system', 'content': _effectiveSystemPrompt},
           ...history,
         ];
+        _cloudGenStart = DateTime.now();
+        final cloudModel = Get.find<CloudModelController>().activeModelFor(
+            Get.find<SettingsController>().cloudProvider.value);
+        final clampedMax = Get.find<CloudModelController>()
+            .effectiveMaxTokens(
+                Get.find<SettingsController>().cloudProvider.value,
+                cloudModel,
+                Get.find<SettingsController>().maxTokens.value,
+            );
         rawResponse = await cloud.sendMessage(
           messages: apiMessages,
           imageBase64: imgBase64, // already encoded before clearImage()
+          maxTokens: clampedMax,
           onToken: (token) {
             streamingResponse.value += token;
             trackThoughtTiming();
             _scrollToBottom();
+            _cloudTokenCount.value++;
+            _cloudFirstTokenAt ??= DateTime.now();
           },
         );
       }
 
       // ── Tool hops ─────────────────────────────────────────────────────
-      // One round by default: a small model handed its own tool output will
-      // happily call the same tool forever, so the agent depth setting owns
-      // the ceiling and 1 keeps the classic single hop.
+      // Local models are capped by agentMaxHops to prevent small models
+      // from looping forever on their own tool output.
+      // Cloud models get a much higher ceiling (20) so they can do deeper
+      // agent work, but still stop before burning credits.
       if (Get.find<SettingsController>().toolsEnabled.value &&
           generationId == _generationSerial) {
-        final maxHops = Get.find<SettingsController>().agentMaxHops.value;
+        final maxHops = inferenceMode != 'local' ? 20 : Get.find<SettingsController>().agentMaxHops.value;
         var convo = history;
         var hop = 0;
         while (hop < maxHops) {
@@ -955,15 +981,27 @@ class ChatController extends GetxController {
               },
             );
           } else {
+            _cloudGenStart = DateTime.now();
+            final cloudModel2 = Get.find<CloudModelController>().activeModelFor(
+                Get.find<SettingsController>().cloudProvider.value);
+            final clampedMax2 = Get.find<CloudModelController>()
+                .effectiveMaxTokens(
+                    Get.find<SettingsController>().cloudProvider.value,
+                    cloudModel2,
+                    Get.find<SettingsController>().maxTokens.value,
+                );
             rawResponse = await Get.find<CloudService>().sendMessage(
               messages: [
                 {'role': 'system', 'content': _effectiveSystemPrompt},
                 ...convo,
               ],
+              maxTokens: clampedMax2,
               onToken: (token) {
                 streamingResponse.value += token;
                 trackThoughtTiming();
                 _scrollToBottom();
+                _cloudTokenCount.value++;
+                _cloudFirstTokenAt ??= DateTime.now();
               },
             );
           }
@@ -989,9 +1027,28 @@ class ChatController extends GetxController {
       if (generationId != _generationSerial) return;
 
       // Stop streaming UI
-      final tps = inferenceMode == 'local'
-          ? Get.find<InferenceService>().tokensPerSecond.value
-          : null;
+      final isCloud = inferenceMode != 'local';
+      final tps = isCloud && _cloudTokenCount.value > 0
+          ? (_cloudTokenCount.value /
+                  (DateTime.now().difference(_cloudFirstTokenAt!).inMilliseconds /
+                      1000.0))
+              .toDouble()
+          : (isCloud ? 0.0 : Get.find<InferenceService>().tokensPerSecond.value);
+      if (isCloud) {
+        cloudTokensPerSecond.value = tps;
+        cloudTotalTokens.value = _cloudTokenCount.value;
+        if (_cloudFirstTokenAt != null) {
+          final ttft = _cloudFirstTokenAt!.difference(_cloudGenStart!).inMilliseconds;
+          print('[ChatController] Cloud TTFT: $ttft ms');
+          cloudTtftMillis.value = ttft;
+        }
+        final totalMs = DateTime.now().difference(_cloudGenStart!).inMilliseconds;
+        print('[ChatController] Cloud total: $totalMs ms, tokens: ${_cloudTokenCount.value}, tps: ${tps.toStringAsFixed(1)}');
+        cloudTotalMs.value = totalMs;
+        _cloudTokenCount.value = 0;
+        _cloudFirstTokenAt = null;
+        _cloudGenStart = null;
+      }
       isStreaming.value = false;
       streamingAttachmentType.value = null;
       streamingResponse.value = '';
@@ -1011,6 +1068,10 @@ class ChatController extends GetxController {
           : null;
 
       // Display response directly (no command processing)
+      final inf = Get.find<InferenceService>();
+      final ttft = isCloud ? cloudTtftMillis.value : (inf.ttftMillis.value > 0 ? inf.ttftMillis.value : null);
+      final totTok = isCloud ? cloudTotalTokens.value : inf.totalTokens.value;
+      final totMs = isCloud ? cloudTotalMs.value : inf.totalMs.value;
       final aiMsg = ChatMessage(
         id: _uuid.v4(),
         chatId: currentSessionId.value,
@@ -1018,6 +1079,9 @@ class ChatController extends GetxController {
         content: rawResponse,
         imageBase64: outImageBase64,
         tokensPerSec: tps,
+        ttftMillis: ttft,
+        totalTokens: totTok,
+        totalMs: totMs,
         thoughtDurationSeconds: thoughtDurationSeconds,
         imageGenDurationMs: genDurationMs,
       );
@@ -1068,9 +1132,13 @@ class ChatController extends GetxController {
     final partialResponse = streamingResponse.value.trim();
     if (partialResponse.isNotEmpty) {
       final tps = Get.find<InferenceService>().tokensPerSecond.value;
+      final inf = Get.find<InferenceService>();
       _saveAssistantMessage(
         content: partialResponse,
         tokensPerSec: tps > 0 ? tps : null,
+        ttftMillis: inf.ttftMillis.value > 0 ? inf.ttftMillis.value : null,
+        totalTokens: inf.totalTokens.value > 0 ? inf.totalTokens.value : null,
+        totalMs: inf.totalMs.value > 0 ? inf.totalMs.value : null,
       );
     }
     _generationSerial++;
@@ -1092,6 +1160,9 @@ class ChatController extends GetxController {
     required String content,
     String? imageBase64,
     double? tokensPerSec,
+    int? ttftMillis,
+    int? totalTokens,
+    int? totalMs,
     int? thoughtDurationSeconds,
   }) {
     final aiMsg = ChatMessage(
@@ -1101,6 +1172,9 @@ class ChatController extends GetxController {
       content: content,
       imageBase64: imageBase64,
       tokensPerSec: tokensPerSec,
+      ttftMillis: ttftMillis,
+      totalTokens: totalTokens,
+      totalMs: totalMs,
       thoughtDurationSeconds: thoughtDurationSeconds,
     );
     messages.add(aiMsg);

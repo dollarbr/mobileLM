@@ -30,6 +30,12 @@ class InferenceService extends GetxService {
   final loadedModelName = ''.obs;
   final tokenCount = 0.obs;
   final tokensPerSecond = 0.0.obs;
+  /// Milliseconds from generation start to the first visible token.
+  final ttftMillis = 0.obs;
+  /// Total tokens emitted in the last generation.
+  final totalTokens = 0.obs;
+  /// Total wall-clock time of the last generation in ms.
+  final totalMs = 0.obs;
   final contextTokensUsed = 0.obs;
   final contextTokensTotal = 0.obs;
   final modelLoadProgress = 0.0.obs;
@@ -300,6 +306,9 @@ class InferenceService extends GetxService {
     isGenerating.value = true;
     tokenCount.value = 0;
     tokensPerSecond.value = 0.0;
+    ttftMillis.value = 0;
+    totalTokens.value = 0;
+    totalMs.value = 0;
 
     final startTime = DateTime.now();
     DateTime? firstVisibleTokenAt;
@@ -336,7 +345,11 @@ class InferenceService extends GetxService {
         imagePath: imagePath,
         audioPath: audioPath,
         onToken: (token) {
-          firstVisibleTokenAt ??= DateTime.now();
+          if (firstVisibleTokenAt == null) {
+            firstVisibleTokenAt = DateTime.now();
+            ttftMillis.value =
+                firstVisibleTokenAt!.difference(startTime).inMilliseconds;
+          }
           tokenCount.value++;
           final speedStart = firstVisibleTokenAt ?? startTime;
           final elapsedSeconds =
@@ -357,6 +370,9 @@ class InferenceService extends GetxService {
       );
       tokenFlushTimer?.cancel();
       flushTokenBuffer();
+
+      totalTokens.value = tokenCount.value;
+      totalMs.value = DateTime.now().difference(startTime).inMilliseconds;
 
       await refreshContextInfo();
       isGenerating.value = false;
@@ -390,6 +406,9 @@ class InferenceService extends GetxService {
   Future<void> stopGeneration() async {
     isGenerating.value = false;
     tokenCount.value = 0;
+    ttftMillis.value = 0;
+    totalTokens.value = 0;
+    totalMs.value = 0;
     final engine = _engine;
     if (engine != null) {
       unawaited(engine.stop().timeout(const Duration(seconds: 1)).catchError(

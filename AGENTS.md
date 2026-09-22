@@ -5,10 +5,11 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 
 ## Estado atual
 
-M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ — release **0.2.3+1** publicado em
-<https://github.com/dollarbr/mobileLM/releases/tag/0.2.3>. Engine local (GGUF +
-LiteRT-LM) + agente multi-passo + tools nativas (18 built-in, 8 privilegiadas
-via Shizuku) + tarefas agendadas + image gen + servidor OpenAI compatível.
+M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — release **0.2.3+1** publicado em
+<https://github.com/dollarbr/mobileLM/releases/tag/0.2.3>. Versão atual: **0.3.0+1**.
+Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
+(18 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
+servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
 
 ## Regras herdadas (aprendidas nas sessões anteriores)
 
@@ -97,10 +98,12 @@ Três workflows ativos: `ci.yml` (analyze + test, ~2 min), `debug-apk.yml` (APK 
 arm64 por push, ~22 min) e `release.yml` (dispara na tag).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.2.3+1` → tag `0.2.3`. O workflow falha de propósito se divergirem.
-Tags com prefixo `v` (ex: `v0.2.3`) também são aceitas. As notas saem agrupadas por
+`+build`: `0.3.0+1` → tag `0.3.0`. O workflow falha de propósito se divergirem.
+Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
+
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud features + metrics).
 
 **Todo workflow que compila precisa liberar disco antes.** Os nativos vendorizados
 — llama.cpp com backend Vulkan e seus ~300 objetos de shader, LiteRT, Stable
@@ -127,3 +130,35 @@ Sem keystore no CI: `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`.
 - Modelo pequeno (<2B) prefere CPU no prefill: GPU (Vulkan) tem overhead de shader
   que domina até ~2B parâmetros. `n_gpu_layers==0` deve zerar a lista de dispositivos,
   não apenas pular offload — senão ggml sched offloads ops pro Vulkan (`op_offload`).
+
+## Cloud features (0.3.0)
+
+- **Round-trip ceiling:** cloud = 20 hops fixo; local = `agentMaxHops` (setting).
+  Setting "Tool round-trips" agora inclui `∞` (valor 0 = infinito).
+- **Context window auto-detect:** `_parseContextWindows()` em
+  `cloud_model_controller.dart` — OpenRouter, DeepSeek, NVIDIA, Google, OpenAI.
+  Safe maxTokens = 25% do contexto, min 256 (`effectiveMaxTokens()`).
+- **Capability auto-detect:** vision/tools tags por provider na lista de modelos.
+- **Métricas persistentes:** `ChatMessage` armazena `ttftMillis`, `totalTokens`,
+  `totalMs`. Exibidas permanentemente após geração no `ChatBubble`. Cores:
+  Volt `#B9F53E` (escuro) / verde escuro `#1B5E20` (claro).
+- **Cloud TPS:** `cloudTokensPerSecond` observable no chat controller.
+
+## Sugestões de próximas features
+
+Ver [`docs/suggestions.md`](docs/suggestions.md) para lista completa organizada
+por esforço/impacto. Top 3: exportar conversa, chips de sugestão rápida,
+sumarização automática de contexto.
+
+## Cloud features (0.3.0)
+
+- **Round-trip ceiling:** cloud = 20 hops fixo; local = `agentMaxHops` (setting).
+  Setting "Tool round-trips" agora inclui `∞` (valor 0 = infinito).
+- **Context window auto-detect:** `_parseContextWindows()` em
+  `cloud_model_controller.dart` — OpenRouter, DeepSeek, NVIDIA, Google, OpenAI.
+  Safe maxTokens = 25% do contexto, min 256 (`effectiveMaxTokens()`).
+- **Capability auto-detect:** vision/tools tags por provider na lista de modelos.
+- **Métricas persistentes:** `ChatMessage` armazena `ttftMillis`, `totalTokens`,
+  `totalMs`. Exibidas permanentemente após geração no `ChatBubble`. Cores:
+  Volt `#B9F53E` (escuro) / verde escuro `#1B5E20` (claro).
+- **Cloud TPS:** `cloudTokensPerSecond` observable no chat controller.

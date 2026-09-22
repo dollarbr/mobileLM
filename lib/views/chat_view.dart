@@ -500,12 +500,15 @@ class ChatView extends GetView<ChatController> {
             if (hasText && !isImageGen)
               Obx(() {
                 final inf = Get.find<InferenceService>();
-                if (inf.tokensPerSecond.value <= 0)
-                  return const SizedBox.shrink();
+                final cloudTps = controller.cloudTokensPerSecond.value;
+                final tps = inf.tokensPerSecond.value > 0
+                    ? inf.tokensPerSecond.value
+                    : cloudTps;
+                if (tps <= 0) return const SizedBox.shrink();
                 return Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                        '${inf.tokensPerSecond.value.toStringAsFixed(1)} tok/s',
+                        '${tps.toStringAsFixed(1)} tok/s',
                         style: GoogleFonts.inter(
                             fontSize: 10,
                             color: _appleBlue(context),

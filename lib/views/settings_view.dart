@@ -207,17 +207,23 @@ class SettingsView extends GetView<SettingsController> {
                   leading: _iconBox(
                       const Color(0xFF8B7CFF), Icons.smart_toy_outlined),
                   title: 'Tool round-trips',
-                  subtitle: controller.agentMaxHops.value == 1
-                      ? 'Single hop — the safe default'
+                  subtitle: controller.agentMaxHops.value == 0
+                      ? 'Unlimited agent mode'
                       : 'Agent mode: up to ${controller.agentMaxHops.value} hops per message',
-                  trailing: Text('${controller.agentMaxHops.value}',
-                      style: GoogleFonts.spaceGrotesk(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF8B7CFF))),
+                  trailing: controller.agentMaxHops.value == 0
+                      ? Text('∞',
+                          style: GoogleFonts.spaceGrotesk(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF8B7CFF)))
+                      : Text('${controller.agentMaxHops.value}',
+                          style: GoogleFonts.spaceGrotesk(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF8B7CFF))),
                   showDivider: false,
                   onTap: () {
-                    const ladder = [1, 2, 3, 4, 6, 8];
+                    const ladder = [0, 1, 2, 3, 4, 6, 8];
                     final i = ladder.indexOf(controller.agentMaxHops.value);
                     controller.setAgentMaxHops(
                         ladder[(i + 1) % ladder.length]);

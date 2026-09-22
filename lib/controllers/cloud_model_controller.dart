@@ -119,6 +119,8 @@ class CloudModelController extends GetxController {
   final searchByProvider = <String, String>{}.obs;
   final freeFirstByProvider = <String, bool>{}.obs;
   final modelTagsByProvider = <String, Map<String, List<String>>>{}.obs;
+  final contextWindowByProvider = <String, Map<String, int>>{}.obs;
+  final capabilitiesByProvider = <String, Map<String, List<String>>>{}.obs;
   final customProviderError = ''.obs;
 
   final customNameController = TextEditingController();
@@ -246,6 +248,34 @@ class CloudModelController extends GetxController {
     return modelTagsByProvider[provider]?[normalized] ??
         modelTagsByProvider[provider]?[modelId] ??
         const <String>[];
+  }
+
+  /// Returns the auto-detected context window size in tokens, or null if unknown.
+  int? contextWindowFor(String provider, String modelId) {
+    final normalized =
+        provider == 'google' ? modelId.replaceFirst('models/', '') : modelId;
+    return contextWindowByProvider[provider]?[normalized] ??
+        contextWindowByProvider[provider]?[modelId];
+  }
+
+  /// Returns capabilities (vision, tools) or empty list.
+  List<String> capabilitiesFor(String provider, String modelId) {
+    final normalized =
+        provider == 'google' ? modelId.replaceFirst('models/', '') : modelId;
+    if (provider == 'nvidia') return const [];
+    return capabilitiesByProvider[provider]?[normalized] ??
+        capabilitiesByProvider[provider]?[modelId] ??
+        const <String>[];
+  }
+
+  /// Returns a safe maxTokens value: the smaller of [requested] and the
+  /// auto-detected context window, with a minimum of 256.
+  int effectiveMaxTokens(String provider, String modelId, int requested) {
+    final ctx = contextWindowFor(provider, modelId);
+    if (ctx == null) return requested;
+    // Keep at least 25% of context for response, minimum 256 tokens
+    final clamped = (ctx * 0.25).toInt().clamp(256, requested);
+    return clamped < requested ? clamped : requested;
   }
 
   bool isFreeModel(String provider, String modelId) {
@@ -391,6 +421,8 @@ class CloudModelController extends GetxController {
       final ids = _parseModelIds(provider, response.body);
       modelsByProvider[provider] = ids;
       modelTagsByProvider[provider] = _parseModelTags(provider, response.body);
+      contextWindowByProvider[provider] = _parseContextWindows(provider, response.body);
+      capabilitiesByProvider[provider] = _parseCapabilities(provider, response.body);
       final fetchedAt = DateTime.now();
       fetchedAtByProvider[provider] = fetchedAt;
       await _hive.setSetting('$_cachePrefix$provider', ids);
@@ -475,6 +507,213 @@ class CloudModelController extends GetxController {
     }
 
     return tags;
+  }
+
+  /// Parse context window sizes from API responses.
+  /// Returns a map of model ID → context length in tokens.
+  Map<String, int> _parseContextWindows(String provider, String body) {
+    final data = jsonDecode(body);
+    final result = <String, int>{};
+
+    switch (provider) {
+      case 'openrouter':
+        // OpenRouter: {data: [{id, context_length, ...}]}
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          final ctx = m['context_length'] as int?;
+          if (id != null && ctx != null && ctx > 0) result[id] = ctx;
+        }
+        break;
+
+      case 'deepseek':
+        // DeepSeek: {data: [{id, context_length, ...}]}
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          final ctx = m['context_length'] as int?;
+          if (id != null && ctx != null && ctx > 0) result[id] = ctx;
+        }
+        break;
+
+      case 'nvidia':
+        // NVIDIA NIM: {data: [{id, context_length, ...}]}
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          final ctx = m['context_length'] as int? ?? m['contextWindow'] as int?;
+          if (id != null && ctx != null && ctx > 0) result[id] = ctx;
+        }
+        break;
+
+      case 'google':
+        // Google: {models: [{name, supportedGenerationMethods, ...}]}
+        final raw = data['models'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final name = m['name']?.toString();
+          if (name == null) continue;
+          final id = name.replaceFirst('models/', '');
+          // Google returns approximate context in displayName or description
+          final methods = m['supportedGenerationMethods'] as List? ?? [];
+          final hasGenerateContent = methods.contains('generateContent');
+          if (!hasGenerateContent) continue;
+          final desc = (m['description'] ?? '').toString().toLowerCase();
+          final disp = (m['displayName'] ?? '').toString().toLowerCase();
+          // Infer context from model family
+          int? ctx;
+          if (id.contains('gemini-2.5-pro') || id.contains('gemini-2.5-flash')) {
+            ctx = 1000000;
+          } else if (id.contains('gemini-2.0-flash') || id.contains('gemini-1.5-flash')) {
+            ctx = 1000000;
+          } else if (id.contains('gemini-1.5-pro')) {
+            ctx = 1000000;
+          } else if (id.contains('gemini-exp')) {
+            ctx = 1000000;
+          }
+          if (ctx != null) result[id] = ctx;
+        }
+        break;
+
+      default:
+        // OpenAI / generic: {data: [{id, context_window, ...}]}
+        // Try common field names
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          final ctx = m['context_window'] as int? ?? m['contextLength'] as int?;
+          if (id != null && ctx != null && ctx > 0) result[id] = ctx;
+        }
+        break;
+    }
+
+    return result;
+  }
+
+  /// Parse capabilities (vision, tools/function-calling) from API responses.
+  Map<String, List<String>> _parseCapabilities(String provider, String body) {
+    final data = jsonDecode(body);
+    final result = <String, List<String>>{};
+
+    switch (provider) {
+      case 'openrouter':
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          if (id == null) continue;
+          final caps = <String>[];
+          final capMap = m['capabilities'] as Map? ?? {};
+          if (capMap['vision'] == true || id.toLowerCase().contains('vision') ||
+              id.toLowerCase().contains('flash') || id.toLowerCase().contains('glm-4v')) {
+            caps.add('vision');
+          }
+          if (capMap['function_calling'] == true || capMap['tools'] == true ||
+              id.toLowerCase().contains('tool') || id.toLowerCase().contains('function')) {
+            caps.add('tools');
+          }
+          if (caps.isNotEmpty) result[id] = caps;
+        }
+        break;
+
+      case 'deepseek':
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          if (id == null) continue;
+          final caps = <String>[];
+          final properties = m['properties'] as Map? ?? {};
+          final abilities = properties['abilities'] as List? ?? [];
+          for (final a in abilities) {
+            if (a.toString().toLowerCase().contains('vision') ||
+                a.toString().toLowerCase().contains('image')) {
+              if (!caps.contains('vision')) caps.add('vision');
+            }
+            if (a.toString().toLowerCase().contains('function') ||
+                a.toString().toLowerCase().contains('tool')) {
+              if (!caps.contains('tools')) caps.add('tools');
+            }
+          }
+          // DeepSeek V4 supports vision; R1 is reasoning-only
+          if (id.toLowerCase().contains('v4') || id.toLowerCase().contains('chat')) {
+            if (!caps.contains('vision')) caps.add('vision');
+          }
+          if (caps.isNotEmpty) result[id] = caps;
+        }
+        break;
+
+      case 'google':
+        final raw = data['models'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final name = m['name']?.toString();
+          if (name == null) continue;
+          final id = name.replaceFirst('models/', '');
+          final methods = m['supportedGenerationMethods'] as List? ?? [];
+          final hasGenerateContent = methods.contains('generateContent');
+          final hasCountTokens = methods.contains('countTokens');
+          if (!hasGenerateContent) continue;
+          final caps = <String>[];
+          // Gemini models support vision if they can generate content with inline_data
+          if (id.contains('flash') || id.contains('pro') || id.contains('exp')) {
+            caps.add('vision');
+          }
+          // Tool use is available on most modern Gemini models
+          if (id.contains('flash') || id.contains('pro') || id.contains('2.5')) {
+            if (!caps.contains('tools')) caps.add('tools');
+          }
+          if (caps.isNotEmpty) result[id] = caps;
+        }
+        break;
+
+      case 'nvidia':
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          if (id == null) continue;
+          final caps = <String>[];
+          final props = m['properties'] as Map? ?? {};
+          final abilities = props['abilities'] as List? ?? [];
+          for (final a in abilities) {
+            final aStr = a.toString().toLowerCase();
+            if (aStr.contains('vision') || aStr.contains('image')) {
+              if (!caps.contains('vision')) caps.add('vision');
+            }
+            if (aStr.contains('function') || aStr.contains('tool')) {
+              if (!caps.contains('tools')) caps.add('tools');
+            }
+          }
+          if (caps.isNotEmpty) result[id] = caps;
+        }
+        break;
+
+      default:
+        // OpenAI: infer from model ID
+        final raw = data['data'] as List? ?? [];
+        for (final m in raw) {
+          if (m is! Map) continue;
+          final id = m['id']?.toString();
+          if (id == null) continue;
+          final caps = <String>[];
+          final lower = id.toLowerCase();
+          if (lower.contains('vision') || lower.contains('gpt-4o') || lower.contains('o1') || lower.contains('o3')) {
+            caps.add('vision');
+          }
+          if (lower.contains('gpt-4') || lower.contains('gpt-3.5') || lower.contains('o1') || lower.contains('o3')) {
+            if (!caps.contains('tools')) caps.add('tools');
+          }
+          if (caps.isNotEmpty) result[id] = caps;
+        }
+        break;
+    }
+
+    return result;
   }
 
   bool _isZeroOpenRouterPricing(Map pricing) {

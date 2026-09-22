@@ -1764,6 +1764,16 @@ class ModelView extends GetView<ModelController> {
                     ],
                   ),
                 ],
+                // Auto-detected context window
+                if (cloud.contextWindowFor(providerId, id) != null) ...[
+                  const SizedBox(width: 8),
+                  _buildContextBadge(context, cloud.contextWindowFor(providerId, id)!),
+                ],
+                // Auto-detected capabilities
+                for (final cap in cloud.capabilitiesFor(providerId, id)) ...[
+                  const SizedBox(width: 5),
+                  _buildCapBadge(context, cap),
+                ],
               ],
             ),
           ),
@@ -1810,6 +1820,55 @@ class ModelView extends GetView<ModelController> {
           fontWeight: FontWeight.w900,
           color: color,
         ),
+      ),
+    );
+  }
+
+  String _formatContextWindow(int tokens) {
+    if (tokens >= 1000000) return '${(tokens / 1000000).toStringAsFixed(1)}M';
+    if (tokens >= 1000) return '${(tokens / 1000).toStringAsFixed(0)}K';
+    return '$tokens';
+  }
+
+  Widget _buildContextBadge(BuildContext context, int tokens) {
+    final color = tokens >= 128000
+        ? const Color(0xFF4ADE80)
+        : tokens >= 32000
+            ? const Color(0xFF60A5FA)
+            : const Color(0xFFFBBF24);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.4), width: 0.5),
+      ),
+      child: Text(
+        _formatContextWindow(tokens),
+        style: GoogleFonts.inter(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCapBadge(BuildContext context, String cap) {
+    final isVision = cap == 'vision';
+    final icon = isVision ? '👁' : '🔧';
+    final color = isVision
+        ? const Color(0xFFFF7CB3)
+        : const Color(0xFF8B7CFF);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        icon,
+        style: const TextStyle(fontSize: 10),
       ),
     );
   }

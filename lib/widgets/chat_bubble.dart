@@ -130,9 +130,43 @@ class ChatBubble extends StatelessWidget {
                         '${message.tokensPerSec!.toStringAsFixed(1)} tok/s',
                         style: GoogleFonts.inter(
                           fontSize: 10,
-                          color: isUser
-                              ? Colors.white.withValues(alpha: 0.55)
-                              : Theme.of(context).hintColor.withValues(alpha: 0.5),
+                          color: _metricColor(context, isUser),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  if (message.ttftMillis != null && message.ttftMillis! > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        '${(message.ttftMillis! / 1000).toStringAsFixed(2)}s ttf',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: _metricColor(context, isUser),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  if (message.totalTokens != null && message.totalTokens! > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        '${message.totalTokens} tok',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: _metricColor(context, isUser),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  if (message.totalMs != null && message.totalMs! > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Text(
+                        _formatGenTime(message.totalMs!),
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: _metricColor(context, isUser),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -144,9 +178,7 @@ class ChatBubble extends StatelessWidget {
                         _formatGenTime(message.imageGenDurationMs!),
                         style: GoogleFonts.inter(
                           fontSize: 10,
-                          color: isUser
-                              ? Colors.white.withValues(alpha: 0.55)
-                              : Theme.of(context).hintColor.withValues(alpha: 0.5),
+                          color: _metricColor(context, isUser),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -174,6 +206,13 @@ class ChatBubble extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (isUser) return isDark ? _appleBlueDark : _appleBlue;
     return isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
+  }
+
+  /// Light green for dark mode, dark green for light mode — always readable.
+  Color _metricColor(BuildContext context, bool isUser) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isUser) return Colors.white.withValues(alpha: 0.55);
+    return isDark ? const Color(0xFFB9F53E) : const Color(0xFF1B5E20);
   }
 
   MarkdownStyleSheet _markdownStyle(BuildContext context) {

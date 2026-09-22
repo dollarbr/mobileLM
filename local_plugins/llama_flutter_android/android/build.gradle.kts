@@ -2,7 +2,7 @@ group = "com.write4me.llama_flutter_android"
 version = "1.0.0"
 
 // Define extra properties BEFORE buildscript
-extra["kotlinVersion"] = "2.1.0"
+extra["kotlinVersion"] = "2.4.20"
 
 buildscript {
     repositories {
@@ -11,8 +11,8 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.9.1")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
+        classpath("com.android.tools.build:gradle:8.11.1")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.20")
     }
 }
 
@@ -39,8 +39,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        }
     }
 
     sourceSets {
@@ -88,7 +90,7 @@ android {
     }
 
     dependencies {
-        implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
+        implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.20")
         implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
         implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
         implementation("androidx.core:core-ktx:1.12.0")

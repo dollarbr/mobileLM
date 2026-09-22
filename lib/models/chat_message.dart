@@ -14,6 +14,9 @@ class ChatMessage {
   final String? fileType;
   final int? fileSize;
   final double? tokensPerSec;
+  final int? ttftMillis; // Time to first token
+  final int? totalTokens; // Total tokens generated
+  final int? totalMs; // Total generation time in ms
   final int? thoughtDurationSeconds;
   final int? imageGenDurationMs; // Time taken to generate image locally
   final DateTime timestamp;
@@ -40,6 +43,9 @@ class ChatMessage {
     this.fileType,
     this.fileSize,
     this.tokensPerSec,
+    this.ttftMillis,
+    this.totalTokens,
+    this.totalMs,
     this.thoughtDurationSeconds,
     this.imageGenDurationMs,
     DateTime? timestamp,
@@ -58,6 +64,9 @@ class ChatMessage {
         'fileType': fileType,
         'fileSize': fileSize,
         'tokensPerSec': tokensPerSec,
+        'ttftMillis': ttftMillis,
+        'totalTokens': totalTokens,
+        'totalMs': totalMs,
         'thoughtDurationSeconds': thoughtDurationSeconds,
         'imageGenDurationMs': imageGenDurationMs,
         'timestamp': timestamp.toIso8601String(),
@@ -78,6 +87,15 @@ class ChatMessage {
             map['fileSize'] != null ? (map['fileSize'] as num).toInt() : null,
         tokensPerSec: map['tokensPerSec'] != null
             ? (map['tokensPerSec'] as num).toDouble()
+            : null,
+        ttftMillis: map['ttftMillis'] != null
+            ? (map['ttftMillis'] as num).toInt()
+            : null,
+        totalTokens: map['totalTokens'] != null
+            ? (map['totalTokens'] as num).toInt()
+            : null,
+        totalMs: map['totalMs'] != null
+            ? (map['totalMs'] as num).toInt()
             : null,
         thoughtDurationSeconds: map['thoughtDurationSeconds'] != null
             ? (map['thoughtDurationSeconds'] as num).toInt()

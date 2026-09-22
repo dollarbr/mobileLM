@@ -263,7 +263,7 @@ Java_com_example_sd_1flutter_1android_SdFlutterAndroidPlugin_initModel(
     params.n_threads = (cores > 4) ? 4 : cores;
 
     // Match iOS behaviour: keep buffers alive between generations.
-    params.free_params_immediately = false;
+    // (free_params_immediately was removed from sd_ctx_params_t in upstream)
 
     LOGI("Initializing SD model from: %s (threads=%d, useGpu=%d)", path, params.n_threads, use_gpu == JNI_TRUE ? 1 : 0);
     g_sd_ctx = new_sd_ctx(&params);
@@ -322,9 +322,12 @@ Java_com_example_sd_1flutter_1android_SdFlutterAndroidPlugin_generateImage(
         }
     }
 
-    sd_image_t* result = generate_image(g_sd_ctx, &params);
+    sd_image_t* images_out = nullptr;
+    int num_images_out = 0;
+    bool success = generate_image(g_sd_ctx, &params, &images_out, &num_images_out);
 
-    if (result) {
+    if (success && images_out && num_images_out > 0) {
+        sd_image_t* result = &images_out[0];
         LOGI("Image generated: %dx%d channels=%d", result->width, result->height, result->channel);
         if (result->channel >= 3 && result->data) {
             LOGI("First pixel RGB: %d %d %d", result->data[0], result->data[1], result->data[2]);
@@ -338,23 +341,23 @@ Java_com_example_sd_1flutter_1android_SdFlutterAndroidPlugin_generateImage(
         g_progress_callback = nullptr;
     }
 
-    if (!result) {
+    if (!success || !images_out || num_images_out == 0) {
         LOGE("Generation failed");
+        free_sd_images(images_out, num_images_out);
         return nullptr;
     }
 
+    sd_image_t* result = &images_out[0];
     size_t size = result->width * result->height * result->channel;
     jbyteArray array = env->NewByteArray(size);
     if (!array) {
         LOGE("Failed to allocate ByteArray of size %zu (OOM?)", size);
-        free(result->data);
-        free(result);
+        free_sd_images(images_out, num_images_out);
         return nullptr;
     }
     env->SetByteArrayRegion(array, 0, size, (jbyte*)result->data);
 
-    free(result->data);
-    free(result);
+    free_sd_images(images_out, num_images_out);
 
     return array;
 }
@@ -467,13 +470,14 @@ SD_FFI_API void* sd_ffi_init_ex(const char* model_path,
     params.model_path = model_path ? model_path : "";
     params.n_threads = (n_threads > 0) ? n_threads : sd_get_num_physical_cores();
     params.flash_attn = flash_attn;
-    params.free_params_immediately = false;
+    params.flash_attn = flash_attn;
     params.wtype = (sd_type_t)wtype;
-    params.offload_params_to_cpu = offload_params_to_cpu;
     params.enable_mmap = enable_mmap;
-    params.keep_vae_on_cpu = keep_vae_on_cpu;
     if (max_vram > 0.0f) {
-        params.max_vram = max_vram;
+        // max_vram is now a const char* GiB budget string in upstream
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f", max_vram);
+        params.max_vram = buf;
     }
 
     // NOTE: vae_tiling is NOT a member of sd_ctx_params_t.
@@ -495,9 +499,9 @@ SD_FFI_API void* sd_ffi_init_ex(const char* model_path,
         LOGI("[FFI] Using TAESD for fast decode: %s", taesd_path);
     }
 
-    LOGI("[FFI] Initializing SD model: %s (threads=%d, flash_attn=%d, wtype=%d, backend=%d, offload=%d, mmap=%d, keep_vae_cpu=%d)",
+    LOGI("[FFI] Initializing SD model: %s (threads=%d, flash_attn=%d, wtype=%d, backend=%d, mmap=%d)",
          model_path, params.n_threads, flash_attn, wtype, backend,
-         offload_params_to_cpu, enable_mmap, keep_vae_on_cpu);
+         enable_mmap);
 
     g_ffi_sd_ctx = new_sd_ctx(&params);
     return g_ffi_sd_ctx;
@@ -574,17 +578,20 @@ SD_FFI_API uint8_t* sd_ffi_generate(void* ctx,
     }
 
     LOGI("[FFI] [PHASE] Calling generate_image()...");
-    sd_image_t* result = generate_image((sd_ctx_t*)ctx, &params);
+    sd_image_t* images_out = nullptr;
+    int num_images_out = 0;
+    bool success = generate_image((sd_ctx_t*)ctx, &params, &images_out, &num_images_out);
     LOGI("[FFI] [PHASE] generate_image() returned");
 
-    if (!result) {
+    if (!success || !images_out || num_images_out == 0) {
         LOGE("[FFI] generate_image returned null");
+        free_sd_images(images_out, num_images_out);
         return nullptr;
     }
+    sd_image_t* result = &images_out[0];
     if (result->channel != 3) {
         LOGE("[FFI] Unexpected channel count: %d", result->channel);
-        free(result->data);
-        free(result);
+        free_sd_images(images_out, num_images_out);
         return nullptr;
     }
 
@@ -600,8 +607,7 @@ SD_FFI_API uint8_t* sd_ffi_generate(void* ctx,
         LOGE("[FFI] malloc failed for %zu bytes", pixel_count);
     }
 
-    free(result->data);
-    free(result);
+    free_sd_images(images_out, num_images_out);
     LOGI("[FFI] [PHASE] Returning buffer to Dart");
     return buf;
 }
