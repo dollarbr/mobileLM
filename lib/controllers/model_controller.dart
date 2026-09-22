@@ -282,9 +282,9 @@ class ModelController extends GetxController {
       }
     }
 
-    // Remove any imported models that are no longer downloaded
+    // Remove any imported or custom models whose file is no longer on disk.
     bool isStaleImport(AiModel m) =>
-        m.isImported && !files.contains(m.filename);
+        (m.isImported || m.isCustom) && !files.contains(m.filename);
     availableModels.removeWhere(isStaleImport);
     if (customModels.any(isStaleImport)) {
       customModels.removeWhere(isStaleImport);

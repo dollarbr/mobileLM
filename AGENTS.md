@@ -5,7 +5,10 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 
 ## Estado atual
 
-M1 concluído no código: base PrivateLM importada e rebrandada (applicationId `com.dollarbr.mobilelm`, pacote Dart `mobilelm`, ícone adaptativo bolha+raio, tema Ink/Volt). Validação final = CI verde.
+M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ — release **0.2.3+1** publicado em
+<https://github.com/dollarbr/mobileLM/releases/tag/0.2.3>. Engine local (GGUF +
+LiteRT-LM) + agente multi-passo + tools nativas (18 built-in, 8 privilegiadas
+via Shizuku) + tarefas agendadas + image gen + servidor OpenAI compatível.
 
 ## Regras herdadas (aprendidas nas sessões anteriores)
 
@@ -22,6 +25,12 @@ M1 concluído no código: base PrivateLM importada e rebrandada (applicationId `
 - Tool que escreve/envia/apaga exige **confirmação humana** na UI. Leitura pura pode ser auto.
 - Agente multi-passo só atrás de toggle, com teto de iterações (modelos pequenos loopam).
 - Nativo arm64-only; licenças MIT dos upstreams devem ser citadas (README/LICENSE já cobrem).
+- **Flutter analyze não compila Kotlin.** Se remover imports de `MainActivity.kt`, o bug só aparece no `flutter build`. Verifique o Kotlin manualmente após qualquer alteração nos `.kt`.
+- **Modelos custom adicionados via URL/search só são removidos da lista se o predicado
+  `isStaleImport` em `refreshDownloaded()` olhar `isCustom` também.** O bug antigo
+  deletava o arquivo do disco mas mantinha o entry no Hive, fazendo o modelo
+  reaparecer depois de qualquer refresh. Corrigido em `0.2.4`: a condição agora é
+  `(m.isImported || m.isCustom) && !files.contains(m.filename)`.
 
 ## Workspace
 
@@ -62,20 +71,36 @@ regra de argv-nunca-string-de-shell e o teto de saída em
 Spec completa em `docs/brand/palette.md`. Ícone: `docs/brand/logo.svg`.
 Dark-first, accent Volt `#B9F53E`, Pulse `#8B7CFF` com parcimônia.
 
-## Comandos (valem a partir do M1)
+## Comandos
 
-Flutter padrão: `flutter pub get`, `flutter analyze --no-fatal-infos --no-fatal-warnings`,
-`flutter test`.
+```bash
+cd mobileLM-app
+flutter pub get
+flutter analyze --no-fatal-infos --no-fatal-warnings   # ~40 infos/warnings pre-existentes
+flutter test                                           # único arquivo: flutter test test/x_test.dart
+flutter run --debug
+flutter build apk --debug --target-platform android-arm64
+flutter build apk --release --split-per-abi --target-platform android-arm64
+```
+
+## Branch e commit
+
+Branch **`dev`** é onde se testa; merge na `main` só depois de análise e testes
+(com `--no-ff`). Ambos publicados em `origin`.
+
+Todo commit em mobileLM-app deve ser **documentado** (pedido explícito do usuário) —
+diferente do resto do workspace, onde commit só ocorre se pedido.
 
 ## CI e release
 
-Três workflows, todos ativos: `ci.yml` (analyze + test, ~2 min), `debug-apk.yml`
-(APK debug arm64 por push, ~22 min) e `release.yml` (dispara na tag).
+Três workflows ativos: `ci.yml` (analyze + test, ~2 min), `debug-apk.yml` (APK debug
+arm64 por push, ~22 min) e `release.yml` (dispara na tag).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.1.0+1` → tag `0.1.0`. O workflow falha de propósito se divergirem.
-As notas saem agrupadas por prefixo de Conventional Commit; o que não casa com
-nenhum prefixo cai em "Other", então nada some.
+`+build`: `0.2.3+1` → tag `0.2.3`. O workflow falha de propósito se divergirem.
+Tags com prefixo `v` (ex: `v0.2.3`) também são aceitas. As notas saem agrupadas por
+prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
+então nada some.
 
 **Todo workflow que compila precisa liberar disco antes.** Os nativos vendorizados
 — llama.cpp com backend Vulkan e seus ~300 objetos de shader, LiteRT, Stable
@@ -83,4 +108,22 @@ Diffusion — enchem os ~14 GB livres do runner com intermediários, e o release
 soma R8. O `release.yml` ficou a vida toda sem esse passo (nunca havia rodado) e
 morreria em `No space left on device` na primeira tag; corrigido em `ea9a828`.
 
+**Assinatura de release é bloqueada por padrão fora do CI.** O `build.gradle.kts`
+lança exceção se `isReleaseBuild` for true e `GITHUB_ACTIONS`/`CI` não estiverem
+presentes. Para build local de release sem keystore, use `flutter build apk
+--release` (release *não-assinado*) — o build.gradle permite quando `signingConfig`
+é debug. Para build assinado local, defina `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`.
+
 Sem keystore no CI: `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`.
+
+## Notas de build
+
+- Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
+  `gradle.properties` — nunca sature todos os núcleos.
+- Threads: 4 é o ótimo no Edge 60 (4×A78+4×A55); 8 regressa porque A55 trava A78.
+- R8 está desligado (`isMinifyEnabled = false`). Não adicione regras ProGuard por
+  precaução — elas não fazem efeito e podem mascarar problemas reais.
+- **Plugins locais com `dependency_overrides` podem não ser detectados pelo Flutter plugin discovery.** Se `dart_plugin_registrant.dart` não inclui, registrar manualmente no `MainActivity`.
+- Modelo pequeno (<2B) prefere CPU no prefill: GPU (Vulkan) tem overhead de shader
+  que domina até ~2B parâmetros. `n_gpu_layers==0` deve zerar a lista de dispositivos,
+  não apenas pular offload — senão ggml sched offloads ops pro Vulkan (`op_offload`).
