@@ -42,6 +42,16 @@ import '../widgets/project_picker_dialog.dart';
 const int _visionImageMaxSide = 768;
 const int _visionImageJpegQuality = 72;
 
+/// Rough chars-per-token ratio for Portuguese/English text.
+const int _charsPerToken = 3;
+
+/// Clamp [content] so that, together with system prompt + history overhead,
+/// it fits inside the loaded model's context window.
+String _clampFileContent(String content, int maxChars) {
+  if (content.length <= maxChars) return content;
+  return '${content.substring(0, maxChars)}\n\n[Arquivo truncado — conteúdo excedeu o contexto disponível do modelo local. Para analisar arquivos maiores, use o modo Cloud nas configurações.]';
+}
+
 Uint8List? _resizeVisionImageBytes(Map<String, dynamic> args) {
   final bytes = args['bytes'] as Uint8List;
   final decoded = img.decodeImage(bytes);
@@ -572,15 +582,37 @@ class ChatController extends GetxController {
 
       if (fileType == 'pdf' || fileType == 'docx') {
         final path = file.path;
+        Get.find<AppLogService>().info(
+          'PDF/DOCX pick: path=$path, name=${file.name}, bytes=${file.bytes != null}',
+        );
         if (path != null) {
           try {
             var content = await DocumentExtractorService.extractText(
               path,
               extension,
             );
-            if (content.length > 12000) {
+            Get.find<AppLogService>().info(
+              'PDF/DOCX extracted: ${content.length} chars',
+            );
+            // Clamp based on the loaded model's context window so the native
+            // engine never sees an input larger than its capacity.
+            // In cloud mode there is no InferenceService context cap, so skip.
+            final inf = Get.find<InferenceService>();
+            final ctxTotal = inf.contextTokensTotal.value;
+            final inferenceMode = _hive.getSetting(
+                  AppConstants.keyInferenceMode,
+                  defaultValue: 'local',
+                ) ??
+                'local';
+            if (inferenceMode == 'local' && ctxTotal > 0) {
+              // Reserve ~350 tokens for system prompt + user message wrapper.
+              final availableTokens = ctxTotal - 350;
+              final maxChars = availableTokens * _charsPerToken;
+              content = _clampFileContent(content, maxChars);
+            } else if (inferenceMode == 'local' && ctxTotal == 0 && content.length > 12000) {
+              // Local mode with no model loaded yet — conservative cap.
               content =
-                  '${content.substring(0, 12000)}\n\n[File truncated for context size]';
+                  '${content.substring(0, 12000)}\n\n[Arquivo truncado — conteúdo excedeu o contexto disponível do modelo local. Para analisar arquivos maiores, use o modo Cloud nas configurações.]';
             }
             selectedFileContent.value = content;
           } catch (e) {
@@ -590,6 +622,32 @@ class ChatController extends GetxController {
             );
             selectedFileContent.value = '[Could not extract text from ${selectedFileName.value}: $e]';
           }
+        } else {
+          Get.find<AppLogService>().warning(
+            'PDF/DOCX: file.path is null — trying to copy from bytes',
+          );
+          // SAF URI fallback: copy bytes to temp file first.
+          if (file.bytes != null && file.name != null) {
+            try {
+              final tempDir = await getTemporaryDirectory();
+              final tmpPath = '${tempDir.path}/ai_chat_doc_${DateTime.now().millisecondsSinceEpoch}.$extension';
+              await File(tmpPath).writeAsBytes(file.bytes!, flush: false);
+              final content = await DocumentExtractorService.extractText(
+                tmpPath,
+                extension,
+              );
+              Get.find<AppLogService>().info(
+                'PDF/DOCX from bytes: ${content.length} chars',
+              );
+              selectedFileContent.value = content;
+            } catch (e) {
+              Get.find<AppLogService>().warning(
+                'Document extraction from bytes failed',
+                details: e,
+              );
+              selectedFileContent.value = '[Could not extract text from ${selectedFileName.value}: $e]';
+            }
+          }
         }
       } else if (fileType == 'text') {
         final bytes = file.bytes ??
@@ -597,9 +655,21 @@ class ChatController extends GetxController {
         if (bytes == null) return;
         selectedFileSize.value = file.size > 0 ? file.size : bytes.length;
         var content = utf8.decode(bytes, allowMalformed: true);
-        if (content.length > 12000) {
+        // Apply the same cloud-aware clamp as for PDF/DOCX.
+        final inf = Get.find<InferenceService>();
+        final ctxTotal = inf.contextTokensTotal.value;
+        final inferenceMode = _hive.getSetting(
+              AppConstants.keyInferenceMode,
+              defaultValue: 'local',
+            ) ??
+            'local';
+        if (inferenceMode == 'local' && ctxTotal > 0) {
+          final availableTokens = ctxTotal - 350;
+          final maxChars = availableTokens * _charsPerToken;
+          content = _clampFileContent(content, maxChars);
+        } else if (ctxTotal == 0 && content.length > 12000) {
           content =
-              '${content.substring(0, 12000)}\n\n[File truncated for context size]';
+              '${content.substring(0, 12000)}\n\n[Arquivo truncado — conteúdo excedeu o contexto disponível do modelo local. Para analisar arquivos maiores, use o modo Cloud nas configurações.]';
         }
         selectedFileContent.value = content;
       }
@@ -669,6 +739,9 @@ class ChatController extends GetxController {
     final fileContent = selectedFileContent.value;
     final filePath = selectedFilePath.value;
     final fileType = selectedFileType.value;
+    Get.find<AppLogService>().info(
+      'sendMessage: fileContent=${fileContent?.length ?? 0} chars, fileName=$fileName, fileType=$fileType',
+    );
     final fileSize = selectedFileSize.value;
     final imagePath = selectedImagePath.value;
     final imageBase64 = selectedImageBase64.value;
@@ -1298,9 +1371,13 @@ class ChatController extends GetxController {
   /// re-create every closure for nothing.
   /// Built per use rather than cached: it is five closures, and the user can
   /// tick a tool off between two messages.
+  ///
+  /// When a file is attached we strip the workspace file tools — the content
+  /// is already inline in the message, so letting the model call read_file on
+  /// a path it can't reach is just noise.
   ToolRegistry get _tools {
     final settings = Get.find<SettingsController>();
-    return buildDefaultToolRegistry(
+    final base = buildDefaultToolRegistry(
       enabled: settings.enabledTools,
       customSearchUrl: settings.customSearchUrl.value,
       customSearchToken: settings.customSearchToken.value,
@@ -1310,6 +1387,12 @@ class ChatController extends GetxController {
         ...privilegedToolsIfReady(),
       ],
     );
+    // Strip file/workspace tools when a document is attached — content is
+    // already inline; read_file would only fail on the picker path.
+    if (selectedFileContent.value != null && selectedFileContent.value!.isNotEmpty) {
+      return base.withoutNames({'read_file', 'write_file', 'list_files', 'create_file'});
+    }
+    return base;
   }
 
   /// Summarizes old messages when context is approaching its limit.
