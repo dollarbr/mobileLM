@@ -13,23 +13,23 @@ import 'workspace_setup_view.dart';
 class HomeView extends GetView<HomeController> {
   const HomeView({super.key});
 
-  static const _tabs = [
+  List<_NavItem> get _tabs => [
     _NavItem(
         icon: Icons.bubble_chart_outlined,
         activeIcon: Icons.bubble_chart,
-        label: 'Chat'),
+        label: 'chat'.tr),
     _NavItem(
         icon: Icons.arrow_downward_rounded,
         activeIcon: Icons.arrow_downward_rounded,
-        label: 'Models'),
+        label: 'models'.tr),
     _NavItem(
         icon: Icons.workspace_premium_outlined,
         activeIcon: Icons.workspace_premium,
-        label: 'Workspace'),
+        label: 'workspace'.tr),
     _NavItem(
         icon: Icons.settings_outlined,
         activeIcon: Icons.settings,
-        label: 'Settings'),
+        label: 'settings'.tr),
   ];
 
   bool get _isWide {
@@ -159,7 +159,7 @@ class HomeView extends GetView<HomeController> {
                             Icon(sel ? tab.activeIcon : tab.icon,
                                 color: sel ? accent : muted, size: 20),
                             const SizedBox(height: 3),
-                            Text(tab.label,
+                            Text(tab.label.tr,
                                 style: GoogleFonts.inter(
                                     fontSize: 10,
                                     fontWeight:

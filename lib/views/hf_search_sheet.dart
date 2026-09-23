@@ -360,7 +360,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
     return TextButton.icon(
       onPressed: _openFilters,
       icon: const Icon(Icons.tune, size: 18),
-      label: Text(count == 0 ? 'Filters' : 'Filters ($count)'),
+      label: Text(count == 0 ? 'filters'.tr : 'Filters ($count)'),
       style: TextButton.styleFrom(
         foregroundColor: count == 0 ? null : theme.colorScheme.primary,
       ),
@@ -491,7 +491,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'RECOMMENDED',
+                      'recommended'.tr,
                       style: TextStyle(
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
@@ -601,14 +601,14 @@ class _FiltersSheetState extends State<_FiltersSheet> {
           Row(
             children: [
               Expanded(
-                child: Text('Filters', style: theme.textTheme.titleMedium),
+                child: Text('filters'.tr, style: theme.textTheme.titleMedium),
               ),
               TextButton(
                 onPressed: () {
                   setState(() => _f = const HfFilters());
                   _author.clear();
                 },
-                child: const Text('Reset'),
+                child: Text('reset'.tr),
               ),
             ],
           ),
@@ -722,7 +722,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   value: _f.quantAware,
                   onChanged: (v) =>
                       setState(() => _f = _f.copyWith(quantAware: v)),
-                  title: const Text('Quantisation-aware only'),
+                  title: Text('quantisation_aware_only'.tr),
                   subtitle: const Text(
                       'QAT, QAD, QAFT — trained for 4-bit, so a Q4_0 build '
                       'holds much closer to full precision'),
@@ -734,7 +734,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   value: _f.fitsDevice,
                   onChanged: (v) =>
                       setState(() => _f = _f.copyWith(fitsDevice: v)),
-                  title: const Text('Fits my device'),
+                  title: Text('fits_my_device'.tr),
                   subtitle: const Text(
                       'Hide GGUFs too large for this phone\'s memory'),
                 ),
@@ -746,7 +746,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
             width: double.infinity,
             child: FilledButton(
               onPressed: () => Navigator.of(context).pop(_f),
-              child: const Text('Apply'),
+              child: Text('apply'.tr),
             ),
           ),
         ],
@@ -768,7 +768,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
         isDense: true,
       ),
       items: [
-        const DropdownMenuItem<double?>(value: null, child: Text('Any')),
+        DropdownMenuItem<double?>(value: null, child: Text('any'.tr)),
         for (final step in _paramSteps)
           DropdownMenuItem<double?>(
             value: step,

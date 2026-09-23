@@ -48,7 +48,7 @@ class LogView extends StatelessWidget {
       backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),
       appBar: AppBar(
         backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),
-        title: Text('Logs', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        title: Text('logs'.tr, style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
             tooltip: 'Copy important logs',
@@ -145,7 +145,7 @@ class LogView extends StatelessWidget {
                       child: const Icon(Icons.check_circle_outline_rounded, size: 28, color: AppColors.success),
                     ),
                     const SizedBox(height: 16),
-                    Text('All Clear', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black)),
+                    Text('all_clear'.tr, style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black)),
                     const SizedBox(height: 6),
                     Text('No ${selectedFilter.value == 'ALL' ? '' : selectedFilter.value.toLowerCase() + ' '}logs captured yet.', style: GoogleFonts.inter(fontSize: 15, color: Theme.of(context).hintColor)),
                   ]),

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../controllers/chat_controller.dart';
+import '../controllers/chat_controller.dart';
 import '../models/chat_message.dart';
 import '../utils/thought_parser.dart';
 import 'attachment_preview.dart';
@@ -195,6 +198,12 @@ class ChatBubble extends StatelessWidget {
                   ),
                 ],
               ),
+
+              // Suggestion chips — only for assistant messages with text content, shown after generation completes
+              if (!isUser && answerContent.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _suggestionChips(context, answerContent),
+              ],
             ],
           ),
         ),
@@ -213,6 +222,67 @@ class ChatBubble extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (isUser) return Colors.white.withValues(alpha: 0.55);
     return isDark ? const Color(0xFFB9F53E) : const Color(0xFF1B5E20);
+  }
+
+  /// Predefined quick prompts shown as chips below assistant responses.
+  static const _chips = [
+    {'label': 'Explique melhor', 'prompt': 'Explique isso de forma mais detalhada e didática.'},
+    {'label': 'Resuma', 'prompt': 'Resuma a resposta anterior de forma concisa.'},
+    {'label': 'Traduza', 'prompt': 'Traduza a resposta anterior para inglês.'},
+    {'label': 'Continue', 'prompt': 'Continue a explicação anterior.'},
+    {'label': 'Exemplo', 'prompt': 'Dê um exemplo prático sobre esse assunto.'},
+    {'label': 'Simplifique', 'prompt': 'Explique de forma mais simples, como para iniciantes.'},
+  ];
+
+  Widget _suggestionChips(BuildContext context, String answer) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final chipBg = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
+    final chipBorder = isDark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.black.withValues(alpha: 0.12);
+    final chipText = isDark
+        ? const Color(0xFFB9F53E)
+        : const Color(0xFF1B5E20);
+
+    return SizedBox(
+      height: 32,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _chips.length,
+        itemBuilder: (_, i) {
+          final chip = _chips[i];
+          return Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                final controller = Get.find<ChatController>();
+                controller.sendQuickMessage(chip['prompt'] as String);
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: chipBg,
+                  border: Border.all(color: chipBorder, width: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  chip['label'] as String,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: chipText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   MarkdownStyleSheet _markdownStyle(BuildContext context) {

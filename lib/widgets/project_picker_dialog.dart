@@ -36,7 +36,7 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
   Widget build(BuildContext context) {
     final projects = widget.projects;
     return AlertDialog(
-      title: const Text('Workspace project'),
+      title: Text('workspace_project'.tr),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(
@@ -53,9 +53,9 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
               ),
               const SizedBox(height: 12),
               if (projects.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(8),
-                  child: Text('No projects yet — create one to get started.'),
+                  child: Text('no_projects_yet___create_one_to_get_star'.tr),
                 )
               else
                 ...projects.map((name) => ListTile(
@@ -81,11 +81,11 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
                   TextButton(
                     onPressed: () =>
                         Navigator.of(context).pop(kNoProjectSentinel),
-                    child: const Text('No project'),
+                    child: Text('no_project'.tr),
                   ),
                   FilledButton(
                     onPressed: () => _createProject(context),
-                    child: const Text('Create project'),
+                    child: Text('create_project'.tr),
                   ),
                 ],
               ),

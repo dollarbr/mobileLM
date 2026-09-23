@@ -19,7 +19,7 @@ class ModelView extends GetView<ModelController> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Models',
+        title: Text('models'.tr,
             style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w700)),
         actions: [
           Obx(() {
@@ -40,7 +40,7 @@ class ModelView extends GetView<ModelController> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.add_link),
-                  tooltip: 'Add Model URL',
+                  tooltip: 'add_model_url'.tr,
                   onPressed: () => _showAddUrlDialog(context),
                 ),
                 IconButton(
@@ -132,16 +132,16 @@ class ModelView extends GetView<ModelController> {
   Widget _buildScopeToggle(BuildContext context) {
     return Obx(() {
       return SegmentedButton<String>(
-        segments: const [
+        segments: [
           ButtonSegment(
             value: 'local',
             icon: Icon(Icons.phone_android),
-            label: Text('Local'),
+            label: Text('local'.tr),
           ),
           ButtonSegment(
             value: 'online',
             icon: Icon(Icons.cloud_outlined),
-            label: Text('Online'),
+            label: Text('online'.tr),
           ),
         ],
         selected: {controller.modelScope.value},
@@ -162,7 +162,7 @@ class ModelView extends GetView<ModelController> {
                     ? null
                     : () => HfSearchSheet.show(context),
                 icon: const Icon(Icons.search, size: 16),
-                label: const Text('Search'),
+                label: Text('search'.tr),
               )),
         ),
         const SizedBox(width: 10),
@@ -173,7 +173,7 @@ class ModelView extends GetView<ModelController> {
                     ? null
                     : () => _showAddUrlDialog(context),
                 icon: const Icon(Icons.add_link, size: 16),
-                label: const Text('URL'),
+                label: Text('url'.tr),
               )),
         ),
         const SizedBox(width: 10),
@@ -184,7 +184,7 @@ class ModelView extends GetView<ModelController> {
                     ? null
                     : () => controller.importModelFromStorage(),
                 icon: const Icon(Icons.file_upload_outlined, size: 16),
-                label: const Text('Import'),
+                label: Text('import'.tr),
               )),
         ),
       ],
@@ -388,7 +388,7 @@ class ModelView extends GetView<ModelController> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Active Image Model',
+                      'active_image_model'.tr,
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         color: Theme.of(context).hintColor,
@@ -469,7 +469,7 @@ class ModelView extends GetView<ModelController> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Active Model',
+                    'active_model'.tr,
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: Theme.of(context).hintColor,
@@ -597,7 +597,7 @@ class ModelView extends GetView<ModelController> {
                 _showProviderActionsSheet(context, cloudModels, provider);
               }
             },
-            child: const Text('Change'),
+            child: Text('change'.tr),
           ),
         ],
       ),
@@ -636,7 +636,7 @@ class ModelView extends GetView<ModelController> {
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Loading into memory',
+                  'loading_into_memory'.tr,
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -810,7 +810,7 @@ class ModelView extends GetView<ModelController> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'PROVIDERS',
+            'providers'.tr,
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -1074,7 +1074,7 @@ class ModelView extends GetView<ModelController> {
                         ),
                       ),
                       subtitle:
-                          const Text('Required before selecting live models'),
+                          Text('required_before_selecting_live_models'.tr),
                       onTap: () {
                         Get.back();
                         _showProviderKeyDialog(
@@ -1165,7 +1165,7 @@ class ModelView extends GetView<ModelController> {
                   ),
                 ),
                 Text(
-                  'API key required',
+                  'api_key_required'.tr,
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
@@ -1235,7 +1235,7 @@ class ModelView extends GetView<ModelController> {
           style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           ),
-          child: const Text('Cancel'),
+          child: Text('cancel'.tr),
         ),
         ElevatedButton(
           onPressed: () async {
@@ -1282,7 +1282,7 @@ class ModelView extends GetView<ModelController> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Custom Provider',
+                Text('custom_provider'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 24, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
@@ -1419,7 +1419,7 @@ class ModelView extends GetView<ModelController> {
                       padding: const EdgeInsets.symmetric(vertical: 18),
                     ),
                     icon: const Icon(Icons.check, size: 22),
-                    label: const Text('Save and Select'),
+                    label: Text('save_and_select'.tr),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1604,7 +1604,7 @@ class ModelView extends GetView<ModelController> {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.refresh, size: 16),
-                        label: const Text('Refresh'),
+                        label: Text('refresh'.tr),
                       ),
                     ],
                   ),
@@ -1624,7 +1624,7 @@ class ModelView extends GetView<ModelController> {
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),
                       icon: const Icon(Icons.add, size: 20),
-                      label: const Text('Use custom model ID'),
+                      label: Text('use_custom_model_id'.tr),
                     ),
                   ),
                 ],
@@ -1683,7 +1683,7 @@ class ModelView extends GetView<ModelController> {
         ),
       ),
       actions: [
-        TextButton(onPressed: Get.back, child: const Text('Cancel')),
+        TextButton(onPressed: Get.back, child: Text('cancel'.tr)),
         ElevatedButton(
           onPressed: () async {
             final value = textController.text.trim();
@@ -1704,7 +1704,7 @@ class ModelView extends GetView<ModelController> {
             Get.back(closeOverlays: false);
             Get.back(closeOverlays: false);
           },
-          child: const Text('Select'),
+          child: Text('select'.tr),
         ),
       ],
     ));
@@ -1980,7 +1980,7 @@ class ModelView extends GetView<ModelController> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Download Model',
+                'download_model'.tr,
                 style: GoogleFonts.inter(fontWeight: FontWeight.w700),
               ),
             ),
@@ -2070,7 +2070,7 @@ class ModelView extends GetView<ModelController> {
                   borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 20),
             ),
-            child: const Text('Download Now',
+            child: Text('download_now'.tr,
                 style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
@@ -2107,20 +2107,20 @@ class ModelView extends GetView<ModelController> {
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('Delete model?'),
+            title: Text('delete_model'.tr),
             content:
                 Text('$filename will be permanently removed from this device.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
+                child: Text('cancel'.tr),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.error,
                 ),
-                child: const Text('Delete'),
+                child: Text('delete'.tr),
               ),
             ],
           ),
@@ -2167,7 +2167,7 @@ class ModelView extends GetView<ModelController> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Edit Model',
+                  'edit_model'.tr,
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -2187,7 +2187,7 @@ class ModelView extends GetView<ModelController> {
             _buildTextField(
               context,
               controller: urlController,
-              label: 'URL',
+              label: 'url'.tr,
               hint: 'Enter model URL',
             ),
             const SizedBox(height: 12),
@@ -2211,7 +2211,7 @@ class ModelView extends GetView<ModelController> {
                 Expanded(
                   child: TextButton(
                     onPressed: () => Navigator.of(sheetContext).pop(),
-                    child: Text('Cancel',
+                    child: Text('cancel'.tr,
                         style: TextStyle(
                             color: Theme.of(sheetContext).hintColor)),
                   ),
@@ -2244,7 +2244,7 @@ class ModelView extends GetView<ModelController> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('Save'),
+                    child: Text('save'.tr),
                   ),
                 ),
               ],
@@ -2330,8 +2330,8 @@ class ModelView extends GetView<ModelController> {
             const SizedBox(height: 14),
             ListTile(
               leading: const Icon(Icons.folder_open_rounded),
-              title: const Text('Pick from device storage'),
-              subtitle: const Text('Copies the file into the models folder'),
+              title: Text('pick_from_device_storage'.tr),
+              subtitle: Text('copies_the_file_into_the_models_folder'.tr),
               onTap: () async {
                 Navigator.pop(ctx);
                 await controller.importMmprojFor(model.filename);
@@ -2339,9 +2339,9 @@ class ModelView extends GetView<ModelController> {
             ),
             ListTile(
               leading: const Icon(Icons.cloud_download_rounded),
-              title: const Text('From Hugging Face'),
+              title: Text('from_hugging_face'.tr),
               subtitle:
-                  const Text('Download the mmproj via the HF search, then pair it here'),
+                  Text('download_the_mmproj_via_the_hf_search_th'.tr),
               onTap: () async {
                 Navigator.pop(ctx);
                 final downloaded = await controller.downloadedMmprojCandidates();
@@ -2359,7 +2359,7 @@ class ModelView extends GetView<ModelController> {
             if (current != null)
               ListTile(
                 leading: const Icon(Icons.link_off_rounded),
-                title: const Text('Unpair'),
+                title: Text('unpair'.tr),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await controller.setMmprojOverride(model.filename, null);
@@ -2596,7 +2596,7 @@ class ModelView extends GetView<ModelController> {
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                               ),
-                              child: const Text('Get',
+                              child: Text('get'.tr,
                                   style: TextStyle(
                                       fontWeight: FontWeight.bold)),
                             ),
@@ -2709,7 +2709,7 @@ class ModelView extends GetView<ModelController> {
               TextButton.icon(
                 onPressed: () => controller.pauseDownload(filename),
                 icon: const Icon(Icons.close, size: 16),
-                label: const Text('Cancel'),
+                label: Text('cancel'.tr),
                 style: TextButton.styleFrom(foregroundColor: AppColors.error),
               ),
             ],
@@ -2990,7 +2990,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Add Model URL',
+                          'add_model_url'.tr,
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
@@ -3183,7 +3183,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14)),
                             ),
-                            child: Text('Cancel',
+                            child: Text('cancel'.tr,
                                 style: GoogleFonts.inter(
                                     fontWeight: FontWeight.w600, fontSize: 14)),
                           ),
@@ -3225,7 +3225,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                                           size: 18),
                                       const SizedBox(width: 8),
                                       Text(
-                                        'Add Model',
+                                        'add_model'.tr,
                                         style: GoogleFonts.inter(
                                           color: Colors.white,
                                           fontWeight: FontWeight.w700,
@@ -3502,7 +3502,7 @@ class _VisionToggle extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Multimodal Model',
+                    'multimodal_model'.tr,
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,

@@ -1068,16 +1068,16 @@ class ModelController extends GetxController {
   Future<bool> _confirmRestore(int settingsCount) async {
     var confirmed = false;
     await Get.dialog(AlertDialog(
-      title: const Text('Restore configs?'),
+      title: Text('restore_backup'.tr),
       content: Text('$settingsCount saved value(s) will overwrite the current ones.'),
       actions: [
-        TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
+        TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
         FilledButton(
             onPressed: () {
               confirmed = true;
               Get.back();
             },
-            child: const Text('Restore')),
+            child: Text('restore'.tr)),
       ],
     ));
     return confirmed;
@@ -1086,16 +1086,16 @@ class ModelController extends GetxController {
   Future<bool> _askRestart() async {
     var restart = false;
     await Get.dialog(AlertDialog(
-      title: const Text('Restart now?'),
-      content: const Text('Some settings only load at app start.'),
+      title: Text('restart_now'.tr),
+      content: Text('some_settings_only_load_at_app_start'.tr),
       actions: [
-        TextButton(onPressed: () => Get.back(), child: const Text('Later')),
+        TextButton(onPressed: () => Get.back(), child: Text('later'.tr)),
         FilledButton(
             onPressed: () {
               restart = true;
               Get.back();
             },
-            child: const Text('Restart')),
+            child: Text('restart'.tr)),
       ],
     ));
     return restart;
@@ -1476,7 +1476,7 @@ class ModelController extends GetxController {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Model Load Failed',
+                        'model_load_failed'.tr,
                         style: GoogleFonts.inter(
                           fontWeight: FontWeight.w700,
                           fontSize: 18,
@@ -1502,7 +1502,7 @@ class ModelController extends GetxController {
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'TROUBLESHOOTING TIPS',
+                        'troubleshooting_tips'.tr,
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -1587,7 +1587,7 @@ class ModelController extends GetxController {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     child: Text(
-                      'Close',
+                      'close'.tr,
                       style: GoogleFonts.inter(
                         fontWeight: FontWeight.w600,
                         color: Theme.of(context).colorScheme.primary,
@@ -1611,7 +1611,7 @@ class ModelController extends GetxController {
     final targetLabel = _runtimeLabel(targetRuntime);
     await Get.dialog<void>(
       AlertDialog(
-        title: const Text('Restart required'),
+        title: Text('restart_required'.tr),
         content: Text(
           'You already used $currentLabel in this app session. '
           'Switching to $targetLabel without restarting can crash the native runtime.\n\n'
@@ -1620,7 +1620,7 @@ class ModelController extends GetxController {
         actions: [
           TextButton(
             onPressed: () => Get.back(),
-            child: const Text('Cancel'),
+            child: Text('cancel'.tr),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -1631,7 +1631,7 @@ class ModelController extends GetxController {
                 SystemNavigator.pop();
               }
             },
-            child: const Text('Restart app'),
+            child: Text('restart_app'.tr),
           ),
         ],
       ),
@@ -1783,9 +1783,9 @@ class ModelController extends GetxController {
           children: [
             Text(filename),
             const SizedBox(height: 12),
-            Text('Runtime: $runtimeLabel'),
-            Text('Available RAM: $ramLabel'),
-            Text('Model size: $modelLabel'),
+            Text('${'runtime'.tr} $runtimeLabel'),
+            Text('${'available_ram'.tr} $ramLabel'),
+            Text('${'model_size'.tr} $modelLabel'),
             if (hasLoadedModel) ...[
               const SizedBox(height: 12),
               Text(
@@ -1794,7 +1794,7 @@ class ModelController extends GetxController {
                     : 'Already loaded: $loadedName',
               ),
               if (!isSameModelLoaded)
-                const Text('Unload it before loading another model.'),
+                Text('unload_before_loading_another'.tr),
             ],
             const SizedBox(height: 12),
             Text(warning),
@@ -1803,12 +1803,12 @@ class ModelController extends GetxController {
         actions: [
           TextButton(
             onPressed: () => Get.back(result: _ModelLoadAction.cancel),
-            child: const Text('Cancel'),
+            child: Text('cancel'.tr),
           ),
           if (hasLoadedModel)
             TextButton(
               onPressed: () => Get.back(result: _ModelLoadAction.unload),
-              child: const Text('Unload'),
+              child: Text('unload'.tr),
             ),
           if (isCriticallyLow)
             TextButton(
@@ -1820,14 +1820,14 @@ class ModelController extends GetxController {
                   SystemNavigator.pop();
                 }
               },
-              child: const Text('Restart app'),
+              child: Text('restart_app'.tr),
             ),
           ElevatedButton(
             onPressed: () async {
               await _refreshAvailableRamGb();
               Get.back(result: _ModelLoadAction.continueLoad);
             },
-            child: const Text('Continue'),
+            child: Text('continue'.tr),
           ),
         ],
       ),
@@ -1859,11 +1859,11 @@ class ModelController extends GetxController {
         actions: [
           TextButton(
             onPressed: () => Get.back(result: false),
-            child: const Text('Cancel'),
+            child: Text('cancel'.tr),
           ),
           ElevatedButton(
             onPressed: () => Get.back(result: true),
-            child: const Text('Continue'),
+            child: Text('continue'.tr),
           ),
         ],
       ),
@@ -1964,7 +1964,7 @@ class ModelController extends GetxController {
               ),
               const SizedBox(height: 20),
               Text(
-                'Loading $filename',
+                'loading_filename'.tr,
                 style: GoogleFonts.inter(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -1975,8 +1975,8 @@ class ModelController extends GetxController {
               Obx(() {
                 final log = localImage.latestLog.value;
                 if (log.isEmpty) {
-                  return const Text(
-                    'Initializing model...',
+                  return Text(
+                    'initializing_model'.tr,
                     style: TextStyle(fontSize: 13, color: Colors.grey),
                   );
                 }
@@ -2216,7 +2216,7 @@ class ModelController extends GetxController {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Model Already Exists',
+                    'model_already_exists'.tr,
                     style: GoogleFonts.inter(
                       fontWeight: FontWeight.w700,
                       fontSize: 18,
@@ -2259,7 +2259,7 @@ class ModelController extends GetxController {
                   backgroundColor: Theme.of(context).colorScheme.primary,
                 ),
                 child: Text(
-                  'Replace File',
+                  'replace_file'.tr,
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w600,
                     color: Colors.white,

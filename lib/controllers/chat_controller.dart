@@ -15,6 +15,7 @@ import '../services/video_frames_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
+import 'package:share_plus/share_plus.dart';
 import '../controllers/settings_controller.dart';
 import '../controllers/cloud_model_controller.dart';
 import '../core/constants.dart';
@@ -84,6 +85,7 @@ class ChatController extends GetxController {
   // Real-time streaming state — the AI response as it's being generated
   final streamingResponse = ''.obs;
   final isStreaming = false.obs;
+  // Chips só aparecem após geração completar (delay de 500ms)
   final streamingAttachmentType = Rxn<String>();
 
   // Image generation progress (lightweight, replaces text-heavy updates)
@@ -112,6 +114,8 @@ class ChatController extends GetxController {
 
   final textController = TextEditingController();
   final scrollController = ScrollController();
+  // Track if user is near bottom (to show/hide scroll-to-bottom button)
+  final isNearBottom = true.obs;
   Timer? _scrollTimer;
   bool _followStreaming = true;
   bool _scrollListenerAttached = false;
@@ -199,6 +203,37 @@ class ChatController extends GetxController {
   /// project picker and stacked a second picker on top of it — two dialogs,
   /// two sessions, and the message landing in neither of the chosen projects.
   Future<void>? _creatingChat;
+
+  /// Exports the current chat as formatted markdown text and opens the share sheet.
+  Future<void> exportChat() async {
+    if (messages.isEmpty) return;
+    final lines = <String>[];
+    for (final m in messages) {
+      final ts = DateFormat('HH:mm').format(m.timestamp);
+      if (m.role == 'user') {
+        lines.add('**[${ts}] Você**');
+        lines.add(m.content.trim());
+      } else if (m.role == 'assistant') {
+        final parts = splitThoughtTags(m.content.trim());
+        if (parts.hasThought) {
+          lines.add('**[${ts}] Assistente** (pensou ${m.thoughtDurationSeconds ?? '?'}s)');
+          lines.add('```' + parts.thought.trim() + '```');
+        } else {
+          lines.add('**[${ts}] Assistente**');
+        }
+        if (m.tokensPerSec != null && m.tokensPerSec! > 0) {
+          lines.add('_${m.tokensPerSec!.toStringAsFixed(1)} tok/s · ${m.totalTokens ?? '-'} tokens · ${(m.totalMs != null ? (m.totalMs! / 1000).toStringAsFixed(1) : '-')}s_');
+        }
+        lines.add(parts.answer.trim());
+      } else if (m.role == 'cmd') {
+        lines.add('**[${ts}] Cmd**');
+        lines.add(m.content.trim());
+      }
+      lines.add('');
+    }
+    final text = lines.join('\n');
+    await Share.share(text, subject: 'mobileLM — Conversa');
+  }
 
   Future<void> createNewChat() {
     final inFlight = _creatingChat;
@@ -299,7 +334,7 @@ class ChatController extends GetxController {
       inference.refreshContextInfo();
     }
     _resetInferenceContext();
-    _scrollToBottom(force: true);
+    scrollToBottom(force: true);
     _drainScheduledResults();
   }
 
@@ -321,7 +356,7 @@ class ChatController extends GetxController {
         messages.add(msg);
         _hive.saveMessage(msg.id, msg.toMap());
       }
-      _scrollToBottom();
+      scrollToBottom();
     } catch (_) {
       // Results stay undrained and surface next time; never break opening a chat.
     }
@@ -615,6 +650,14 @@ class ChatController extends GetxController {
 
   // ─── Send Message ───────────────────────────────
 
+  /// Sends a quick message without going through the text field.
+  /// Used by suggestion chips and quick actions.
+  Future<void> sendQuickMessage(String text) async {
+    if (isLoading.value || isStreaming.value) return;
+    textController.text = text.trim();
+    await sendMessage();
+  }
+
   Future<void> sendMessage() async {
     if (isLoading.value || isStreaming.value) return;
 
@@ -672,7 +715,7 @@ class ChatController extends GetxController {
     inputText.value = '';
     clearImage(deleteFile: false); // Reset visual fields, do NOT delete file!
     clearFile();
-    _scrollToBottom(force: true);
+    scrollToBottom(force: true);
 
     // Update session title (use first message as title)
     if (messages.where((m) => m.role == 'user').length == 1) {
@@ -695,7 +738,7 @@ class ChatController extends GetxController {
         (imagePath != null || fileType == 'audio') ? fileType : null;
     streamingResponse.value = '';
     _followStreaming = true;
-    _scrollToBottom(force: true);
+    scrollToBottom(force: true);
 
     try {
       DateTime? thoughtStartedAt;
@@ -722,6 +765,14 @@ class ChatController extends GetxController {
           'local';
 
       String rawResponse;
+
+      // Auto-summarize if context is getting full
+      final inf = Get.find<InferenceService>();
+      if (inf.contextTokensTotal.value > 0 &&
+          inf.contextTokensUsed.value > 0 &&
+          inf.contextTokensUsed.value / inf.contextTokensTotal.value > 0.75) {
+        _maybeSummarizeHistory();
+      }
 
       // Build conversation history
       final history = messages
@@ -797,7 +848,7 @@ class ChatController extends GetxController {
                         .difference(imageGenStartTime.value!)
                         .inSeconds,
               );
-              _scrollToBottom();
+              scrollToBottom();
             },
           );
           // Calculate total generation time
@@ -836,7 +887,7 @@ class ChatController extends GetxController {
               // Real-time streaming update
               streamingResponse.value += token;
               trackThoughtTiming();
-              _scrollToBottom();
+              scrollToBottom();
             },
           );
         }
@@ -862,7 +913,7 @@ class ChatController extends GetxController {
           onToken: (token) {
             streamingResponse.value += token;
             trackThoughtTiming();
-            _scrollToBottom();
+            scrollToBottom();
             _cloudTokenCount.value++;
             _cloudFirstTokenAt ??= DateTime.now();
           },
@@ -918,7 +969,7 @@ class ChatController extends GetxController {
                         // the second they spend on a dialog. The command is.
                         if (command != null) ...[
                           const SizedBox(height: 10),
-                          const Text('Runs:'),
+                          Text('${'runs'.tr}:'),
                           SelectableText(
                             command,
                             style: const TextStyle(fontFamily: 'monospace'),
@@ -926,18 +977,18 @@ class ChatController extends GetxController {
                         ],
                         if (command != null && identity.isNotEmpty) ...[
                           const SizedBox(height: 6),
-                          Text('as $identity'),
+                          Text('${'as_identity'.tr} $identity'),
                         ],
                       ],
                     ),
                     actions: [
                       TextButton(
                         onPressed: () => Get.back(result: false),
-                        child: const Text('Deny'),
+                        child: Text('deny'.tr),
                       ),
                       FilledButton(
                         onPressed: () => Get.back(result: true),
-                        child: const Text('Allow'),
+                        child: Text('allow'.tr),
                       ),
                     ],
                   ),
@@ -977,7 +1028,7 @@ class ChatController extends GetxController {
               onToken: (token) {
                 streamingResponse.value += token;
                 trackThoughtTiming();
-                _scrollToBottom();
+                scrollToBottom();
               },
             );
           } else {
@@ -999,7 +1050,7 @@ class ChatController extends GetxController {
               onToken: (token) {
                 streamingResponse.value += token;
                 trackThoughtTiming();
-                _scrollToBottom();
+                scrollToBottom();
                 _cloudTokenCount.value++;
                 _cloudFirstTokenAt ??= DateTime.now();
               },
@@ -1068,10 +1119,10 @@ class ChatController extends GetxController {
           : null;
 
       // Display response directly (no command processing)
-      final inf = Get.find<InferenceService>();
-      final ttft = isCloud ? cloudTtftMillis.value : (inf.ttftMillis.value > 0 ? inf.ttftMillis.value : null);
-      final totTok = isCloud ? cloudTotalTokens.value : inf.totalTokens.value;
-      final totMs = isCloud ? cloudTotalMs.value : inf.totalMs.value;
+      final inference = Get.find<InferenceService>();
+      final ttft = isCloud ? cloudTtftMillis.value : (inference.ttftMillis.value > 0 ? inference.ttftMillis.value : null);
+      final totTok = isCloud ? cloudTotalTokens.value : inference.totalTokens.value;
+      final totMs = isCloud ? cloudTotalMs.value : inference.totalMs.value;
       final aiMsg = ChatMessage(
         id: _uuid.v4(),
         chatId: currentSessionId.value,
@@ -1088,6 +1139,8 @@ class ChatController extends GetxController {
       messages.add(aiMsg);
       _hive.saveMessage(aiMsg.id, aiMsg.toMap());
       imageGenStartTime.value = null;
+      
+      // Chips aparecem após mensagem ser salva (geração completou)
 
       // Update session
       final session =
@@ -1123,7 +1176,7 @@ class ChatController extends GetxController {
 
     if (generationId == _generationSerial) {
       isLoading.value = false;
-      _scrollToBottom();
+      scrollToBottom();
     }
   }
 
@@ -1194,6 +1247,8 @@ class ChatController extends GetxController {
     if (!scrollController.hasClients) return;
     final position = scrollController.position;
     final distanceFromBottom = position.maxScrollExtent - position.pixels;
+    // Update near-bottom state (threshold: 200px from bottom)
+    isNearBottom.value = distanceFromBottom <= 200;
     if (!isStreaming.value) {
       _followStreaming = distanceFromBottom <= 180;
     } else if (distanceFromBottom <= 48) {
@@ -1216,7 +1271,7 @@ class ChatController extends GetxController {
     }
   }
 
-  void _scrollToBottom({bool force = false}) {
+  void scrollToBottom({bool force = false}) {
     if (!force && isStreaming.value && !_followStreaming) return;
     if (_scrollTimer?.isActive == true) return;
 
@@ -1249,6 +1304,54 @@ class ChatController extends GetxController {
         ...privilegedToolsIfReady(),
       ],
     );
+  }
+
+  /// Summarizes old messages when context is approaching its limit.
+  /// Keeps the last 6 exchanges, summarizes the rest, and inserts a
+  /// summary marker so the model knows the conversation was condensed.
+  void _maybeSummarizeHistory() {
+    final relevant = messages
+        .where((m) => m.role == 'user' || m.role == 'assistant')
+        .toList();
+    if (relevant.length <= 6) return;
+
+    final keep = 6;
+    final toSummarize = relevant.length - keep;
+    final oldMessages = relevant.take(toSummarize).toList();
+
+    final summaryLines = <String>[];
+    for (final m in oldMessages) {
+      final role = m.role == 'user' ? 'Voce' : 'Assistente';
+      final msgContent = m.role == 'assistant'
+          ? splitThoughtTags(m.content).answer.trim()
+          : m.content.trim();
+      if (msgContent.isNotEmpty) {
+        final preview = msgContent.length > 120
+            ? '${msgContent.substring(0, 120)}...'
+            : msgContent;
+        summaryLines.add('$role: $preview');
+      }
+    }
+
+    if (summaryLines.isEmpty) return;
+
+    final summary = 'Conversa resumida (${oldMessages.length} mensagens antigas condensadas):\n${summaryLines.join(' | ')}\n\nContinue a conversa a partir daqui.';
+
+    final summaryMsg = ChatMessage(
+      id: '_summary_',
+      chatId: currentSessionId.value,
+      role: 'system',
+      content: summary,
+      timestamp: oldMessages.first.timestamp,
+    );
+
+    final firstUserIdx = messages.indexWhere((m) => m.role == 'user');
+    if (firstUserIdx >= 0) {
+      messages.insert(firstUserIdx, summaryMsg);
+      _hive.saveMessage(summaryMsg.id, summaryMsg.toMap());
+    }
+
+    print('[ChatController] Auto-summarized ${oldMessages.length} old messages');
   }
 
   String get _effectiveSystemPrompt {

@@ -12,7 +12,7 @@ class WorkspaceView extends GetView<WorkspaceService> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Workspace'),
+        title: Text('workspace'.tr),
         actions: [
           IconButton(
             icon: const Icon(Icons.folder_open),
@@ -32,11 +32,11 @@ class WorkspaceView extends GetView<WorkspaceService> {
       ),
       body: Obx(() {
         if (controller.isLoading.value) {
-          return const Center(child: CircularProgressIndicator());
+          return Center(child: CircularProgressIndicator());
         }
         if (!controller.isReady) {
-          return const Center(
-            child: Text('Workspace not configured. Open Settings to pick a folder.'),
+          return Center(
+            child: Text('${'workspace_not_configured'.tr}'),
           );
         }
         return Column(
@@ -56,7 +56,7 @@ class WorkspaceView extends GetView<WorkspaceService> {
                       heroTag: 'new-folder',
                       onPressed: () => _createFolder(context),
                       icon: const Icon(Icons.create_new_folder),
-                      label: const Text('Folder'),
+                      label: Text('folder'.tr),
                       backgroundColor: Colors.blue,
                     ),
                     const SizedBox(height: 12),
@@ -64,7 +64,7 @@ class WorkspaceView extends GetView<WorkspaceService> {
                       heroTag: 'new-file',
                       onPressed: () => _createFile(context),
                       icon: const Icon(Icons.description),
-                      label: const Text('File'),
+                      label: Text('file'.tr),
                       backgroundColor: Colors.green,
                     ),
                   ],
@@ -100,10 +100,10 @@ class WorkspaceView extends GetView<WorkspaceService> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Get.back(), child: const Text('Cancel')),
+              onPressed: () => Get.back(), child: Text('cancel'.tr)),
           FilledButton(
             onPressed: () => Get.back(result: ctrl.text.trim()),
-            child: const Text('Create'),
+            child: Text('create'.tr),
           ),
         ],
       ),
@@ -160,14 +160,14 @@ class _DirList extends StatelessWidget {
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     if (entries.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.folder_open, size: 64, color: Colors.grey),
             SizedBox(height: 12),
-            Text('This folder is empty'),
-            Text('Use the buttons below to add files or folders.',
+            Text('this_folder_is_empty'.tr),
+            Text('${'use_buttons_to_add_files'.tr}',
                 style: TextStyle(color: Colors.grey)),
           ],
         ),
@@ -210,14 +210,14 @@ class _DirList extends StatelessWidget {
   Future<void> _delete(BuildContext context, String name) async {
     final confirmed = await Get.dialog<bool>(
       AlertDialog(
-        title: const Text('Confirm delete'),
-        content: Text('Delete "$name"? This cannot be undone.'),
+        title: Text('confirm_delete'.tr),
+        content: Text('${'delete_name'.tr}'.replaceAll('\$name', '$name')),
         actions: [
-          TextButton(onPressed: () => Get.back(result: false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Get.back(result: false), child: Text('cancel'.tr)),
           TextButton(
             onPressed: () => Get.back(result: true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text('delete'.tr),
           ),
         ],
       ),
@@ -311,9 +311,9 @@ class _ItemTile extends StatelessWidget {
             if (v == 'rename') onRename();
             if (v == 'delete') onDelete();
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'rename', child: Text('Rename')),
-            PopupMenuItem(value: 'delete', child: Text('Delete')),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'rename', child: Text('rename'.tr)),
+            PopupMenuItem(value: 'delete', child: Text('delete'.tr)),
           ],
         ),
       ),
@@ -344,7 +344,7 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Projects'),
+      title: Text('projects'.tr),
       content: SizedBox(
         width: 320,
         child: FutureBuilder<List<String>>(
@@ -357,9 +357,9 @@ class _ProjectListDialogState extends State<_ProjectListDialog> {
             }
             final projects = snap.data ?? [];
             if (projects.isEmpty) {
-              return const SizedBox(
+              return SizedBox(
                 height: 80,
-                child: Center(child: Text('No projects yet.')),
+                child: Center(child: Text('no_projects_yet'.tr)),
               );
             }
             return ListView(

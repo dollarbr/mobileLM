@@ -38,7 +38,7 @@ class TaskView extends GetView<TaskController> {
           decoration: BoxDecoration(color: AppColors.secondary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(18)),
           child: const Icon(Icons.bolt_rounded, size: 30, color: AppColors.secondary)),
         const SizedBox(height: 16),
-        Text('No Tasks Yet', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black)),
+        Text('no_tasks_yet'.tr, style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black)),
         const SizedBox(height: 6),
         Text('Create a task and the AI will plan\nand execute it autonomously', textAlign: TextAlign.center,
           style: GoogleFonts.inter(fontSize: 15, color: Theme.of(context).hintColor)),
@@ -119,7 +119,7 @@ class TaskView extends GetView<TaskController> {
           return Container(padding: const EdgeInsets.all(16), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.check_circle_rounded, color: AppColors.success),
             const SizedBox(width: 8),
-            Text('Task Completed', style: GoogleFonts.inter(color: AppColors.success, fontWeight: FontWeight.w600)),
+            Text('task_completed'.tr, style: GoogleFonts.inter(color: AppColors.success, fontWeight: FontWeight.w600)),
           ]));
         }
         if (current.status == 'planning') return const SizedBox.shrink();
@@ -202,7 +202,7 @@ class TaskView extends GetView<TaskController> {
   void _showCreateDialog(BuildContext context, bool isDark) {
     final textCtrl = TextEditingController();
     showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: Text('New Task', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+      title: Text('new_task'.tr, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
       content: TextField(
         controller: textCtrl, autofocus: true, maxLines: 3,
         style: GoogleFonts.inter(fontSize: 15),
@@ -214,7 +214,7 @@ class TaskView extends GetView<TaskController> {
           if (textCtrl.text.trim().isNotEmpty) { controller.createTask(textCtrl.text.trim()); }
           textCtrl.dispose();
           Navigator.pop(ctx);
-        }, child: const Text('Create')),
+        }, child: Text('create'.tr)),
       ],
     ));
   }

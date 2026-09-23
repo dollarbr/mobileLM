@@ -39,7 +39,7 @@ class SettingsController extends GetxController {
   final openRouterModel = 'openai/gpt-4o-mini'.obs;
   final deepSeekModel = 'deepseek-v4-flash'.obs;
   final customCloudModel = ''.obs;
-  final globalSystemPrompt = AppConstants.systemPrompt.obs;
+  final globalSystemPrompt = AppConstants.localizedSystemPrompt.obs;
   final temperature = 0.20.obs;
   final topP = 0.9.obs;
   final topK = 40.obs;
@@ -195,7 +195,7 @@ class SettingsController extends GetxController {
     _loadCustomCloudProfiles();
     globalSystemPrompt.value = _hive.getSetting(
             AppConstants.keyGlobalSystemPrompt,
-            defaultValue: AppConstants.systemPrompt) ??
+            defaultValue: AppConstants.localizedSystemPrompt) ??
         AppConstants.systemPrompt;
     temperature.value = _hive.getSetting(AppConstants.keyTemperature,
             defaultValue: AppConstants.defaultTemperature) ??
@@ -645,7 +645,7 @@ class SettingsController extends GetxController {
 
   Future<void> setGlobalSystemPrompt(String prompt) async {
     final normalized =
-        prompt.trim().isEmpty ? AppConstants.systemPrompt : prompt.trim();
+        prompt.trim().isEmpty ? AppConstants.localizedSystemPrompt : prompt.trim();
     globalSystemPrompt.value = normalized;
     globalSystemPromptController.text = normalized;
     await _hive.setSetting(AppConstants.keyGlobalSystemPrompt, normalized);
@@ -654,12 +654,12 @@ class SettingsController extends GetxController {
   String effectiveSystemPromptForModel(String modelName) {
     final prompt = globalSystemPrompt.value.trim();
     final hasCustomPrompt =
-        prompt.isNotEmpty && prompt != AppConstants.systemPrompt;
+        prompt.isNotEmpty && prompt != AppConstants.localizedSystemPrompt;
     if (hasCustomPrompt) return prompt;
     if (AppConstants.isUncensoredModelName(modelName)) {
       return AppConstants.uncensoredSystemPrompt;
     }
-    return AppConstants.systemPrompt;
+    return AppConstants.localizedSystemPrompt;
   }
   void debouncedSetCloudModel(String provider, String model) {
     _modelDebounceTimer?.cancel();
@@ -787,7 +787,7 @@ class SettingsController extends GetxController {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Enter a value between $min and $max',
+                  '${'enter_value_between'.tr}'.replaceAll('\$min', '$min').replaceAll('\$max', '$max'),
                   style: TextStyle(
                       fontSize: 13,
                       color: isDark
@@ -867,7 +867,7 @@ class SettingsController extends GetxController {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text('Cancel',
+              child: Text('cancel'.tr,
                   style: TextStyle(
                       color: isDark
                           ? Colors.white.withValues(alpha: 0.6)
@@ -886,7 +886,7 @@ class SettingsController extends GetxController {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
-              child: const Text('Save'),
+              child: Text('save'.tr),
             ),
           ],
         );
@@ -915,8 +915,9 @@ class SettingsController extends GetxController {
   }
 
   /// Agent depth: how many tool round-trips one message may take.
+  /// 0 = infinite (no ceiling).
   Future<void> setAgentMaxHops(int hops) async {
-    final v = hops.clamp(1, AppConstants.maxAgentHopsCap);
+    final v = hops.clamp(0, AppConstants.maxAgentHopsCap);
     agentMaxHops.value = v;
     await _hive.setSetting(AppConstants.keyAgentMaxHops, v);
   }

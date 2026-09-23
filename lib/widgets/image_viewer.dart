@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:get/get.dart';
 
 class ImageViewer extends StatefulWidget {
   final String base64Image;
@@ -47,8 +48,8 @@ class _ImageViewerState extends State<ImageViewer> {
       await Gal.putImageBytes(_bytes);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Image saved to gallery'),
+          SnackBar(
+            content: Text('image_saved_to_gallery'.tr),
             duration: Duration(seconds: 2),
           ),
         );
@@ -56,13 +57,13 @@ class _ImageViewerState extends State<ImageViewer> {
     } on GalException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save image: ${e.type.message}')),
+          SnackBar(content: Text('${'failed_to_save_image'.tr}: ${e.type.message}')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving image: $e')),
+          SnackBar(content: Text('${'error_saving_image'.tr}: $e')),
         );
       }
     } finally {
@@ -84,7 +85,7 @@ class _ImageViewerState extends State<ImageViewer> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error sharing image: $e')),
+          SnackBar(content: Text('${'error_sharing_image'.tr}: $e')),
         );
       }
     } finally {

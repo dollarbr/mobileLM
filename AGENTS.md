@@ -104,6 +104,7 @@ prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other
 então nada some.
 
 Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud features + metrics).
+Próxima: `0.3.1` — suggestions #1 (exportar) ✅, #2 (chips) ✅ com delay 500ms após geração, #3 (sumarização) em andamento.
 
 **Todo workflow que compila precisa liberar disco antes.** Os nativos vendorizados
 — llama.cpp com backend Vulkan e seus ~300 objetos de shader, LiteRT, Stable
@@ -132,9 +133,22 @@ Sem keystore no CI: `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`.
   não apenas pular offload — senão ggml sched offloads ops pro Vulkan (`op_offload`).
 
 ## Cloud features (0.3.0)
+## Tradução (PT-BR)
+
+- **Cobertura:** ~394 `.tr` calls no código, 278+ keys em `app_translation.dart`
+- **Arquivos:** `lib/l10n/app_translation.dart` (GetX), `lib/l10n/app_en.arb`, `lib/l10n/app_pt_BR.arb`
+- **Templates traduzidos:**
+  - Sugestões de chat (16 prompts em PT-BR)
+  - Views: chat, model, settings, log, task, workspace, HF search
+  - Controllers: model, chat, settings
+  - Widgets: image_viewer
+- **Regra:** strings UI nunca em `const` — `.tr` é método runtime
+- **Device locale:** `pt_BR` (confirmado via `adb shell getprop persist.sys.locale`)
+
 
 - **Round-trip ceiling:** cloud = 20 hops fixo; local = `agentMaxHops` (setting).
-  Setting "Tool round-trips" agora inclui `∞` (valor 0 = infinito).
+  Setting "Tool round-trips" inclui `∞` (valor 0 = infinito) e entrada manual
+  (toque no valor → dialog com TextField, valida 0–8).
 - **Context window auto-detect:** `_parseContextWindows()` em
   `cloud_model_controller.dart` — OpenRouter, DeepSeek, NVIDIA, Google, OpenAI.
   Safe maxTokens = 25% do contexto, min 256 (`effectiveMaxTokens()`).
@@ -151,9 +165,22 @@ por esforço/impacto. Top 3: exportar conversa, chips de sugestão rápida,
 sumarização automática de contexto.
 
 ## Cloud features (0.3.0)
+## Tradução (PT-BR)
+
+- **Cobertura:** ~394 `.tr` calls no código, 278+ keys em `app_translation.dart`
+- **Arquivos:** `lib/l10n/app_translation.dart` (GetX), `lib/l10n/app_en.arb`, `lib/l10n/app_pt_BR.arb`
+- **Templates traduzidos:**
+  - Sugestões de chat (16 prompts em PT-BR)
+  - Views: chat, model, settings, log, task, workspace, HF search
+  - Controllers: model, chat, settings
+  - Widgets: image_viewer
+- **Regra:** strings UI nunca em `const` — `.tr` é método runtime
+- **Device locale:** `pt_BR` (confirmado via `adb shell getprop persist.sys.locale`)
+
 
 - **Round-trip ceiling:** cloud = 20 hops fixo; local = `agentMaxHops` (setting).
-  Setting "Tool round-trips" agora inclui `∞` (valor 0 = infinito).
+  Setting "Tool round-trips" inclui `∞` (valor 0 = infinito) e entrada manual
+  (toque no valor → dialog com TextField, valida 0–8).
 - **Context window auto-detect:** `_parseContextWindows()` em
   `cloud_model_controller.dart` — OpenRouter, DeepSeek, NVIDIA, Google, OpenAI.
   Safe maxTokens = 25% do contexto, min 256 (`effectiveMaxTokens()`).

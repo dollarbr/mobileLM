@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../controllers/chat_controller.dart';
 import '../controllers/settings_controller.dart';
 import '../controllers/model_controller.dart';
+import '../controllers/cloud_model_controller.dart';
 import '../controllers/home_controller.dart';
 import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
@@ -76,6 +77,21 @@ class ChatView extends GetView<ChatController> {
           _inputBar(context, isDark),
         ],
       ),
+      // Scroll to bottom button — shows when user scrolled up
+      floatingActionButton: Obx(() {
+        if (controller.isNearBottom.value ||
+            controller.messages.isEmpty ||
+            controller.isStreaming.value) {
+          return const SizedBox.shrink();
+        }
+        return FloatingActionButton(
+          onPressed: () => controller.scrollToBottom(force: true),
+          backgroundColor: const Color(0xFFB9F53E), // Volt accent
+          foregroundColor: isDark ? Colors.black : Colors.black,
+          elevation: 8,
+                    child: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
+        );
+      }),
     );
   }
 
@@ -169,7 +185,7 @@ class ChatView extends GetView<ChatController> {
               if (isLocal && inf.isGpuAccelerated.value) ...[
                 const SizedBox(width: 4),
                 const Icon(Icons.bolt, size: 11, color: Color(0xFFFF9500)),
-                Text('GPU',
+                Text('gpu'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 10,
                         color: const Color(0xFFFF9500),
@@ -275,21 +291,38 @@ class ChatView extends GetView<ChatController> {
     return Obx(() {
       final settings = Get.find<SettingsController>();
       final inf = Get.find<InferenceService>();
+      final cloudCtrl = Get.find<CloudModelController>();
       final active = controller.currentSessionId.value.isNotEmpty &&
           controller.messages.isNotEmpty;
-      if (!active || settings.inferenceMode.value != 'local')
-        return const SizedBox.shrink();
-      final total = inf.contextTokensTotal.value > 0
-          ? inf.contextTokensTotal.value
-          : settings.contextSize.value;
-      final est =
-          controller.messages.fold<int>(0, (s, m) => s + m.content.length);
-      final used = (inf.contextTokensUsed.value > 0
-              ? inf.contextTokensUsed.value
-              : (est / 4).ceil())
-          .clamp(0, total)
-          .toInt();
-      final pct = total == 0 ? 0.0 : (used / total).clamp(0.0, 1.0).toDouble();
+      if (!active) return const SizedBox.shrink();
+      
+      // Context bar for both local and cloud
+      int total = 0;
+      int used = 0;
+      final isCloud = settings.inferenceMode.value != 'local';
+      
+      if (isCloud) {
+        // Cloud: use detected context window and token count
+        final provider = settings.cloudProvider.value;
+        final model = cloudCtrl.activeModelFor(provider);
+        total = cloudCtrl.contextWindowFor(provider, model) ?? 0;
+        used = controller.cloudTotalTokens.value;
+      } else {
+        // Local: use native context tracking
+        total = inf.contextTokensTotal.value > 0
+            ? inf.contextTokensTotal.value
+            : settings.contextSize.value;
+        final est =
+            controller.messages.fold<int>(0, (s, m) => s + m.content.length);
+        used = (inf.contextTokensUsed.value > 0
+                ? inf.contextTokensUsed.value
+                : (est / 4).ceil())
+            .clamp(0, total)
+            .toInt();
+      }
+      
+      if (total == 0) return const SizedBox.shrink();
+      final pct = (used / total).clamp(0.0, 1.0).toDouble();
       final warn = pct >= 0.75;
       final accent = warn ? const Color(0xFFFF9500) : _appleBlue(context);
       return Container(
@@ -327,22 +360,22 @@ class ChatView extends GetView<ChatController> {
   Widget _emptyState(BuildContext context, bool isDark) {
     // Fresh sample of four every time the empty state rebuilds.
     final suggestions = [
-      'Explain quantum computing simply',
-      'Write a short poem about time',
-      'Help me debug my code',
-      'Summarize a complex topic',
-      'What time is it in Tokyo?',
-      'Brainstorm names for a coffee shop',
-      'Draft a polite complaint email',
-      'Translate "good morning" to 5 languages',
-      'Plan a 3-day trip to Lisbon',
-      'Convert 120 km to miles',
-      'Write a haiku about rain',
-      "Explain recursion like I'm five",
-      'Suggest a beginner workout plan',
-      'Tell me a fun fact about space',
-      'Help me write a resume summary',
-      'Multiply 128 by 456',
+      'Explique computação quântica de forma simples',
+      'Escreva um poema curto sobre o tempo',
+      'Me ajude a depurar meu código',
+      'Resuma um tópico complexo',
+      'Que horas são em Tóquio?',
+      'Brainstorm nomes para uma cafeteria',
+      'Rascunhe um e-mail de reclamação educado',
+      'Traduza "bom dia" para 5 idiomas',
+      'Planeje uma viagem de 3 dias para Lisboa',
+      'Converta 120 km para milhas',
+      'Escreva um haikai sobre a chuva',
+      'Explique recursão como se eu tivesse 5 anos',
+      'Sugira um plano de treino para iniciantes',
+      'Me conte um fato divertido sobre o espaço',
+      'Me ajude a escrever um resumo do currículo',
+      'Multiplique 128 por 456',
     ]..shuffle();
     final picked = suggestions.take(4).toList();
     return Center(
@@ -351,13 +384,13 @@ class ChatView extends GetView<ChatController> {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         const _BrandMark(size: 120),
         const SizedBox(height: 20),
-        Text('Hello.',
+        Text('hello'.tr,
             style: GoogleFonts.spaceGrotesk(
                 fontSize: 40,
                 fontWeight: FontWeight.w700,
                 color: isDark ? Colors.white : Colors.black)),
         const SizedBox(height: 6),
-        Text('How can I help you today?',
+        Text('how_can_i_help_you_today'.tr,
             style: GoogleFonts.inter(
                 fontSize: 16,
                 color: Theme.of(context).hintColor,
@@ -378,14 +411,14 @@ class ChatView extends GetView<ChatController> {
                 const Icon(Icons.download_rounded,
                     color: Color(0xFFFF9500), size: 36),
                 const SizedBox(height: 14),
-                Text('No Local Models',
+                Text('no_local_models'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black)),
                 const SizedBox(height: 6),
                 Text(
-                    'You need to download a model to use local inference on your device.',
+                    'you_need_to_download_a_model'.tr,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                         fontSize: 14, color: Theme.of(context).hintColor)),
@@ -393,7 +426,7 @@ class ChatView extends GetView<ChatController> {
                 FilledButton.icon(
                   onPressed: () => Get.find<HomeController>().changeTab(1),
                   icon: const Icon(Icons.arrow_downward_rounded, size: 18),
-                  label: const Text('Go to Models'),
+                  label: Text('go_to_models'.tr),
                   style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFFFF9500),
                       foregroundColor: Colors.white,
@@ -588,7 +621,7 @@ class ChatView extends GetView<ChatController> {
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     const _PulsingDot(),
                     const SizedBox(width: 8),
-                    Text('Listening… tap mic to stop',
+                    Text('listening_tap_mic_to_stop'.tr,
                         style: GoogleFonts.inter(
                             fontSize: 12,
                             color: const Color(0xFFFF3B30),
@@ -730,7 +763,7 @@ class ChatView extends GetView<ChatController> {
                       fontSize: 15,
                       color: isDark ? Colors.white : Colors.black),
                   decoration: InputDecoration(
-                    hintText: 'Message…',
+                    hintText: 'chat_placeholder'.tr,
                     hintStyle: GoogleFonts.inter(
                         fontSize: 15, color: Theme.of(context).hintColor),
                     border: InputBorder.none,
@@ -832,7 +865,7 @@ class ChatView extends GetView<ChatController> {
                   borderRadius: BorderRadius.circular(3))),
           Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('Conversations',
+              child: Text('conversations'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
@@ -842,7 +875,7 @@ class ChatView extends GetView<ChatController> {
             if (controller.sessions.isEmpty)
               return Padding(
                   padding: const EdgeInsets.all(32),
-                  child: Text('No conversations yet',
+                  child: Text('no_conversations_yet'.tr,
                       style: GoogleFonts.inter(
                           color: Theme.of(context).hintColor)));
             return ListView.separated(
@@ -1033,7 +1066,7 @@ class _AttachButton extends StatelessWidget {
                     borderRadius: BorderRadius.circular(2)),
               ),
               const SizedBox(height: 16),
-              Text('Add Attachment',
+              Text('add_attachment'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -1041,7 +1074,7 @@ class _AttachButton extends StatelessWidget {
               if (isCloud)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: Text('Cloud models support images & text files',
+                  child: Text('cloud_models_support_images_and_text_files'.tr,
                       style: GoogleFonts.inter(
                           fontSize: 12,
                           color:
@@ -1393,7 +1426,7 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
                 // Elapsed time
                 const SizedBox(height: 3),
                 Text(
-                  'Elapsed: ${_fmtElapsed(_elapsedSeconds)}',
+                  '${'elapsed'.tr}: ${_fmtElapsed(_elapsedSeconds)}',
                   style: GoogleFonts.inter(
                     fontSize: 10,
                     color: Theme.of(context).hintColor.withValues(alpha: 0.45),

@@ -46,7 +46,7 @@ class _WorkspaceSetupViewState extends State<WorkspaceSetupView> {
                 const Icon(Icons.workspaces_outline, size: 72, color: Color(0xFF8B7CFF)),
                 const SizedBox(height: 16),
                 Text(
-                  'Set up your workspace',
+                  'set_up_workspace'.tr,
                   style: Theme.of(context).textTheme.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
@@ -61,7 +61,7 @@ class _WorkspaceSetupViewState extends State<WorkspaceSetupView> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'You can change this folder later in Settings.',
+                  'you_can_change_this_folder_later'.tr,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).hintColor,
                       ),

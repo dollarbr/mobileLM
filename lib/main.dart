@@ -210,6 +210,7 @@ class MobileLMApp extends StatelessWidget {
     return Obx(() {
       final themeMode = settings.themeMode.value;
       final scale = settings.fontScale.value; // read here → Obx tracks it
+      print('[Intl] deviceLocale=${Get.deviceLocale}');
       return GetMaterialApp(
         title: 'mobileLM',
         translations: AppTranslation(),

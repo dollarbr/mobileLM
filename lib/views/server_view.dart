@@ -169,7 +169,7 @@ class ServerView extends GetView<ServerController> {
                           controller.serverPort.value =
                               AppConstants.defaultServerPort;
                         },
-                        child: const Text('Reset'),
+                        child: Text('reset'.tr),
                       ),
                     ]),
                   ])),
@@ -238,7 +238,7 @@ class ServerView extends GetView<ServerController> {
                                   : () =>
                                       _testHealth(controller.localUrl.value!),
                               icon: const Icon(Icons.wifi, size: 16),
-                              label: const Text('Test local')),
+                              label: Text('test_local'.tr)),
                         ])),
               ]),
               const SizedBox(height: 12),

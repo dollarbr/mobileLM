@@ -35,7 +35,7 @@ class SettingsView extends GetView<SettingsController> {
       backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),
       appBar: AppBar(
         backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),
-        title: Text('Settings',
+        title: Text('settings'.tr,
             style:
                 GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 34)),
         toolbarHeight: 56,
@@ -48,7 +48,7 @@ class SettingsView extends GetView<SettingsController> {
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.palette_outlined,
-                title: 'Appearance',
+                title: 'appearance'.tr,
                 children: [
                   for (final mode in [
                     ThemeMode.light,
@@ -83,7 +83,7 @@ class SettingsView extends GetView<SettingsController> {
                   isDark,
                   leading:
                       _iconBox(AppColors.success, Icons.phone_iphone_rounded),
-                  title: 'Local (On-Device)',
+                  title: 'local_on_device'.tr,
                   subtitle: _localSubtitle(),
                   trailing: controller.inferenceMode.value == 'local'
                       ? Icon(Icons.check,
@@ -99,7 +99,7 @@ class SettingsView extends GetView<SettingsController> {
                   context,
                   isDark,
                   leading: _iconBox(AppColors.secondary, Icons.cloud_outlined),
-                  title: 'Cloud API',
+                  title: 'cloud_api'.tr,
                   subtitle: controller.cloudProvider.value.toUpperCase(),
                   trailing: controller.inferenceMode.value == 'cloud'
                       ? Icon(Icons.check,
@@ -117,8 +117,8 @@ class SettingsView extends GetView<SettingsController> {
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.tune_rounded,
-                title: 'Default System Prompt',
-                subtitle: 'Applies to local and cloud models',
+                title: 'default_system_prompt'.tr,
+                subtitle: 'applies_to_local_and_cloud'.tr,
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(14),
@@ -128,7 +128,7 @@ class SettingsView extends GetView<SettingsController> {
                       maxLines: 6,
                       style: GoogleFonts.inter(fontSize: 14),
                       decoration: InputDecoration(
-                        hintText: AppConstants.systemPrompt,
+                        hintText: 'system_prompt_hint'.tr,
                         suffixIcon: IconButton(
                             icon: const Icon(Icons.check_circle_outline,
                                 size: 20),
@@ -146,7 +146,7 @@ class SettingsView extends GetView<SettingsController> {
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.chat_bubble_outline_rounded,
-                title: 'Text Generation',
+                title: 'text_generation'.tr,
                 subtitle: controller.liteRtPerformanceMode.value == 'auto_fast'
                     ? 'Auto Fast · thinking ${controller.thinkingMode.value}'
                     : '${controller.liteRtPerformanceMode} · thinking ${controller.thinkingMode.value}',
@@ -164,7 +164,7 @@ class SettingsView extends GetView<SettingsController> {
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.handyman_rounded,
-                title: 'Tools',
+                title: 'tools'.tr,
                 subtitle: controller.toolsEnabled.value
                     ? '${controller.enabledTools.length} enabled'
                     : 'Off',
@@ -174,7 +174,7 @@ class SettingsView extends GetView<SettingsController> {
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.terminal_rounded,
-                title: 'ADB / Shizuku',
+                title: 'adb_shizuku'.tr,
                 subtitle: Get.find<PrivilegedService>().state.value.label,
                 children: [_buildShizukuCard(context, isDark)],
               ),
@@ -182,7 +182,7 @@ class SettingsView extends GetView<SettingsController> {
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.image_outlined,
-                title: 'Image Generation',
+                title: 'image_generation'.tr,
                 subtitle:
                     '${controller.imageSteps.value} steps · ${controller.imageGenSize.value == 0 ? "auto size" : "${controller.imageGenSize.value}px"}',
                 children: [_buildImageGenerationCard(context, isDark)],
@@ -206,21 +206,24 @@ class SettingsView extends GetView<SettingsController> {
                   isDark,
                   leading: _iconBox(
                       const Color(0xFF8B7CFF), Icons.smart_toy_outlined),
-                  title: 'Tool round-trips',
+                  title: 'tool_round_trips'.tr,
                   subtitle: controller.agentMaxHops.value == 0
                       ? 'Unlimited agent mode'
                       : 'Agent mode: up to ${controller.agentMaxHops.value} hops per message',
-                  trailing: controller.agentMaxHops.value == 0
-                      ? Text('∞',
-                          style: GoogleFonts.spaceGrotesk(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF8B7CFF)))
-                      : Text('${controller.agentMaxHops.value}',
-                          style: GoogleFonts.spaceGrotesk(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF8B7CFF))),
+                  trailing: InkWell(
+                    onTap: () => _showHopInputDialog(context),
+                    child: controller.agentMaxHops.value == 0
+                        ? Text('∞',
+                            style: GoogleFonts.spaceGrotesk(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF8B7CFF)))
+                        : Text('${controller.agentMaxHops.value}',
+                            style: GoogleFonts.spaceGrotesk(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF8B7CFF))),
+                  ),
                   showDivider: false,
                   onTap: () {
                     const ladder = [0, 1, 2, 3, 4, 6, 8];
@@ -240,8 +243,8 @@ class SettingsView extends GetView<SettingsController> {
                   isDark,
                   leading:
                       _iconBox(const Color(0xFF5AC8FA), Icons.article_outlined),
-                  title: 'Logs',
-                  subtitle: 'View errors, warnings, and debug details',
+                  title: 'logs'.tr,
+                  subtitle: 'view_errors_warnings'.tr,
                   trailing: const Icon(Icons.chevron_right, size: 18),
                   onTap: () => Get.to(() => const LogView()),
                 ),
@@ -250,8 +253,8 @@ class SettingsView extends GetView<SettingsController> {
                   isDark,
                   leading: _iconBox(
                       const Color(0xFFB9F53E), Icons.dns_outlined),
-                  title: 'Local API Server',
-                  subtitle: 'OpenAI-compatible endpoint on this device',
+                  title: 'local_api_server'.tr,
+                  subtitle: 'openai_compatible_endpoint'.tr,
                   trailing: const Icon(Icons.chevron_right, size: 18),
                   showDivider: false,
                   onTap: () => Get.to(() => const ServerView()),
@@ -280,7 +283,7 @@ class SettingsView extends GetView<SettingsController> {
                     Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('mobileLM',
+                          Text('mobile_lm'.tr,
                               style: GoogleFonts.inter(
                                   fontSize: 17, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 2),
@@ -309,7 +312,7 @@ class SettingsView extends GetView<SettingsController> {
         context,
         isDark,
         leading: _iconBox(const Color(0xFF8B7CFF), Icons.schedule_rounded),
-        title: 'Scheduled tasks',
+        title: 'scheduled_tasks'.tr,
         subtitle: taskCount == 0
             ? 'Daily prompts that run on their own'
             : '$taskCount daily task${taskCount == 1 ? '' : 's'}',
@@ -327,7 +330,7 @@ class SettingsView extends GetView<SettingsController> {
         ) ?? true;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: const Text('Show background notification'),
+      title: Text('show_background_notification'.tr),
       subtitle: const Text(
           'Display a persistent notification while tasks are\n'
           'scheduled or model is kept loaded in the background.'),
@@ -415,6 +418,62 @@ class SettingsView extends GetView<SettingsController> {
         child: Icon(icon, size: 17, color: Colors.white));
   }
 
+  void _showHopInputDialog(BuildContext context) {
+    final current = Get.find<SettingsController>().agentMaxHops.value;
+    final ctl = TextEditingController(text: current == 0 ? '∞' : '$current');
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        title: Text('tool_round_trips'.tr),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              current == 0
+                  ? 'Infinite agent mode (no ceiling)'
+                  : 'Set max hops (1–8) or ∞ for unlimited',
+              style: GoogleFonts.inter(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctl,
+              keyboardType: const TextInputType.numberWithOptions(
+                  signed: false, decimal: false),
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Value',
+                hintText: '0 = ∞, 1–8 = max hops',
+              ),
+              onSubmitted: (v) {
+                final val = int.tryParse(v);
+                if (val != null && val >= 0 && val <= 8) {
+                  Get.find<SettingsController>().setAgentMaxHops(val);
+                  Navigator.pop(dlgCtx);
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: Text('cancel'.tr),
+          ),
+          FilledButton(
+            onPressed: () {
+              final val = int.tryParse(ctl.text.trim());
+              if (val != null && val >= 0 && val <= 8) {
+                Get.find<SettingsController>().setAgentMaxHops(val);
+                if (dlgCtx.mounted) Navigator.pop(dlgCtx);
+              }
+            },
+            child: Text('ok'.tr),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openScheduledTasksSheet(BuildContext context, bool isDark) {
     try {
       final service = Get.find<ScheduledTaskService>();
@@ -433,7 +492,7 @@ class SettingsView extends GetView<SettingsController> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Scheduled tasks',
+                Text('scheduled_tasks'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
@@ -498,7 +557,7 @@ class SettingsView extends GetView<SettingsController> {
                     if (created && sheetCtx.mounted) Navigator.pop(sheetCtx);
                   },
                   icon: const Icon(Icons.add),
-                  label: const Text('New daily task'),
+                  label: Text('new_daily_task'.tr),
                 ),
               ],
             )),
@@ -521,7 +580,7 @@ class SettingsView extends GetView<SettingsController> {
     final modelCtrl = Get.find<ModelController>();
     final downloaded = modelCtrl.downloadedFiles.toList();
     if (downloaded.isEmpty) {
-      Get.snackbar('Scheduled tasks', 'No local model files found.',
+      Get.snackbar('scheduled_tasks'.tr, 'No local model files found.',
           snackPosition: SnackPosition.BOTTOM);
       return false;
     }
@@ -531,7 +590,7 @@ class SettingsView extends GetView<SettingsController> {
       context: context,
       builder: (dlgCtx) => StatefulBuilder(
         builder: (dlgCtx, setState) => AlertDialog(
-          title: const Text('New task'),
+          title: Text('new_task'.tr),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -543,21 +602,21 @@ class SettingsView extends GetView<SettingsController> {
                 controller: promptCtl,
                 minLines: 3,
                 maxLines: 5,
-                decoration: const InputDecoration(
-                    labelText: 'Prompt to run'),
+                decoration: InputDecoration(
+                    labelText: 'prompt_to_run'.tr),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: frequency,
                 decoration: const InputDecoration(labelText: 'Frequency'),
-                items: const [
-                  DropdownMenuItem(value: 'daily', child: Text('Daily')),
-                  DropdownMenuItem(value: 'hourly', child: Text('Hourly')),
-                  DropdownMenuItem(value: 'every2h', child: Text('Every 2h')),
-                  DropdownMenuItem(value: 'every4h', child: Text('Every 4h')),
-                  DropdownMenuItem(value: 'every6h', child: Text('Every 6h')),
-                  DropdownMenuItem(value: 'every8h', child: Text('Every 8h')),
-                  DropdownMenuItem(value: 'once', child: Text('Just once')),
+                items: [
+                  DropdownMenuItem(value: 'daily', child: Text('daily'.tr)),
+                  DropdownMenuItem(value: 'hourly', child: Text('hourly'.tr)),
+                  DropdownMenuItem(value: 'every2h', child: Text('every_2h'.tr)),
+                  DropdownMenuItem(value: 'every4h', child: Text('every_4h'.tr)),
+                  DropdownMenuItem(value: 'every6h', child: Text('every_6h'.tr)),
+                  DropdownMenuItem(value: 'every8h', child: Text('every_8h'.tr)),
+                  DropdownMenuItem(value: 'once', child: Text('just_once'.tr)),
                 ],
                 onChanged: (v) {
                   if (v != null) setState(() => frequency = v);
@@ -569,10 +628,10 @@ class SettingsView extends GetView<SettingsController> {
                 leading: const Icon(Icons.schedule_rounded),
                 title: Text(time.format(dlgCtx)),
                 subtitle: frequency == 'once'
-                    ? const Text('Run this single time at the chosen hour')
+                    ? Text('run_this_single_time_at_the_chosen_hour'.tr)
                     : frequency == 'hourly' || frequency.startsWith('every')
-                        ? const Text('At this minute past each interval')
-                        : const Text('At this time every day'),
+                        ? Text('at_this_minute_past_each_interval'.tr)
+                        : Text('at_this_time_every_day'.tr),
                 onTap: () async {
                   final picked = await showTimePicker(
                       context: dlgCtx, initialTime: time);
@@ -581,7 +640,7 @@ class SettingsView extends GetView<SettingsController> {
               ),
               const SizedBox(height: 8),
               CheckboxListTile(
-                title: const Text('Keep model loaded between runs'),
+                title: Text('keep_model_loaded_between_runs'.tr),
                 subtitle: const Text(
                     'Faster execution, but uses more RAM and battery'),
                 value: keepModelLoaded,
@@ -603,7 +662,7 @@ class SettingsView extends GetView<SettingsController> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dlgCtx),
-              child: const Text('Cancel'),
+              child: Text('cancel'.tr),
             ),
             FilledButton(
               onPressed: () {
@@ -612,7 +671,7 @@ class SettingsView extends GetView<SettingsController> {
                 ok = true;
                 Navigator.pop(dlgCtx);
               },
-              child: const Text('Create'),
+              child: Text('create'.tr),
             ),
           ],
         ),
@@ -631,11 +690,11 @@ class SettingsView extends GetView<SettingsController> {
         frequency: frequency,
         keepModelLoaded: keepModelLoaded,
       );
-      Get.snackbar('Scheduled tasks', 'Task created.',
+      Get.snackbar('scheduled_tasks'.tr, 'Task created.',
           snackPosition: SnackPosition.BOTTOM);
       return true;
     } catch (e) {
-      Get.snackbar('Scheduled tasks', 'Failed: $e',
+      Get.snackbar('scheduled_tasks'.tr, 'Failed: $e',
           snackPosition: SnackPosition.BOTTOM);
       return false;
     }
@@ -657,7 +716,7 @@ class SettingsView extends GetView<SettingsController> {
       context: context,
       builder: (dlgCtx) => StatefulBuilder(
         builder: (dlgCtx, setState) => AlertDialog(
-          title: const Text('Edit task'),
+          title: Text('edit_task'.tr),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -669,21 +728,21 @@ class SettingsView extends GetView<SettingsController> {
                 controller: promptCtl,
                 minLines: 3,
                 maxLines: 5,
-                decoration: const InputDecoration(
-                    labelText: 'Prompt to run'),
+                decoration: InputDecoration(
+                    labelText: 'prompt_to_run'.tr),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: frequency,
                 decoration: const InputDecoration(labelText: 'Frequency'),
-                items: const [
-                  DropdownMenuItem(value: 'daily', child: Text('Daily')),
-                  DropdownMenuItem(value: 'hourly', child: Text('Hourly')),
-                  DropdownMenuItem(value: 'every2h', child: Text('Every 2h')),
-                  DropdownMenuItem(value: 'every4h', child: Text('Every 4h')),
-                  DropdownMenuItem(value: 'every6h', child: Text('Every 6h')),
-                  DropdownMenuItem(value: 'every8h', child: Text('Every 8h')),
-                  DropdownMenuItem(value: 'once', child: Text('Just once')),
+                items: [
+                  DropdownMenuItem(value: 'daily', child: Text('daily'.tr)),
+                  DropdownMenuItem(value: 'hourly', child: Text('hourly'.tr)),
+                  DropdownMenuItem(value: 'every2h', child: Text('every_2h'.tr)),
+                  DropdownMenuItem(value: 'every4h', child: Text('every_4h'.tr)),
+                  DropdownMenuItem(value: 'every6h', child: Text('every_6h'.tr)),
+                  DropdownMenuItem(value: 'every8h', child: Text('every_8h'.tr)),
+                  DropdownMenuItem(value: 'once', child: Text('just_once'.tr)),
                 ],
                 onChanged: (v) {
                   if (v != null) setState(() => frequency = v);
@@ -695,10 +754,10 @@ class SettingsView extends GetView<SettingsController> {
                 leading: const Icon(Icons.schedule_rounded),
                 title: Text(time.format(dlgCtx)),
                 subtitle: frequency == 'once'
-                    ? const Text('Run this single time at the chosen hour')
+                    ? Text('run_this_single_time_at_the_chosen_hour'.tr)
                     : frequency == 'hourly' || frequency.startsWith('every')
-                        ? const Text('At this minute past each interval')
-                        : const Text('At this time every day'),
+                        ? Text('at_this_minute_past_each_interval'.tr)
+                        : Text('at_this_time_every_day'.tr),
                 onTap: () async {
                   final picked = await showTimePicker(
                       context: dlgCtx, initialTime: time);
@@ -707,7 +766,7 @@ class SettingsView extends GetView<SettingsController> {
               ),
               const SizedBox(height: 8),
               CheckboxListTile(
-                title: const Text('Keep model loaded between runs'),
+                title: Text('keep_model_loaded_between_runs'.tr),
                 subtitle: const Text(
                     'Faster execution, but uses more RAM and battery'),
                 value: keepModelLoaded,
@@ -718,7 +777,7 @@ class SettingsView extends GetView<SettingsController> {
                 DropdownButtonFormField<String>(
                   value: selectedModel.isEmpty ? null : selectedModel,
                   decoration: const InputDecoration(labelText: 'Model'),
-                  hint: const Text('Select model'),
+                  hint: Text('select_model'.tr),
                   items: downloaded
                       .map((f) => DropdownMenuItem(value: f, child: Text(f)))
                       .toList(),
@@ -732,7 +791,7 @@ class SettingsView extends GetView<SettingsController> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dlgCtx),
-              child: const Text('Cancel'),
+              child: Text('cancel'.tr),
             ),
             FilledButton(
               onPressed: () {
@@ -741,7 +800,7 @@ class SettingsView extends GetView<SettingsController> {
                 ok = true;
                 Navigator.pop(dlgCtx);
               },
-              child: const Text('Save'),
+              child: Text('save'.tr),
             ),
           ],
         ),
@@ -767,11 +826,11 @@ class SettingsView extends GetView<SettingsController> {
         lastRunAt: task.lastRunAt,
       );
       await service.update(updated);
-      Get.snackbar('Scheduled tasks', 'Task updated.',
+      Get.snackbar('scheduled_tasks'.tr, 'Task updated.',
           snackPosition: SnackPosition.BOTTOM);
       return true;
     } catch (e) {
-      Get.snackbar('Scheduled tasks', 'Failed: $e',
+      Get.snackbar('scheduled_tasks'.tr, 'Failed: $e',
           snackPosition: SnackPosition.BOTTOM);
       return false;
     }
@@ -964,13 +1023,13 @@ class SettingsView extends GetView<SettingsController> {
             if (state == ShizukuState.needsPermission) ...[
               FilledButton(
                 onPressed: service.requestPermission,
-                child: const Text('Grant permission'),
+                child: Text('grant_permission'.tr),
               ),
               const SizedBox(width: 8),
             ],
             OutlinedButton(
               onPressed: service.refresh,
-              child: const Text('Re-check'),
+              child: Text('re_check'.tr),
             ),
           ]),
         ],
@@ -1011,7 +1070,7 @@ class SettingsView extends GetView<SettingsController> {
         context,
         isDark,
         leading: _iconBox(accent, Icons.handyman_rounded),
-        title: 'Tools',
+        title: 'tools'.tr,
         subtitle: enabled
             ? '${on.length} of ${catalogue.length} enabled'
             : 'Off — the tool list is kept out of the prompt',
@@ -1280,7 +1339,7 @@ class SettingsView extends GetView<SettingsController> {
           Row(children: [
             Icon(Icons.image_rounded, size: 16, color: accent),
             const SizedBox(width: 8),
-            Text('Image Gen Steps',
+            Text('image_gen_steps'.tr,
                 style: GoogleFonts.inter(
                     fontSize: 15, fontWeight: FontWeight.w400)),
             const Spacer(),
@@ -1298,7 +1357,7 @@ class SettingsView extends GetView<SettingsController> {
           ]),
           Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('Recommended max: 8',
+              child: Text('recommended_max_8'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 12, color: Theme.of(context).hintColor))),
           Slider(
@@ -1338,7 +1397,7 @@ class SettingsView extends GetView<SettingsController> {
                 size: 16,
                 color: isDark ? const Color(0xFFB9F53E) : AppColors.primary),
             const SizedBox(width: 8),
-            Text('Image Size',
+            Text('image_size'.tr,
                 style: GoogleFonts.inter(
                     fontSize: 15, fontWeight: FontWeight.w400)),
             const Spacer(),
@@ -1433,7 +1492,7 @@ class SettingsView extends GetView<SettingsController> {
                 size: 16,
                 color: isDark ? const Color(0xFFB9F53E) : AppColors.primary),
             const SizedBox(width: 8),
-            Text('GPU Safety',
+            Text('gpu_safety'.tr,
                 style: GoogleFonts.inter(
                     fontSize: 15, fontWeight: FontWeight.w400)),
             const Spacer(),
@@ -1508,7 +1567,7 @@ class SettingsView extends GetView<SettingsController> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Image Backend',
+                    Text('image_backend'.tr,
                         style: GoogleFonts.inter(
                             fontSize: 15, fontWeight: FontWeight.w400)),
                     const SizedBox(height: 3),
@@ -1523,10 +1582,10 @@ class SettingsView extends GetView<SettingsController> {
             alignment: Alignment.centerLeft,
             child: SegmentedButton<bool>(
               segments: [
-                const ButtonSegment(
+                ButtonSegment(
                     value: false,
                     icon: Icon(Icons.memory_rounded, size: 16),
-                    label: Text('CPU')),
+                    label: Text('cpu'.tr)),
                 ButtonSegment(
                     value: true,
                     icon: const Icon(Icons.bolt_rounded, size: 16),
@@ -1556,7 +1615,7 @@ class SettingsView extends GetView<SettingsController> {
           ),
           if (selectedBackend != Backend.cpu) ...[
             const SizedBox(height: 6),
-            Text('GPU is experimental and only used below GPU Safety size.',
+            Text('gpu_is_experimental'.tr,
                 style: GoogleFonts.inter(
                     fontSize: 11,
                     color: const Color(0xFFFF6B6B),
@@ -1574,9 +1633,9 @@ class SettingsView extends GetView<SettingsController> {
 
     String scaleLabel(double v) {
       if (v <= 0.85) return 'XS';
-      if (v <= 0.95) return 'Small';
+      if (v <= 0.95) return 'small'.tr;
       if (v <= 1.05) return 'Recommended';
-      if (v <= 1.15) return 'Large';
+      if (v <= 1.15) return 'large'.tr;
       if (v <= 1.25) return 'XL';
       return 'XXL';
     }
@@ -1588,7 +1647,7 @@ class SettingsView extends GetView<SettingsController> {
           Row(children: [
             Icon(Icons.format_size_rounded, size: 16, color: accent),
             const SizedBox(width: 8),
-            Text('Font Size',
+            Text('font_size'.tr,
                 style: GoogleFonts.inter(
                     fontSize: 15, fontWeight: FontWeight.w400)),
             const Spacer(),
@@ -1605,7 +1664,7 @@ class SettingsView extends GetView<SettingsController> {
             ),
           ]),
           const SizedBox(height: 4),
-          Text('1.00x is the default size',
+          Text('default_size'.tr,
               style: GoogleFonts.inter(
                   fontSize: 12, color: Theme.of(context).hintColor)),
           Slider(
@@ -1625,7 +1684,7 @@ class SettingsView extends GetView<SettingsController> {
                 Text('XS',
                     style: GoogleFonts.inter(
                         fontSize: 11, color: Theme.of(context).hintColor)),
-                Text('Small',
+                Text('small'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 11,
                         color: controller.fontScale.value >= 0.9 &&
@@ -1636,7 +1695,7 @@ class SettingsView extends GetView<SettingsController> {
                                 controller.fontScale.value <= 0.95
                             ? FontWeight.w600
                             : FontWeight.w400)),
-                Text('Large',
+                Text('large'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 11, color: Theme.of(context).hintColor)),
               ],
@@ -1909,17 +1968,17 @@ class SettingsView extends GetView<SettingsController> {
       BuildContext context, WorkspaceService workspace) async {
     final confirmed = await Get.dialog<bool>(
       AlertDialog(
-        title: const Text('Change workspace folder?'),
+        title: Text('change_workspace_folder'.tr),
         content: const Text(
             'Your current projects and files will be copied into the new '
             'folder, then this one will be used from now on.'),
         actions: [
           TextButton(
               onPressed: () => Get.back(result: false),
-              child: const Text('Cancel')),
+              child: Text('cancel'.tr)),
           FilledButton(
               onPressed: () => Get.back(result: true),
-              child: const Text('Continue')),
+              child: Text('continue'.tr)),
         ],
       ),
     );
@@ -1958,7 +2017,7 @@ class SettingsView extends GetView<SettingsController> {
           else if (files.isEmpty)
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text('No models downloaded yet',
+              child: Text('no_models_downloaded_yet'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 13, color: Theme.of(context).hintColor)),
             )
@@ -2194,7 +2253,7 @@ class SettingsView extends GetView<SettingsController> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('Backup configs',
+                Text('backup_configs'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
@@ -2207,7 +2266,7 @@ class SettingsView extends GetView<SettingsController> {
                 CheckboxListTile(
                   value: includeModels,
                   onChanged: (v) => setSheet(() => includeModels = v ?? false),
-                  title: const Text('Include model files'),
+                  title: Text('include_model_files'.tr),
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -2226,10 +2285,10 @@ class SettingsView extends GetView<SettingsController> {
                             TextButton(
                                 onPressed: () =>
                                     setSheet(() => selected.addAll(names)),
-                                child: const Text('All')),
+                                child: Text('all'.tr)),
                             TextButton(
                                 onPressed: () => setSheet(selected.clear),
-                                child: const Text('None')),
+                                child: Text('none'.tr)),
                           ]),
                           SizedBox(
                             height: 180,
@@ -2256,7 +2315,7 @@ class SettingsView extends GetView<SettingsController> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     icon: const Icon(Icons.backup_outlined),
-                    label: const Text('Start backup'),
+                    label: Text('start_backup'.tr),
                     onPressed: () {
                       Navigator.pop(ctx);
                       mc.backupConfigs(
@@ -2282,13 +2341,13 @@ class SettingsView extends GetView<SettingsController> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Restore backup',
+            Text('restore_backup'.tr,
                 style: GoogleFonts.inter(
                     fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             ListTile(
               leading: const Icon(Icons.settings_backup_restore_rounded),
-              title: const Text('Everything (configs + models)'),
+              title: Text('everything_configs___models'.tr),
               subtitle: const Text(
                   'Template first, then the files in the backup folder'),
               onTap: () {
@@ -2298,8 +2357,8 @@ class SettingsView extends GetView<SettingsController> {
             ),
             ListTile(
               leading: const Icon(Icons.settings_suggest_outlined),
-              title: const Text('Configs template (.json)'),
-              subtitle: const Text('Overwrites current settings'),
+              title: Text('configs_template_json'.tr),
+              subtitle: Text('overwrites_current_settings'.tr),
               onTap: () {
                 Navigator.pop(ctx);
                 mc.restoreConfigs();
@@ -2307,8 +2366,8 @@ class SettingsView extends GetView<SettingsController> {
             ),
             ListTile(
               leading: const Icon(Icons.folder_copy_outlined),
-              title: const Text('Model files from the backup folder'),
-              subtitle: const Text('Skips files already present and identical'),
+              title: Text('model_files_from_the_backup_folder'.tr),
+              subtitle: Text('skips_files_already_present_and_identica'.tr),
               onTap: () {
                 Navigator.pop(ctx);
                 mc.restoreModelsFromBackup();
