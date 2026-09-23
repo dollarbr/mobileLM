@@ -5,8 +5,8 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 
 ## Estado atual
 
-M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — release **0.2.3+1** publicado em
-<https://github.com/dollarbr/mobileLM/releases/tag/0.2.3>. Versão atual: **0.3.0+1**.
+M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.2+1**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (18 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
@@ -98,13 +98,12 @@ Três workflows ativos: `ci.yml` (analyze + test, ~2 min), `debug-apk.yml` (APK 
 arm64 por push, ~22 min) e `release.yml` (dispara na tag).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.3.0+1` → tag `0.3.0`. O workflow falha de propósito se divergirem.
+`+build`: `0.3.2+1` → tag `0.3.2`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud features + metrics).
-Próxima: `0.3.1` — suggestions #1 (exportar) ✅, #2 (chips) ✅ com delay 500ms após geração, #3 (sumarização) em andamento.
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado).
 
 **Todo workflow que compila precisa liberar disco antes.** Os nativos vendorizados
 — llama.cpp com backend Vulkan e seus ~300 objetos de shader, LiteRT, Stable
