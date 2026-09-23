@@ -774,16 +774,22 @@ class ChatController extends GetxController {
         _maybeSummarizeHistory();
       }
 
-      // Build conversation history
-      final history = messages
-          .where((m) => m.role == 'user' || m.role == 'assistant')
-          .map((m) => {
-                'role': m.role,
-                'content': m.role == 'assistant'
-                    ? splitThoughtTags(m.content).answer
-                    : m.content,
-              })
+      // Build conversation history — include any auto-summary marker so the
+      // native engine sees the condensed context, not just the tail.
+      final summaryMsg = messages
+          .where((m) => m.id == '_summary_')
           .toList();
+      final history = <Map<String, String>>[
+        for (final m in summaryMsg) {'role': 'system', 'content': m.content},
+        ...messages
+            .where((m) => m.role == 'user' || m.role == 'assistant')
+            .map((m) => <String, String>{
+                  'role': m.role,
+                  'content': m.role == 'assistant'
+                      ? splitThoughtTags(m.content).answer
+                      : m.content,
+                }),
+      ];
 
       if (inferenceMode == 'local') {
         final localImage = Get.find<LocalImageService>();
@@ -1310,6 +1316,9 @@ class ChatController extends GetxController {
   /// Keeps the last 6 exchanges, summarizes the rest, and inserts a
   /// summary marker so the model knows the conversation was condensed.
   void _maybeSummarizeHistory() {
+    // Guard: don't re-summarize if we already inserted a marker in this session.
+    if (messages.any((m) => m.id == '_summary_')) return;
+
     final relevant = messages
         .where((m) => m.role == 'user' || m.role == 'assistant')
         .toList();
@@ -1335,7 +1344,7 @@ class ChatController extends GetxController {
 
     if (summaryLines.isEmpty) return;
 
-    final summary = 'Conversa resumida (${oldMessages.length} mensagens antigas condensadas):\n${summaryLines.join(' | ')}\n\nContinue a conversa a partir daqui.';
+    final summary = '${'context_summary'.tr.replaceAll('{{count}}', oldMessages.length.toString())}\n${summaryLines.join(' | ')}\n\n${'context_summary_continue'.tr}';
 
     final summaryMsg = ChatMessage(
       id: '_summary_',

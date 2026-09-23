@@ -103,6 +103,8 @@
   "describe_image": "Describe this image.",
   "summarize_pdf": "Summarize this PDF.",
   "summarize_document": "Summarize this document.",
+  "context_summary": "Conversation summarized ({{count}} old messages condensed)",
+  "context_summary_continue": "Continue the conversation from here.",
   "describe_video": "Describe what happens in this video.",
   "transcribe_audio": "Transcribe or analyze this audio.",
   "review_file": "Review this file.",

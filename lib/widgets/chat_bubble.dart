@@ -23,6 +23,54 @@ class ChatBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isUser = message.role == 'user';
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Auto-summary banner — rendered as a centered divider, not a bubble.
+    if (message.id == '_summary_') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? const Color(0xFF2C2C2E).withValues(alpha: 0.8)
+                  : const Color(0xFFE5E5EA),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.12)
+                    : Colors.black.withValues(alpha: 0.1),
+                width: 0.5,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 13,
+                  color: isDark
+                      ? const Color(0xFFB9F53E).withValues(alpha: 0.7)
+                      : const Color(0xFF1B5E20).withValues(alpha: 0.6),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'context_summary'.tr.replaceAll('{{count}}', ''),
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.5)
+                        : Colors.black.withValues(alpha: 0.45),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final visibleContent = message.fileName == null
         ? message.content
         : message.content.split('\n\nAttached file:').first;

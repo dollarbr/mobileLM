@@ -113,6 +113,8 @@ class AppTranslation extends Translations {
       'describe_image': 'Descreva esta imagem.',
       'summarize_pdf': 'Resuma este PDF.',
       'summarize_document': 'Resuma este documento.',
+      'context_summary': 'Conversa resumida ({{count}} mensagens antigas condensadas)',
+      'context_summary_continue': 'Continue a conversa a partir daqui.',
       'describe_video': 'Descreva o que acontece neste vídeo.',
       'transcribe_audio': 'Transcreva ou analise este áudio.',
       'review_file': 'Revise este arquivo.',
