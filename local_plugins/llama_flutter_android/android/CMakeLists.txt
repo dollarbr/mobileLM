@@ -121,7 +121,7 @@ add_library(mtmd STATIC
     ${MTMD_MODEL_SOURCES}
 )
 
-target_link_libraries(mtmd PUBLIC ggml llama PRIVATE c++_shared)
+target_link_libraries(mtmd PUBLIC ggml llama PRIVATE c++_shared vendor-hash)
 
 target_include_directories(mtmd PUBLIC ${MTMD_DIR})
 target_include_directories(mtmd PRIVATE

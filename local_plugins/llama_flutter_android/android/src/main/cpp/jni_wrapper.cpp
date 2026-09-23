@@ -830,7 +830,8 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
         std::vector<mtmd_bitmap*> bitmaps;
         std::string load_failure;
         for (const std::string& path : g_pending_media) {
-            mtmd_bitmap* bitmap = mtmd_helper_bitmap_init_from_file(g_mtmd, path.c_str());
+            struct mtmd_helper_bitmap_wrapper bw = mtmd_helper_bitmap_init_from_file(g_mtmd, path.c_str(), false, mtmd_helper_init_opt_default());
+            mtmd_bitmap* bitmap = bw.bitmap;
             if (!bitmap) {
                 load_failure = path;
                 break;
@@ -1014,6 +1015,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
     // Add penalties first (applied to logits before sampling)
     if (repeat_penalty != 1.0f || frequency_penalty != 0.0f || presence_penalty != 0.0f) {
         llama_sampler_chain_add(g_sampler, llama_sampler_init_penalties(
+            llama_vocab_n_tokens(g_vocab),  // n_vocab
             repeat_last_n,              // penalty_last_n
             repeat_penalty,             // penalty_repeat
             frequency_penalty,          // penalty_freq
