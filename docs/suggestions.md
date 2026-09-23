@@ -1,7 +1,7 @@
 # Sugestões de Funcionalidades — mobileLM-app
 
 **Data:** 2026-09-22  
-**Versão atual:** 0.3.0+1  
+**Versão atual:** 0.3.1+1  
 **Engine:** GGUF + LiteRT-LM 0.17.1 · Cloud + Agente multi-passo
 
 ---
@@ -23,6 +23,16 @@
 | Dart packages wave 1 | ✅ Feito | dio, ffi, http, image, image_picker, intl, path_provider, uuid, gal, speech_to_text |
 | SD.cpp submodule update | ✅ Feito | `c92d73c` + ggml `4bf5f60` |
 | Patch sd_jni_wrapper.cpp | ✅ Feito | 3 API breaks corrigidos |
+
+---
+
+## ✅ Features completadas na versão 0.3.1
+
+| Feature | Status | Arquivo principal |
+|---|---|---|
+| Exportar conversa | ✅ Feito | `chat_controller.dart` — `exportChat()` com share_plus |
+| Sugestões rápidas (chips) | ✅ Feito | `chat_bubble.dart` — chips abaixo da resposta, delay 500ms |
+| Sumarização automática de contexto | ✅ Feito | `chat_controller.dart` — `_maybeSummarizeHistory()`, banner visual no chat |
 
 ---
 
@@ -61,6 +71,7 @@ Quando `contextTokensUsed` > 75% do tamanho, resumo automático das mensagens ma
 - **Esforço:** ~4-6h
 - **Como:** Orquestrar `InferenceService.generate()` com histórico truncado + resumo injetado
 - **Priority:** Alta
+- **Status:** ✅ Feito (0.3.2) — guard contra duplicação, resumo incluído no history enviado ao motor, banner visual no chat.
 
 ### 6. Comandos rápidos na barra inferior
 Swipes ou barra fixa: "pesquisar web", "tirar foto", "verificar bateria", "enviar SMS pra X". Reduz fricção pra tools comuns.
