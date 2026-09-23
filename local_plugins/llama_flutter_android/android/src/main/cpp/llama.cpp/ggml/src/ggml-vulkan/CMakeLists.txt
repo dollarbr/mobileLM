@@ -11,7 +11,11 @@ find_package(Vulkan COMPONENTS glslc REQUIRED)
 if (DEFINED ENV{VULKAN_SDK})
     list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}")
 endif()
-find_package(SPIRV-Headers CONFIG REQUIRED)
+if (NOT ANDROID)
+    find_package(SPIRV-Headers CONFIG REQUIRED)
+elseif(NOT DEFINED Vulkan_INCLUDE_DIR)
+    message(WARNING "SPIRV-Headers not found; GPU backend may miss headers on Android")
+endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # Parallel build object files
