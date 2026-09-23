@@ -65,6 +65,14 @@ class ToolRegistry {
 
   Iterable<Tool> get all => _tools.values;
 
+  /// Returns a new registry with the named tools removed.
+  /// Used when a file is attached so the model doesn't try to
+  /// read the raw path (already embedded inline in the message).
+  ToolRegistry withoutNames(Set<String> names) {
+    if (names.isEmpty) return this;
+    return ToolRegistry(_tools.values.where((t) => !names.contains(t.name)));
+  }
+
   Tool? byName(String name) => _tools[name.toLowerCase().trim()];
 
   /// Appended to the system prompt when tools are on.
