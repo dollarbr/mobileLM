@@ -9,7 +9,8 @@ assumes them.
 
 ## Where this stands
 
-Steps 1–4 of the plan below are done, on `core/rust-hybrid`:
+Steps 1–4 of the plan below are done, on `core/rust-hybrid`, and step 5 has
+started — the device is the only place it can be done.
 
 | step | state | where |
 |---|---|---|
@@ -17,14 +18,21 @@ Steps 1–4 of the plan below are done, on `core/rust-hybrid`:
 | 2. `mobilelm-ffi` crate | done | `crates/mobilelm-ffi/`, 14 entry points, `readelf` assertion in CI |
 | 3. CI plumbing | done | `.github/workflows/rust-core.yml`, called by all three; `native` job passes in ~1m11s |
 | 4. Dart bindings | done | `lib/ffi/mobilelm_core_bindings.dart`, `lib/ffi/litert_engine.dart`; 12 tests that need no device |
-| 5. Device run, both paths, same prompt | **not started** | needs step 4 wired into `inference_android.dart` first |
-| 6. Delete the Kotlin plugin | **not started** | gated on step 5, deliberately |
+| 5. Device run, both paths, same prompt | **load proven, turn not yet measured** | the load runs on the device with no fallback; generation is pending the third build |
+| 6. Delete the Kotlin plugin | **blocked, newly** | gated on step 5 *and* on Gap 6 below — not the same gate it was |
 | 7. 0.4.0 | not started | |
 
-So the core is **not** in any APK yet, and the app does not use any of this. What
-changed is that steps 5 and 6 are now mechanical rather than exploratory.
+So the core is in a debug APK and the app **can** use it, behind a switch that
+defaults off. What has not happened yet is a measured turn on the Rust path, and
+deleting the plugin is now blocked for a reason that was not on the list when this
+table was written.
 
-Two findings landed while doing it, both corrections:
+**The Kotlin baseline is measured.** Qwen3-0.6B.litertlm, `cpu_safe` → `cpu`,
+ctx 4096, the same prompt on both sides: 11.05 s TTFT, 3.1 tok/s decode, 139
+tokens, 55.9 s. The numbers are in `BENCH.md`; they are what the Rust turn is
+compared against.
+
+Three findings landed while doing it, two corrections and one blocker:
 
 - **`litert_lm_conversation_get_benchmark_info` exists.** The matrix's prefill
   column said the C API reports no prompt timing. It does, behind
@@ -34,6 +42,12 @@ Two findings landed while doing it, both corrections:
   `libmobilelm_core.rlib` into the same `target/` as the `mobilelm-core`
   package's library and the two would overwrite each other depending on build
   order — surfacing as an unrelated crate failing to link.
+- **Two device bugs, one shape.** The load worked and generation still failed,
+  twice, for reasons that were both "the new path did its job and never said so":
+  an undispatched `load` command, and a missing `_isLiteRt`. Each cost a
+  22-minute build. The pattern is the finding — an additive path has to establish
+  the same shared state the path beside it establishes, or it is invisible until
+  it is asked to do the work.
 
 ## What 0.4.0 has to be
 
@@ -224,6 +238,62 @@ registry logged `RegisterAccelerator: name=CpuAccelerator` after failing the
 NPU, while CPU was requested, so in that run they agreed; nothing guarantees
 they always will. Whatever the FFI returns, the app must not display `actual` as
 an observation.
+
+## Gap 6 — open: the Rust load has no retry ladder, so it cannot serve a multimodal model
+
+Found by reading the two load paths against each other while waiting on a build,
+after the device proved the text-only path works.
+
+The Kotlin load is not one load. It is up to three attempts, and each fallback
+turns a hard failure into a working model:
+
+| attempt | trigger | what it gives up |
+|---|---|---|
+| 1 | — | nothing |
+| 2 | any failure while `enableVision` | the **audio** encoder |
+| 3 | `exactly one signature but got` | **vision**, text-only |
+
+Plus a specific message for `TF_LITE_VISION_ENCODER` — a text-only file loaded as
+a vision model — which is the one case that is a user error rather than a missing
+capability, and gets a different sentence.
+
+`_loadLiteRtViaRust` has none of the three. It calls `LiteRtEngine.load` once, and
+on any error it sets `_rustLoadFailure`, prints, and returns `null` — which the
+caller reads as *declined*, so the Kotlin plugin loads the model instead.
+
+That is a safe failure and it is the right default, but it means:
+
+- **the Rust path serves text-only LiteRT-LM, today.** Nothing else.
+- **deleting the plugin in step 6 would delete two catalogue models.** gemma-4
+  E2B and E4B are LiteRT-LM and multimodal, and neither loads without attempts 2
+  and 3.
+
+So step 6's gate is no longer only "the two paths agree on a text-only turn". It
+is also "the Rust load can fall back the way the Kotlin load does", and that work
+has not been done. Writing it is mechanical — the C API takes both encoder
+backends in the same `litert_lm_engine_settings_create` call, and
+`EngineExtras::vision_backend`/`audio_backend` are already bound, so a retry is
+`LiteRtEngine.load` again with one of them `null` — but it has to be written and
+then measured on a real multimodal model, which is what the gemma-4 run is for.
+
+**Until then, keep the plugin.** Deleting it on the strength of a text-only
+comparison is how a catalogue quietly loses two models.
+
+## Gap 7 — open: the ABI version is read and never enforced
+
+`mobilelm_abi_version()` returns `0.4.0-ffi.1` and `core_self_check.dart` reads
+it, but nothing compares it against the value this Dart was built for. The string
+was designed as the guard against a Dart/native signature mismatch — the failure
+mode with no symptom — and it is currently decorative.
+
+What it is worth is narrower than it first looks. Android replaces the `.so` on
+install, so a stale native library is not a realistic case; the realistic one is a
+*source* mismatch, where a signature changed on one side and not the other. That
+one does not need a version string — it crashes on the first call, loudly, on the
+device. So this is a cheap assertion to add later (compare, refuse, decline to
+the plugin) rather than a load-bearing one, and it is deliberately **not** in the
+way of 0.4.0. Putting an untested refusal in front of a working fallback in the
+same change that first ships the path is the wrong order.
 
 ## The shape on the Dart side
 

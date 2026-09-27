@@ -250,3 +250,83 @@ linker as its interpreter. Extracting an Android rootfs to work around it is
 about a gigabyte of download to re-measure, under emulation, what `adb shell`
 answers exactly. CI therefore gates the build; the device gates the engine. The
 full reasoning is in [ARTIFACT.md](ARTIFACT.md).
+
+## In the app, on the device: Kotlin baseline vs Rust core
+
+Appended 2026-09-27. The run above is the `mobilelm-bench` CLI; this is the app
+loading the same model through the two paths, in one APK, switch in Settings →
+text generation → **Rust engine core**.
+
+**Device** Motorola Edge 60, Dimensity 7300. **Model** Qwen3-0.6B.litertlm,
+614,236,160 bytes, no quantisation column because `.litertlm` is a compiled
+bundle rather than a GGUF. **Context** 4096. **Mode** `cpu_safe`, which resolved
+to `cpu` on both sides. **Prompt** `Explain in one sentence what is a token.` —
+ASCII, identical on both runs, so the same bytes reach the chat template.
+
+| | Kotlin plugin (baseline) | Rust core |
+|---|---|---|
+| transport | `MethodChannel` → `LiteLmEngine` (JNI) | `dart:ffi` → `libmobilelm_core.so` → LiteRT-LM C API |
+| load | `loaded with CPU backend, ctx=4096` | `Rust load report: actual: cpu, fallbackReason: null` |
+| fell back to the other path | n/a | **no** |
+| TTFT | 11.05 s | not yet measured |
+| decode | 3.1 tok/s | not yet measured |
+| tokens | 139 | not yet measured |
+| total | 55.9 s | not yet measured |
+| peak RSS, model loaded, idle | not captured | 1,836,835 KB (1.75 GiB) |
+
+The baseline's own log lines, so the app's numbers can be checked against the
+log rather than trusted: `sendMessage` 18:01:37.523, `FIRST TOKEN` 18:01:50.051,
+`stream done - 139 chunks` 18:02:34.914. The app's 11.05 s TTFT is measured from
+slightly later than `sendMessage`; 139 tokens over the 44.86 s between first token
+and last chunk is the 3.1 tok/s, so the app excludes TTFT from the rate exactly as
+the Rust `GenOutcome::decode_tps` does — the two columns are comparable.
+
+**1.75 GiB for the Rust path matches the CLI's 1.77 GiB** for the same model,
+which is the useful cross-check: the app's engine, the harness's engine and the
+runtime underneath are the same weights, and the FFI boundary is not holding a
+second copy of anything. The transitional APK does carry *both* runtimes
+(`liblitertlm_jni.so` 21,802,952 B and `liblitert-lm.so` 38,969,320 B — the same
+library, two ABIs), but only one engine is ever instantiated, so the RAM
+concern that motivated measuring it does not materialise. Native heap 1,207,596 KB
+of the 1,836,835 KB total.
+
+`loadMs: 0` in the load report is the engine's own figure and it is zero because
+`litert_lm_engine_settings_enable_benchmark` covers per-turn timing, not engine
+construction. Wall clock for the load was 2.38 s (18:41:32.465 → 18:41:34.845).
+The report's `capabilities: 0` is correct for this model: text-only, no vision or
+audio bit set.
+
+### Two device bugs, and why the additive wiring is what made them findable
+
+Both cost a 22-minute CI build to fix, and both had the same shape: the Rust path
+did its work correctly and never told the rest of the app.
+
+1. **`load` was never dispatched.** The isolate creates the engine inside its
+   `case 'load':`, and nothing ever sent that command — the boot map sat holding
+   the parameters for a call that was not made. Every later call then failed on a
+   null handle, three calls from the cause. The device said
+   `engine handle is null (in mobilelm_engine_load_report)`.
+2. **`_isLiteRt` was never set.** The load returned a success `LoadResult`, the
+   header showed the model, RSS was the model's weights — and the first message
+   threw `Exception: No model loaded`, because `generate` routes on that flag,
+   fell past the LiteRT branch, and hit the llama branch's guard on `_controller`,
+   which is null here *by design*. The message named a symptom three
+   indirections from its cause.
+
+The fallback is why these were bugs and not outages: on both, the Kotlin plugin
+took over and generated normally (139 and 254 chunks). Had this been a
+replacement rather than an addition, the first one would have been an app with no
+LiteRT-LM at all, found on a phone rather than in a log.
+
+### Not yet proven, and the one that decides whether the plugin can go
+
+The Rust load has **no retry ladder**. The Kotlin load has three attempts —
+full, then without the audio encoder, then text-only on a vision signature
+mismatch — and a specific message for a text-only file loaded as vision. The Rust
+path attempts once, and on any error it *declines*, so the plugin loads the model.
+
+So the Rust path serves text-only LiteRT-LM today. A multimodal model is a
+decline, not a failure — which is safe, and means the gemma-4 E2B run will show
+the fallback working rather than Rust working. Deleting the plugin before that
+retry ladder exists would delete gemma-4 E2B and E4B from the catalogue. See
+Gap 6 in [APK.md](APK.md).
