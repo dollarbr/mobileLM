@@ -6,7 +6,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.2+1**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.4.0+1**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (18 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
@@ -98,12 +98,33 @@ Três workflows ativos: `ci.yml` (analyze + test, ~2 min), `debug-apk.yml` (APK 
 arm64 por push, ~22 min) e `release.yml` (dispara na tag).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.3.2+1` → tag `0.3.2`. O workflow falha de propósito se divergirem.
+`+build`: `0.4.0+1` → tag `0.4.0`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado).
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.4.0` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5).
+
+## Catálogo de modelos — como adicionar sem quebrar
+
+Entradas em `AppConstants.availableModels` (`lib/core/constants.dart`). Os campos
+que importam: `filename` (nome local), `url`, `size`, `description`, `template`
+(rótulo apenas — o engine lê o chat template dos metadados do GGUF, em
+`jni_wrapper.cpp` via `llama_model_chat_template`), `runtime` (`llama` | `litert` |
+`sd`) e, para visão, `vision: 'true'` + `mmprojUrl` + `mmprojFilename`.
+
+Duas regras que custam tempo se ignoradas:
+
+- **O `mmprojFilename` tem que ser único.** O app baixa e guarda o projector por
+  esse nome (`model_controller.dart`), não pelo nome do arquivo na URL. Os repos
+  do Qwen3.5, por exemplo, publicam todos o projector como `mmproj-F16.gguf`, e
+  dois modelos da mesma família sobrescrevem o projector um do outro em silêncio —
+  195 MB virando 637 MB, com o modelo pequeno recebendo o projector do grande.
+  Nome local específico, URL real.
+- **Verifique a URL antes de commitar.** Um 404 só aparece na hora do download e
+  não tem outro sintoma:
+  `curl -sI "<url>" | grep -iE "^HTTP|content-length"` — o `content-length` tem que
+  bater com o campo `size`. As 21 URLs do lote 2026-09-27 foram conferidas assim.
 
 **Todo workflow que compila precisa liberar disco antes.** Os nativos vendorizados
 — llama.cpp com backend Vulkan e seus ~300 objetos de shader, LiteRT, Stable
