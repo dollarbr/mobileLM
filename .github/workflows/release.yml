@@ -90,10 +90,27 @@ jobs:
             fi
           done
 
+          # A secret set from a file or a paste keeps its trailing newline, and
+          # GitHub does not strip it. `keytool -storepass $'secret\n'` then fails
+          # with "keystore password was incorrect" -- the same message a wrong
+          # password gives, for a password that is not wrong. Strip surrounding
+          # whitespace; a real PKCS12 password with a newline in it is not a
+          # thing anyone has, and stripping cannot make a correct one fail.
+          STORE_PASSWORD="$(printf '%s' "$STORE_PASSWORD" | tr -d '\r\n')"
+          KEY_PASSWORD="$(printf '%s' "$KEY_PASSWORD" | tr -d '\r\n')"
+
           mkdir -p android
           printf '%s' "$KEYSTORE_B64" | base64 -d > android/keystore.jks
           test -s android/keystore.jks || {
             echo "::error::keystore.jks decoded to nothing" >&2; exit 1; }
+
+          # Report the size. "keystore password was incorrect" cannot tell you
+          # whether the secret holds the wrong keystore or the wrong password,
+          # and those need different fixes. A PKCS12 file is salted, so the bytes
+          # differ run to run even for the same key -- but the size does not.
+          # The reference keystore is 2780 bytes; a mismatch here means the
+          # base64 secret is a different file, not a different password.
+          echo "decoded keystore: $(stat -c %s android/keystore.jks) bytes"
 
           # Alias discovery, locale-independently.
           #
