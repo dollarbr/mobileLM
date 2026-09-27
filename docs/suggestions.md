@@ -1,7 +1,7 @@
 # Sugestões de Funcionalidades — mobileLM-app
 
 **Data:** 2026-09-23  
-**Versão atual:** 0.4.0+1  
+**Versão atual:** 0.3.3+1  
 **Engine:** GGUF + LiteRT-LM 0.17.1 · Cloud + Agente multi-passo
 
 ---

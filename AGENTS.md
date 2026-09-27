@@ -6,7 +6,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.4.0+1**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.3+1**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (18 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
@@ -107,12 +107,19 @@ CPU, não a libc, e o binário fixa `/system/bin/linker64` como interpretador). 
 build; o aparelho garante o motor. Ver [`local_plugins/mobilelm_core/AGENTS.md`](local_plugins/mobilelm_core/AGENTS.md).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.4.0+1` → tag `0.4.0`. O workflow falha de propósito se divergirem.
+`+build`: `0.3.3+1` → tag `0.3.3`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.4.0` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5).
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5).
+
+**Minor = feature, patch = conteúdo.** Um catálogo maior não é uma feature, é uma
+lista maior — o bump de minor teria prometido algo que o APK não traz. `0.4.0` fica
+reservado para o núcleo híbrido (`local_plugins/mobilelm_core`) *dentro do app*, que
+é a primeira vez que o número muda o que o usuário recebe. Antes de subir um minor,
+escreva uma frase do tipo "isto faz X, que antes não existia" — se a frase não sai,
+é patch.
 
 ## Catálogo de modelos — como adicionar sem quebrar
 
