@@ -343,10 +343,10 @@ extern "C" fn chunk_trampoline(data: *mut c_void, chunk: *const LiteRtLmStreamCh
     let text = unsafe { (api.litert_lm_stream_chunk_get_text)(chunk) };
     if !text.is_null() {
         let piece = unsafe { CStr::from_ptr(text) }.to_string_lossy();
-        // The header calls this "the text content of the chunk". On 0.17.1 it
-        // is the serialised message, one envelope per token -- so the name lies
-        // and the raw bytes are not the token. Verified on an Edge 60: 215 chunks,
-        // every one of them `{"role":"assistant","content":[{"type":"text",
+        // The header calls this "the text content of the chunk". On the runtime
+        // we ship it is the serialised message, one envelope per token -- so the
+        // name lies and the raw bytes are not the token. Verified on an Edge 60:
+        // 215 chunks, every one of them `{"role":"assistant","content":[{"type":"text",
         // "text":"..."}]}`. Unwrap it here rather than making every consumer
         // learn the C API's JSON dialect.
         //

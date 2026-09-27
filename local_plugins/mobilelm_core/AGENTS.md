@@ -13,7 +13,17 @@ the commit trail it replaced; the workspace guide has the short version.
 **Not in any APK.** Nothing in `lib/` imports this, Gradle does not build it, and
 the app's behaviour is identical with or without it. It is a library plus a
 headless harness, gated in CI, and the wiring is separate work. Do not describe
-it as shipped.
+it as shipped. [`docs/APK.md`](docs/APK.md) is that work, written out, with the
+three findings that shape it: **the vendored C API is v0.16.0, not the 0.17.1 the
+AAR ships** (0.17.1's only change is a tool-call integer fix in the engine's
+native function-calling parser, which this app does not use — it parses
+`[TOOL_CALL: …]` out of text in `lib/services/tools/tool_call_parser.dart`); **the
+APK grows ~20 MB** (78 → ~98, because the C API `.so` is 38.9 MB against the
+AAR's 21.8 MB and the plugin is what gets deleted); and **a tag push never runs
+`ci.yml`**, so the cross-compile job that would produce the cdylib does not exist
+when `release.yml` starts — it has to become a `workflow_call` all three share.
+Read it before starting; the size and the version are product decisions, not
+engineering ones.
 
 **Not faster.** The engine is C++ and stays C++. A 1B Q4_0 does 21.2 tok/s
 prefill on CPU against Vulkan's 3.4 on this phone, and no amount of Rust in the
@@ -130,8 +140,8 @@ in this build — pin it then.
 - **The probe never `dlclose`s.** Unloading a 39 MB runtime while a model handle
   is alive is a use-after-free.
 - **A stream chunk is not a token.** `litert_lm_stream_chunk_get_text` is
-  documented as returning the chunk's text; 0.17.1 returns the *serialised
-  message*, one JSON envelope per token. `mobilelm_core::json::extract_content_text`
+  documented as returning the chunk's text; the runtime we ship returns the
+  *serialised message*, one JSON envelope per token. `mobilelm_core::json::extract_content_text`
   is what unwraps it, and its test fixtures are literal device output. A mock
   built from the header's promise tests the promise — 34 host tests passed while
   the phone printed JSON at the user.

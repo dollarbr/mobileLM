@@ -11,6 +11,20 @@
 set -euo pipefail
 
 VERSION="${LITERT_C_API_VERSION:-0.1.0}"   # the C API package version
+# v0.16.0 is the ONLY LiteRT-LM release that ships litert_lm_c_api-*.zip. 0.16.1,
+# 0.17.0 and 0.17.1 have no such asset, so this pin is not stale -- it is the
+# ceiling. That means the app's AAR (litertlm-android 0.17.1) and the runtime the
+# core loads are different builds, and moving LITERTLM_TAG to 0.17.1 will 404.
+#
+# 0.17.1's only change over 0.16.0 is f300c4fdc28b, "keep integers as integers in
+# tool call arguments", and every file it touches is the engine's NATIVE
+# function-calling / constrained-decoding parser. This app does not use that path:
+# tool calls are parsed out of text by lib/services/tools/tool_call_parser.dart
+# and no tools are ever handed to LiteRT-LM. So the downgrade is cosmetic today.
+# It stops being cosmetic the day native function calling is enabled -- the plugin
+# API has LiteLmTool for it -- and the fix then is to build the C API from the
+# 0.17.1 source (root CMakeLists.txt + c/CMakeLists.txt, same NDK as any other
+# vendored engine). Reasoning and evidence: docs/APK.md, "Blocker 1".
 LITERTLM_TAG="${LITERTLM_TAG:-v0.16.0}"    # the LiteRT-LM release that ships it
 DEST="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/vendor/prebuilt/litert-lm"
 

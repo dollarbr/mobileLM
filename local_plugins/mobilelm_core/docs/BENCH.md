@@ -155,7 +155,7 @@ prompt, `mobilelm-bench --bench --backend cpu`.
 | prefill | not measured — the C API reports no prompt timing, so the field stays 0 rather than being guessed |
 | peak RSS | 1,857,948 KiB (1.77 GiB) |
 | resolved backend | `cpu` (requested `cpu`) |
-| runtime | `liblitert-lm.so` 0.17.1, dlopen, 9/9 C API symbols |
+| runtime | `liblitert-lm.so` **v0.16.0** (the only release shipping `litert_lm_c_api-0.1.0.zip`), dlopen, 9/9 C API symbols |
 
 The model answered, in Portuguese, in one sentence as asked: *"Um token é uma
 parte de um texto ou conjunto de dados separada por espaços, palavras ou outros
@@ -189,7 +189,7 @@ Q4_0, 21.2 tok/s prefill on CPU) only once both are measured the same way.
 ### The bug the phone found that 34 tests did not
 
 `litert_lm_stream_chunk_get_text` is documented as "Gets the text content of the
-chunk". On 0.17.1 it returns the **serialised message**:
+chunk". On the runtime we ship it returns the **serialised message**:
 
 ```json
 {"role":"assistant","content":[{"type":"text","text":"<think>"}]}

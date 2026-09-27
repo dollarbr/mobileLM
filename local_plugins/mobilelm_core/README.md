@@ -5,8 +5,10 @@ the engine is C++ and stays C++, and this is the layer around it.
 
 > **Not in any APK yet.** Nothing in `lib/` imports this, Gradle does not build
 > it, and the app behaves identically with or without it. It is a library and a
-> headless harness, both gated in CI. The wiring is separate work — see
-> [`AGENTS.md`](AGENTS.md) for what "not shipped" means precisely.
+> headless harness, both gated in CI. The wiring is separate work —
+> [`docs/APK.md`](docs/APK.md) is the plan for it, with the three blockers that
+> have to be resolved first. See [`AGENTS.md`](AGENTS.md) for what "not shipped"
+> means precisely.
 
 It was a standalone repository (`dollarbr/mobileLM-rs`) until 2026-09-27.
 [`docs/ORIGIN.md`](docs/ORIGIN.md) has why, and the commit trail the fold
@@ -47,6 +49,7 @@ thread count and no accelerator hint. Read it as headroom, not as a verdict.
 | `crates/mobilelm-litert/` | The LiteRT-LM C API, hand-written against the official headers. |
 | `crates/mobilelm-bench/` | Headless CLI: `--probe` for the device, `--bench` for a generation. |
 | `docs/BENCH.md` | The measurement matrix, the numbers, and the traps each one cost. |
+| `docs/APK.md` | The plan for putting this in the app, and what blocks it. |
 | `docs/ARTIFACT.md` | How to run the arm64 binary, and why CI cannot. |
 | `scripts/` | Fetches the prebuilts. Nothing binary is committed. |
 
