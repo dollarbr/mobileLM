@@ -6,7 +6,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.3+1**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.4+1**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
@@ -113,12 +113,17 @@ CPU, não a libc, e o binário fixa `/system/bin/linker64` como interpretador). 
 build; o aparelho garante o motor. Ver [`local_plugins/mobilelm_core/AGENTS.md`](local_plugins/mobilelm_core/AGENTS.md).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.3.3+1` → tag `0.3.3`. O workflow falha de propósito se divergirem.
+`+build`: `0.3.4+1` → tag `0.3.4`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5).
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade).
+
+**0.3.4 é a primeira release assinada com a chave do projeto.** Até 0.3.3 inclusive
+todas saíram com `CN=Android Debug`. Quem instalou uma dessas precisa **desinstalar**
+antes de instalar a 0.3.4 — o Android recusa substituir por assinatura diferente, e
+desinstalar apaga modelos baixados, histórico e workspace. Está avisado no README.
 
 **Minor = feature, patch = conteúdo.** Um catálogo maior não é uma feature, é uma
 lista maior — o bump de minor teria prometido algo que o APK não traz. `0.4.0` fica
@@ -174,13 +179,35 @@ Diffusion — enchem os ~14 GB livres do runner com intermediários, e o release
 soma R8. O `release.yml` ficou a vida toda sem esse passo (nunca havia rodado) e
 morreria em `No space left on device` na primeira tag; corrigido em `ea9a828`.
 
-**Assinatura de release é bloqueada por padrão fora do CI.** O `build.gradle.kts`
-lança exceção se `isReleaseBuild` for true e `GITHUB_ACTIONS`/`CI` não estiverem
-presentes. Para build local de release sem keystore, use `flutter build apk
---release` (release *não-assinado*) — o build.gradle permite quando `signingConfig`
-é debug. Para build assinado local, defina `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`.
+**Assinatura: release sempre com a chave de release, nunca com a de debug.**
 
-Sem keystore no CI: `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`.
+O `build.gradle.kts` lança exceção em dois casos, e ambos são fatais de propósito:
+
+1. `isReleaseBuild` e sem `GITHUB_ACTIONS`/`CI` — release só no CI.
+2. `isReleaseBuild` e sem `android/key.properties` — **não há mais fallback para a
+   chave de debug.** Um escape que existe é um escape que alguém ativa, e a falha
+   que ele causa é invisível até alguém conferir um certificado.
+
+Não reintroduza `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING`. Ele existia, o
+`release.yml` o definia como `"true"` incondicionalmente, e por isso **todo APK
+publicado até 0.3.3 saiu com `CN=Android Debug`** — ou seja, falsificável, já que
+a chave de debug é pública. Os três secrets `RELEASE_*` estavam configurados no
+repo e nenhum workflow os lia. O keystore nunca esteve errado; ninguém o usava.
+
+Hoje o `release.yml` materializa o keystore dos secrets, e o passo
+"The APK is signed with the release key" falha se o certificado sair como
+`CN=Android Debug` ou se houver mais de um signer. É essa checagem que impede a
+regressão; não remova.
+
+O alias da chave é **descoberto do próprio keystore** no CI, não guardado num
+quarto secret — um secret que precisa ficar em sincronia com um arquivo acaba
+dessincronizando, e um alias errado aparece como "keystore password was
+incorrect", indistinguível de senha errada. E a descoberta parseia a saída
+**não-verbose** de `keytool -list`: a verbose é traduzida ("Nome do alias:" em
+pt_BR), a linha de entrada `alias, <data>, PrivateKeyEntry,` não é.
+
+Debug APK continua com chave de debug — é o correto, elas não são distribuídas e
+precisam instalar por cima de qualquer build.
 
 ## Notas de build
 

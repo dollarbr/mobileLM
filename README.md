@@ -74,12 +74,18 @@ Every push also produces a debug APK, available from the
 
 ### Before you install an update
 
-Release APKs are currently signed with the **Android debug key** — see
-[Signing](#signing) below. Because the key is the well-known debug one, an
-update can silently come from anyone. If you installed a previous release, you
-will not be able to update over it once the signing key changes; you will have
-to uninstall first, which deletes downloaded models and chat history. Export
-anything you care about from the app before that happens.
+Releases up to and including **0.3.3** were signed with the Android **debug
+key**, which is public — anyone could produce an APK that updates over yours.
+From **0.3.4** on, releases are signed with the project's own key.
+
+That means 0.3.4 is the first release you *cannot* update over an earlier one.
+Android refuses to replace an app with a differently-signed build, so you will
+have to uninstall first — and that deletes your downloaded models, chat history
+and workspace bindings. Export anything you care about from the app before you
+do. After 0.3.4, updates are normal again.
+
+Debug APKs from CI are still debug-signed. That is correct and intended: they
+are not distributed, and they must be able to install over any build.
 
 ## Build from source
 
@@ -99,34 +105,38 @@ Vulkan shader set, LiteRT and Stable Diffusion together will fill a 14 GB runner
 and take the better part of half an hour on a machine that is not saturating its
 cores.
 
+**Release builds only work in CI, and that is deliberate.** `build.gradle.kts`
+refuses a release build outside CI, and refuses one without a keystore — a
+release APK is never debug-signed, not even by accident. To look at a local
+artifact, build debug. See [Signing](#signing).
+
 ## Signing
 
-`build.gradle.kts` refuses to produce a signed release build outside CI, and
-requires either a real keystore or an explicit opt-in. That guard is real; what
-happens *inside* CI is not what the section used to claim.
+| Build | Signed with |
+|---|---|
+| Release (CI) | the project's release key, from GitHub secrets |
+| Release (local) | refused — the build fails, it does not downgrade |
+| Debug | the Android debug key, as always |
 
-**The published release APKs are debug-signed.** `release.yml` sets
-`MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true`, which makes the build fall back to
-the debug signing config, and it never reads the `RELEASE_KEYSTORE_BASE64`,
-`RELEASE_STORE_PASSWORD` and `RELEASE_KEY_PASSWORD` secrets that are configured
-on the repository. Those secrets are set and unused. Every APK on the releases
-page carries `CN=Android Debug`; you can check with:
+The release keystore is never in the repository. `release.yml` materialises it
+from the `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD` and
+`RELEASE_KEY_PASSWORD` secrets into `android/keystore.jks`, writes the
+`android/key.properties` that Gradle reads, and the key alias is discovered from
+the keystore itself rather than stored in a fourth secret that could drift out of
+sync. Both paths are gitignored, and the workflow asserts that they are.
+
+After the build, the workflow reads the APK's certificate and **fails if it is
+`CN=Android Debug`**, or if there is not exactly one signer. That check is the
+reason this cannot silently regress again.
+
+The first version of this setup had the secrets configured and the workflow
+never reading them, while the build fell back to the debug key — so every APK
+through 0.3.3 shipped forgeable. Nothing about the keystore was wrong; nobody
+was using it. If you want to check a given release for yourself:
 
 ```sh
 apksigner verify --print-certs mobilelm-<version>-arm64-v8a.apk
 ```
-
-What this means in practice:
-
-- Anyone can produce an APK that updates over yours, because the debug key is
-  public. Nothing you install from this page can be trusted as ours.
-- The repository's `.gitignore` already blocks `*.jks` and `key.properties`, and
-  the release keystore lives outside it, in the workspace root, never in a repo.
-  That part is right.
-
-Fixing it is a deliberate change with a user-visible cost: the first
-release-signed APK cannot update over a debug-signed one, so everyone has to
-uninstall and reinstall once. It has not been done yet.
 
 ## Credits
 

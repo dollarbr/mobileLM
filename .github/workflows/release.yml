@@ -58,12 +58,98 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Materialise the release keystore from the secrets, and write the
+      # key.properties that build.gradle.kts reads.
+      #
+      # This step did not exist. The three RELEASE_* secrets were configured on
+      # the repository and never referenced by any workflow, while the build ran
+      # with MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING=true and fell back to the
+      # debug signing config. Every published APK was debug-signed, which is to
+      # say forgeable: the debug key is public, so anyone could ship an update
+      # over a user's install. The keystore itself was fine the whole time —
+      # nobody was reading it.
+      #
+      # The alias is discovered from the keystore rather than taken from a fourth
+      # secret. A secret that has to be kept in sync with a file is a secret that
+      # will drift, and a wrong alias surfaces as "keystore password was
+      # incorrect", which is indistinguishable from a wrong password.
+      - name: Materialise the release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -eu
+          for pair in "KEYSTORE_B64:RELEASE_KEYSTORE_BASE64" \
+                      "STORE_PASSWORD:RELEASE_STORE_PASSWORD" \
+                      "KEY_PASSWORD:RELEASE_KEY_PASSWORD"; do
+            var="${pair%%:*}"; name="${pair##*:}"
+            if [ -z "${!var}" ]; then
+              echo "::error::$name is empty or unset. Refusing to publish a debug-signed APK." >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p android
+          printf '%s' "$KEYSTORE_B64" | base64 -d > android/keystore.jks
+          test -s android/keystore.jks || {
+            echo "::error::keystore.jks decoded to nothing" >&2; exit 1; }
+
+          # Alias discovery, locale-independently.
+          #
+          # `keytool -list -v` is translated: on a pt_BR JDK it prints
+          # "Nome do alias:", not "Alias name:", so the obvious sed matches
+          # nothing and the step fails with "found 0 aliases" — or worse, on a
+          # differently-localised runner, a plausible wrong answer. LC_ALL=C
+          # alone would fix that and is why it is set, but the parse below does
+          # not depend on it: in the *non-verbose* listing the entry line is
+          # `alias, <date>, PrivateKeyEntry,` and neither the alias nor the
+          # entry type is translated. Both together is belt and braces.
+          aliases=$(
+            LC_ALL=C keytool -list -keystore android/keystore.jks \
+              -storepass "$STORE_PASSWORD" 2>/dev/null \
+            | grep -E '(PrivateKeyEntry|trustedCertEntry)' \
+            | sed 's/,.*//' \
+            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+          )
+          count=$(printf '%s\n' "$aliases" | grep -c . || true)
+          if [ "$count" -ne 1 ]; then
+            echo "::error::expected exactly 1 alias in the keystore, found $count" >&2
+            printf '%s\n' "$aliases" | sed 's/^/  /' >&2
+            LC_ALL=C keytool -list -keystore android/keystore.jks \
+              -storepass "$STORE_PASSWORD" 2>&1 | sed 's/^/  | /' >&2 || true
+            exit 1
+          fi
+          alias=$(printf '%s\n' "$aliases" | head -1)
+          echo "keystore has a single alias: $alias"
+
+          # storeFile is read with file() from the app module (android/app), so
+          # an absolute path is the only spelling that cannot be misread as
+          # relative to the wrong directory.
+          cat > android/key.properties <<EOF
+          storeFile=$GITHUB_WORKSPACE/android/keystore.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$alias
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+          # Prove the credentials work now, rather than letting Gradle fail 20
+          # minutes into a native build with "password was incorrect".
+          keytool -list -keystore android/keystore.jks \
+            -storepass "$STORE_PASSWORD" -alias "$alias" >/dev/null
+
+          # Both files are gitignored, but say so where the next person looks.
+          git check-ignore -q android/key.properties \
+            || { echo "::error::android/key.properties is NOT gitignored" >&2; exit 1; }
+          git check-ignore -q android/keystore.jks \
+            || { echo "::error::android/keystore.jks is NOT gitignored" >&2; exit 1; }
+          echo "ok: keystore materialised, credentials verified, both paths ignored"
+
       # One build with --split-per-abi, not two builds. Without that flag a
       # single --target-platform emits plain app-release.apk, so the second
       # build silently overwrote the first and no per-ABI file ever existed.
       - name: Build APKs
         env:
-          MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING: "true"
           GRADLE_OPTS: "-Dorg.gradle.workers.max=4 -Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=utf-8 -Dkotlin.daemon.jvm.options=-Xmx4g"
         run: |
           flutter build apk --release --split-per-abi \
@@ -77,6 +163,45 @@ jobs:
           ls -1 # surfaces a naming mismatch here rather than in the mv below
           mv app-arm64-v8a-release.apk  "mobilelm-$TAG-arm64-v8a.apk"
           ls -lh mobilelm-*.apk
+
+      # The assertion that would have caught this in the first place, and the one
+      # that keeps it caught. It is cheap, it is the actual property that
+      # matters, and it fails on the thing rather than on a proxy for it.
+      - name: The APK is signed with the release key
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          # apksigner is not on PATH on the runner image; it lives in a
+          # build-tools directory. Take the newest one rather than a hardcoded
+          # revision, which ages out with the image.
+          apksigner="$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/apksigner 2>/dev/null \
+            | sort -V | tail -1)"
+          if [ -z "$apksigner" ]; then
+            echo "::error::no apksigner under build-tools; cannot verify signing" >&2
+            exit 1
+          fi
+          echo "using $apksigner"
+
+          apk="build/app/outputs/flutter-apk/mobilelm-$TAG-arm64-v8a.apk"
+          test -f "$apk" || { echo "::error::no APK at $apk" >&2; exit 1; }
+
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "$certs" | grep -E "certificate DN|SHA-256 digest"
+
+          if echo "$certs" | grep -q "CN=Android Debug"; then
+            echo "::error::$apk is signed with the Android debug key. Do not publish it." >&2
+            exit 1
+          fi
+          # One signer. A second entry would mean either a v1/v2/v3 scheme
+          # difference being reported separately, or a genuine second key, and
+          # neither should pass silently.
+          signers=$(echo "$certs" | grep -c "certificate DN" || true)
+          if [ "$signers" -ne 1 ]; then
+            echo "::error::expected 1 signer, found $signers" >&2
+            exit 1
+          fi
+          echo "ok: single non-debug signer"
 
       - name: Generate release notes from commits
         env:
