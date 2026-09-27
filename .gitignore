@@ -102,3 +102,14 @@ docs/*
 !docs/MODELS.md
 !docs/SHIZUKU.md
 !docs/superpowers/
+
+# The Rust core's cdylib and the LiteRT-LM C API runtime, copied into jniLibs by
+# CI from the `mobilelm-native-arm64` artifact. Together ~42 MB, and the core's own
+# rule is that no binary lives in git.
+#
+# Ignored **by name, not by directory**: `libomp.so` sits in that same
+# `jniLibs/arm64-v8a/` and is committed on purpose, so ignoring the directory
+# would silently untrack it. Naming the two files also means a future .so dropped
+# in there still reaches review instead of being swept up.
+/android/app/src/main/jniLibs/arm64-v8a/libmobilelm_core.so
+/android/app/src/main/jniLibs/arm64-v8a/liblitert-lm.so

@@ -18,12 +18,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The Rust core's arm64 build, as a reusable workflow rather than a step here.
+  # It has to be a separate job because a called workflow's jobs get their own
+  # runners: the artefact is the only channel between them, which is also why the
+  # natives are downloaded again below instead of being built in place.
+  native:
+    uses: ./.github/workflows/rust-core.yml
+
   build:
+    needs: native
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      # `android/app/src/main/jniLibs/arm64-v8a/` is already the place this app
+      # keeps a hand-placed `.so` that ships in the APK — `libomp.so` lives there
+      # and is committed. So no Gradle change is needed: `flutter build` picks up
+      # whatever is in that directory. Both files are gitignored by name, because
+      # together they are ~42 MB and the core's rule is that no binary is
+      # committed.
+      - name: Put the Rust core and the LiteRT runtime in jniLibs
+        uses: actions/download-artifact@v4
+        with:
+          name: mobilelm-native-arm64
+          path: android/app/src/main/jniLibs/arm64-v8a
+
+      - name: Confirm the natives landed
+        run: |
+          dir=android/app/src/main/jniLibs/arm64-v8a
+          ls -lh "$dir"
+          for so in libmobilelm_core.so liblitert-lm.so; do
+            if [ ! -f "$dir/$so" ]; then
+              echo "::error::$so missing from jniLibs; the APK would have no engine" >&2
+              exit 1
+            fi
+          done
 
       # The vendored native builds (llama.cpp Vulkan, LiteRT, SD) fill the
       # runner's ~14 GB free disk with intermediates. Drop the preinstalled
@@ -63,6 +94,22 @@ jobs:
           cd build/app/outputs/flutter-apk
           ls -1
           mv app-debug.apk "mobilelm-debug-${GITHUB_SHA::7}.apk"
+
+      # Assert the natives are in the APK, from the APK. A step that checks the
+      # jniLibs directory proves the files were downloaded; this proves they were
+      # packaged, which is a different thing and is where a `packagingOptions`
+      # exclusion or an ABI filter would show up.
+      - name: The APK carries the core and its runtime
+        run: |
+          apk=$(ls build/app/outputs/flutter-apk/mobilelm-debug-*.apk)
+          for so in libmobilelm_core.so liblitert-lm.so; do
+            if ! unzip -l "$apk" | grep -q "lib/arm64-v8a/$so"; then
+              echo "::error::$so is not in the APK" >&2
+              unzip -l "$apk" | grep 'lib/arm64-v8a/' >&2 || true
+              exit 1
+            fi
+          done
+          unzip -l "$apk" | grep 'lib/arm64-v8a/' | awk '{printf "  %-46s %s\n", $4, $1}'
 
       - uses: actions/upload-artifact@v4
         with:
