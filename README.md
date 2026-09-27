@@ -166,7 +166,7 @@ artifact, build debug. See [Signing](#signing).
 
 | Build | Signed with |
 |---|---|
-| Release (CI) | the project's release key, from GitHub secrets |
+| Release (CI) | the project's release key, from the `release` environment |
 | Release (local) | refused — the build fails, it does not downgrade |
 | Debug | the Android debug key, as always |
 
@@ -176,6 +176,34 @@ from the `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD` and
 `android/key.properties` that Gradle reads, and the key alias is discovered from
 the keystore itself rather than stored in a fourth secret that could drift out of
 sync. Both paths are gitignored, and the workflow asserts that they are.
+
+Those three secrets live in a GitHub **environment** named `release`, not at
+repository level, and the build job declares `environment: release`. Two things
+follow, and both matter:
+
+- Only a job that declares that environment can read them. At repository level
+  they were visible to every workflow in the repo, including the debug APK build
+  that runs on every push.
+- The environment allows **tags only**. A workflow run from a branch cannot
+  deploy to it, so pushing code — or opening a branch — gets nobody near the
+  signing key. Verified: a branch-triggered run is rejected in about two seconds
+  with `Branch "..." is not allowed to deploy to release due to environment
+  protection rules`, before a single step executes.
+
+To confirm the setup is intact, `gh secret list --repo dollarbr/mobileLM` should
+come back **empty**; the secrets should only be visible with
+`gh secret list --env release`. If something shows up at repository level, the
+environment is not protecting anything.
+
+Secret scanning and secret scanning push protection are both enabled. They are
+free on a public repository, and they are the net against a secret being
+force-added to a commit one day.
+
+One control is not available here: environment *required reviewers* is an
+organization feature, and this repository is on a personal account, so the API
+rejects it with `App not installed on organization`. The tag restriction covers
+the concrete scenario — someone pushes code — but there is no human approval gate
+in front of a release. Moving the repository to an organization would allow one.
 
 After the build, the workflow reads the APK's certificate and checks three
 things: the SHA-256 must be `1cd43cb7…`, it must not be `CN=Android Debug`, and
