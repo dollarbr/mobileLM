@@ -589,6 +589,21 @@ class InferenceEngine {
       );
       _rustEngine = engine;
       _rustLoadFailure = null;
+      // The service still has to be *told* it is a LiteRT-LM service. Without this
+      // the load reports success, the header shows the model, the RSS is the
+      // model's — and the first message throws "No model loaded", because
+      // `generate` routes on this flag and falls past the LiteRT branch to the
+      // llama branch, where the Kotlin `_controller` it guards on is null by
+      // design here. The two paths differ in *how* they reach LiteRT-LM, not in
+      // whether they are in it, and the flag is the one piece of shared state
+      // that says so.
+      _isLiteRt = true;
+      _controller = null;
+      // Only read at dispose, to decide whether disposing `_controller` is worth
+      // trying. Harmless today because `_controller` is null — but a flag that
+      // says "no model loaded" on a loaded model is the kind of thing that
+      // becomes load-bearing in a later change and is wrong by then.
+      _hasLoadedModel = true;
       onProgress?.call(0.92);
 
       final report = await engine.loadReport();
