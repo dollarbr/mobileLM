@@ -94,8 +94,17 @@ diferente do resto do workspace, onde commit só ocorre se pedido.
 
 ## CI e release
 
-Três workflows ativos: `ci.yml` (analyze + test, ~2 min), `debug-apk.yml` (APK debug
-arm64 por push, ~22 min) e `release.yml` (dispara na tag).
+Três workflows ativos: `ci.yml`, `debug-apk.yml` (APK debug arm64 por push, ~22 min) e
+`release.yml` (dispara na tag).
+
+O `ci.yml` tem três jobs: `analyze` (analyze + test, ~2 min), `rust-core` (fmt, clippy e
+testes do núcleo Rust em `local_plugins/mobilelm_core`) e `rust-core-android` (cross-compila
+o binário arm64 e confere que o engine continua sendo dependência de runtime via `readelf -d`).
+Os dois últimos são jobs separados do `analyze` porque são toolchains diferentes — um erro de
+lint Dart e um `std` aarch64 faltando não têm relação entre si, e juntar os dois esconde qual
+quebrou. O job arm64 **não roda o engine**: qemu-user não executa binário Android (emula a
+CPU, não a libc, e o binário fixa `/system/bin/linker64` como interpretador). O CI garante o
+build; o aparelho garante o motor. Ver [`local_plugins/mobilelm_core/AGENTS.md`](local_plugins/mobilelm_core/AGENTS.md).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
 `+build`: `0.4.0+1` → tag `0.4.0`. O workflow falha de propósito se divergirem.

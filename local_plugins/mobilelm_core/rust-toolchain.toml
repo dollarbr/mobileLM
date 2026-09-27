@@ -1,0 +1,11 @@
+[toolchain]
+channel = "stable"
+# Cross-compiling to Android needs the std for the target. `rustup target add`
+# is a no-op if you have no rustup (Arch's rust package ships host std only) --
+# in that case `cargo check --target aarch64-linux-android` will tell you so.
+targets = ["aarch64-linux-android"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

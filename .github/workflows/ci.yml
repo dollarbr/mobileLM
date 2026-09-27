@@ -29,3 +29,148 @@ jobs:
       - run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - run: flutter test
+
+  # The Rust engine core (local_plugins/mobilelm_core). Separate from `analyze`
+  # because it is a different toolchain: a Dart lint failure and a missing
+  # aarch64 std have nothing to do with each other, and lumping them in hides
+  # which of the two is broken.
+  rust-core:
+    name: Rust core, host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Test and lint
+        working-directory: local_plugins/mobilelm_core
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+  # Proves the core still cross-compiles for the phone, and that the engine
+  # stayed a runtime dependency. Neither is checked by the host job above, and
+  # both fail in ways that only a real target shows.
+  #
+  # It does NOT run the engine. qemu-user cannot execute an Android binary --
+  # it emulates the CPU, not libc, and the binary hardcodes /system/bin/linker64
+  # -- so a generation run belongs on the phone. See
+  # local_plugins/mobilelm_core/docs/ARTIFACT.md.
+  rust-core-android:
+    name: Rust core, arm64
+    runs-on: ubuntu-latest
+    needs: rust-core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      # Use an NDK the runner image already ships. `nttld/setup-ndk` 404s on it
+      # (28.2.13676358 ships as android-ndk-r28c-linux.zip) and `sdkmanager` is
+      # not on PATH, so neither is an option. The image ships two NDKs and
+      # exports ANDROID_NDK_ROOT for one of them -- a bare glob can pick the
+      # other and leave cargo-ndk warning that the two variables disagree, so
+      # trust the exported one and set both names from that single value.
+      #
+      # The version is whatever the image pins, NOT the 28.2.13676358 that
+      # `flutter.ndkVersion` resolves to. That is deliberate for now: this job
+      # links no engine, it only cross-compiles, so the toolchain version cannot
+      # change the artifact's behaviour. Pin it when the core's cdylib enters
+      # the Gradle build.
+      - name: Locate the NDK
+        run: |
+          if [ -n "${ANDROID_NDK_ROOT:-}" ] && [ -d "${ANDROID_NDK_ROOT}" ]; then
+            ndk="$ANDROID_NDK_ROOT"
+          else
+            ndk="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)"
+          fi
+          if [ -z "$ndk" ]; then
+            echo "::error::no NDK found (ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-unset})" >&2
+            exit 1
+          fi
+          echo "using $ndk"
+          {
+            echo "ANDROID_NDK_HOME=$ndk"
+            echo "ANDROID_NDK_ROOT=$ndk"
+          } >> "$GITHUB_ENV"
+
+      - name: Cross-compile the probe and bench
+        id: build
+        working-directory: local_plugins/mobilelm_core
+        run: |
+          cargo install cargo-ndk --locked
+          cargo ndk -t arm64-v8a build --release -p mobilelm-bench
+
+          # Do not hardcode the output path. cargo-ndk's layout is not stable
+          # across versions, and `file` on a missing path exits 0 on this image
+          # -- so a wrong guess renders as a green step followed by a missing
+          # artifact, which is exactly what happened once already. Find the
+          # binary, then prove it is there.
+          bin="$(find target -type f -name mobilelm-bench -perm -u+x | head -1)"
+          if [ -z "$bin" ]; then
+            echo "::error::no mobilelm-bench produced under target/" >&2
+            find target -name 'mobilelm-bench*' >&2 || true
+            exit 1
+          fi
+          file "$bin"
+          echo "path=local_plugins/mobilelm_core/$bin" >> "$GITHUB_OUTPUT"
+
+      # The engine must not have become a link-time dependency. dlopen is the
+      # whole reason `cargo test` runs on a laptop, and a stray `#[link]` or a
+      # build.rs that links the runtime would silently take that away while
+      # every test above still passed.
+      #
+      # readelf, not ldd: ldd *executes* the binary's interpreter, and on this
+      # x86_64 host that is the x86-64 loader pointed at an aarch64 Android
+      # binary. It exits 1 with no output, which looks exactly like a finding.
+      # DT_NEEDED is a table read, so it does not care what the target is.
+      - name: The engine is loaded, not linked
+        run: |
+          needed="$(readelf -d "${{ steps.build.outputs.path }}" | grep NEEDED)"
+          echo "$needed"
+          if echo "$needed" | grep -qi litert; then
+            echo "::error::mobilelm-bench links liblitert-lm; it must dlopen it" >&2
+            exit 1
+          fi
+          echo "ok: no litert in DT_NEEDED"
+
+      - name: Fetch the runtime, so the artifact is runnable as-is
+        working-directory: local_plugins/mobilelm_core
+        run: |
+          scripts/fetch-litert-capi.sh
+          mkdir -p rt
+          cp vendor/prebuilt/litert-lm/lib/android_arm64/liblitert-lm.so rt/
+          ls -lh rt/
+
+      # A run on the phone needs the binary, the runtime and a model. The model
+      # is 586 MB and stays out of the artifact; the instructions that explain
+      # which model, and where, are docs/ARTIFACT.md -- versioned prose rather
+      # than a heredoc inside a YAML block scalar, which cannot be indented.
+      - name: Stage the artifact
+        working-directory: local_plugins/mobilelm_core
+        run: |
+          mkdir -p dist
+          cp "${{ steps.build.outputs.path }}" dist/mobilelm-bench
+          cp rt/liblitert-lm.so dist/
+          cp scripts/run-on-device.sh dist/
+          cp docs/ARTIFACT.md dist/README.md
+          {
+            cat docs/ARTIFACT.md
+            echo
+            echo "--- --help output ---"
+            ./dist/mobilelm-bench --help 2>&1 || true
+          } > dist/README.txt
+          cat dist/README.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobilelm-bench-arm64
+          path: local_plugins/mobilelm_core/dist/
+          if-no-files-found: error
