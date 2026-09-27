@@ -228,9 +228,24 @@ a chave de debug é pública. Os três secrets `RELEASE_*` estavam configurados 
 repo e nenhum workflow os lia. O keystore nunca esteve errado; ninguém o usava.
 
 Hoje o `release.yml` materializa o keystore dos secrets, e o passo
-"The APK is signed with the release key" falha se o certificado sair como
-`CN=Android Debug` ou se houver mais de um signer. É essa checagem que impede a
-regressão; não remova.
+"The APK is signed with the release key" confere **três** coisas no APK pronto:
+o SHA-256 do certificado tem que ser `1cd43cb7…`, não pode ser
+`CN=Android Debug`, e tem que haver exatamente 1 signer.
+
+O pin do fingerprint é o que importa e o que é fácil de não entender. As outras
+duas checagens **passam tranquilamente para uma chave nova** — que é exatamente a
+forma do bug original: uma release que compila, assina e fica verde sendo assinada
+pela chave errada. Testado com um keystore descartável de mesmo DN
+(`CN=dollarbr, OU=mobileLM, O=mobileLM, C=BR`) e fingerprint
+`1904a3bc…`: a checagem antiga aceitava, a nova rejeita. Só o fingerprint separa
+"a nossa chave" de "alguma outra chave que não é de debug".
+
+É essa checagem que converte "toda release da 0.3.4 em diante é assinada com a
+mesma chave" de algo que precisa lembrar para algo que o build exige. **Rotacionar
+a chave de propósito significa mudar o `EXPECTED_CERT` no mesmo commit que troca o
+secret** — e essa fricção é o ponto, não um obstáculo. A chave e a senha também
+estão no Bitwarden, na entrada `mobileLM` (keystore em base64 num campo, porque
+anexo é feature Premium).
 
 O alias da chave é **descoberto do próprio keystore** no CI, não guardado num
 quarto secret — um secret que precisa ficar em sincronia com um arquivo acaba

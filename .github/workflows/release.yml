@@ -206,6 +206,29 @@ jobs:
           certs=$("$apksigner" verify --print-certs "$apk")
           echo "$certs" | grep -E "certificate DN|SHA-256 digest"
 
+          # The certificate itself, not merely "not the debug key".
+          #
+          # Rejecting CN=Android Debug and requiring a single signer is not
+          # enough. Both checks pass happily for a *fresh* release key, which is
+          # the shape the original bug had: a release that builds, signs and
+          # goes green while being signed by the wrong key. The only thing that
+          # separates "our key" from "some other non-debug key" is the
+          # fingerprint, so that is what gets compared.
+          #
+          # This is what turns "every release from 0.3.4 on is signed by the same
+          # key" from something to be remembered into something the build
+          # enforces. Rotating the key on purpose means changing this line in the
+          # same commit that changes the secret, which is the correct friction.
+          EXPECTED_CERT=1cd43cb7daddcec2a70c35926939a00247c66df5b1bd0a08db4293fc556cfb6d
+          actual_cert=$(echo "$certs" | sed -n 's/.*SHA-256 digest: //p' | head -1)
+          if [ "$actual_cert" != "$EXPECTED_CERT" ]; then
+            echo "::error::$apk is not signed with the project key." >&2
+            echo "::error::expected $EXPECTED_CERT" >&2
+            echo "::error::actual   ${actual_cert:-<none>}" >&2
+            echo "::error::If you rotated the key deliberately, update EXPECTED_CERT." >&2
+            exit 1
+          fi
+
           if echo "$certs" | grep -q "CN=Android Debug"; then
             echo "::error::$apk is signed with the Android debug key. Do not publish it." >&2
             exit 1
@@ -218,7 +241,7 @@ jobs:
             echo "::error::expected 1 signer, found $signers" >&2
             exit 1
           fi
-          echo "ok: single non-debug signer"
+          echo "ok: project key, single non-debug signer"
 
       - name: Generate release notes from commits
         env:

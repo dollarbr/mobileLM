@@ -177,9 +177,15 @@ from the `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD` and
 the keystore itself rather than stored in a fourth secret that could drift out of
 sync. Both paths are gitignored, and the workflow asserts that they are.
 
-After the build, the workflow reads the APK's certificate and **fails if it is
-`CN=Android Debug`**, or if there is not exactly one signer. That check is the
-reason this cannot silently regress again.
+After the build, the workflow reads the APK's certificate and checks three
+things: the SHA-256 must be `1cd43cb7…`, it must not be `CN=Android Debug`, and
+there must be exactly one signer.
+
+The fingerprint is the one that matters. The other two pass happily for a
+*brand-new* release key — which is the exact shape of the original bug, a
+release that builds, signs, goes green, and is signed by the wrong key. The
+fingerprint is the only thing that tells "our key" apart from "some other
+non-debug key".
 
 The first version of this setup had the secrets configured and the workflow
 never reading them, while the build fell back to the debug key — so every APK
