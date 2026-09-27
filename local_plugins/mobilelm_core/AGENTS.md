@@ -10,20 +10,36 @@ the commit trail it replaced; the workspace guide has the short version.
 
 ## What it is, and what it is not
 
-**Not in any APK.** Nothing in `lib/` imports this, Gradle does not build it, and
-the app's behaviour is identical with or without it. It is a library plus a
-headless harness, gated in CI, and the wiring is separate work. Do not describe
-it as shipped. [`docs/APK.md`](docs/APK.md) is that work, written out, with the
-three findings that shape it: **the vendored C API is v0.16.0, not the 0.17.1 the
-AAR ships** (0.17.1's only change is a tool-call integer fix in the engine's
-native function-calling parser, which this app does not use — it parses
-`[TOOL_CALL: …]` out of text in `lib/services/tools/tool_call_parser.dart`); **the
-APK grows ~20 MB** (78 → ~98, because the C API `.so` is 38.9 MB against the
-AAR's 21.8 MB and the plugin is what gets deleted); and **a tag push never runs
-`ci.yml`**, so the cross-compile job that would produce the cdylib does not exist
-when `release.yml` starts — it has to become a `workflow_call` all three share.
-Read it before starting; the size and the version are product decisions, not
-engineering ones.
+**Still not in any APK.** The wiring exists and builds, but the app does not call
+it: `inference_android.dart` is untouched, so the app behaves exactly as it did
+before this crate existed. Do not describe it as shipped. The plan, and what is
+done in it, is [`docs/APK.md`](docs/APK.md).
+
+Where that stands, on `core/rust-hybrid`:
+
+- **The cdylib exists** — `crates/mobilelm-ffi`, `libmobilelm_core.so`, 14 `extern
+  "C"` entry points, cross-compiled in CI in ~1m11s.
+- **The bindings the app was calling past are all there** — vision and audio
+  encoder backends, sampler, token counting, conversation history, and the
+  benchmark family.
+- **The Dart side is written** — `lib/ffi/mobilelm_core_bindings.dart` and
+  `lib/ffi/litert_engine.dart`, with 12 tests that need no device.
+- **The ladder has one owner** — `mobilelm_core::plan`, a pure function, so
+  `cargo test` covers it. `planLiteRtTier` in Dart asks it.
+- **A tag push builds it** — `.github/workflows/rust-core.yml`, a `workflow_call`
+  all three workflows share. It used to live in `ci.yml`, which runs only on
+  `main`, so a tag reached `release.yml` with no Rust artifact at all.
+
+What is left is the device run, and then deleting the Kotlin plugin — which is
+gated on that run, deliberately. Deleting it before comparing the two paths is how
+you ship a regression and delete the thing that was working.
+
+Two findings from the work, both corrections: the vendored C API is **v0.16.0**,
+not the 0.17.1 the AAR ships (0.17.1's only change is a tool-call integer fix in
+the engine's native function-calling parser, which this app does not use — it
+parses `[TOOL_CALL: …]` out of text in `lib/services/tools/tool_call_parser.dart`);
+and **the prefill column in `BENCH.md` was wrong** — the C API does report prompt
+timing, behind a switch nothing was calling.
 
 **Not faster.** The engine is C++ and stays C++. A 1B Q4_0 does 21.2 tok/s
 prefill on CPU against Vulkan's 3.4 on this phone, and no amount of Rust in the
@@ -51,11 +67,12 @@ and `docs/BENCH.md` has the run that proves it generates.
 All from this directory, or with `--manifest-path local_plugins/mobilelm_core/Cargo.toml`.
 
 ```sh
-cargo test                              # 41 tests, no network, no toolchain beyond host
+cargo test                              # 71 tests, no network, no toolchain beyond host
 cargo clippy --all-targets              # must be silent
 cargo fmt --check
 cargo run -p mobilelm-bench -- --probe  # works on the host today
 
+cargo build -p mobilelm-ffi             # libmobilelm_core.so, host
 scripts/run-on-device.sh --check         # device prerequisites, no phone needed
 scripts/run-on-device.sh                # push + probe, needs a connected device
 ```
@@ -77,14 +94,30 @@ typed by hand. It is the only place that knows the binary comes from a CI
 artifact, that the push target is `/data/local/tmp/mobilelm-rs`, and what the two
 possible `loaded:false` reasons mean.
 
-### CI (`rust-core` and `rust-core-android`, in the root `ci.yml`)
+### CI (`rust-core` in `ci.yml`, `rust-core-android` = `rust-core.yml`)
 
-Two jobs, split because they are different toolchains: a Dart lint failure and a
-missing aarch64 std have nothing to do with each other, and lumping them in hides
-which is broken. The arm64 job cross-compiles and asserts the engine stayed a
-runtime dependency. It does **not** run the engine — qemu-user cannot execute an
-Android binary at all, and the reasoning is in
-[`docs/ARTIFACT.md`](docs/ARTIFACT.md).
+Two things, split because they are different toolchains: a Dart lint failure and
+a missing aarch64 std have nothing to do with each other, and lumping them in hides
+which is broken.
+
+`.github/workflows/rust-core.yml` is a `workflow_call` workflow, called by all
+three of `ci.yml`, `debug-apk.yml` and `release.yml`. It is a workflow and not a
+job for one reason: **`ci.yml` runs on `push: branches: [main]`, so a tag push
+never built anything**, and the cross-compile used to live there. Two details that
+are easy to undo by accident:
+
+- **A called workflow's jobs get their own runners**, so the artifact is the only
+  channel between the caller and the build. The `cdylib` and `runtime` outputs are
+  for the log; a string cannot carry 42 MB, and an output that looks like it works
+  until someone tries to use it is worse than none.
+- **The `native` job does not declare `environment: release`.** It compiles a
+  cdylib and needs no signing secret, and a job that could read them should not be
+  a job that does not need them.
+
+The arm64 build asserts the engine stayed a runtime dependency
+(`readelf -d`, no `liblitert` in `DT_NEEDED`) and that all 14 ABI entry points are
+exported. It does **not** run the engine — qemu-user cannot execute an Android
+binary at all, and the reasoning is in [`docs/ARTIFACT.md`](docs/ARTIFACT.md).
 
 Six traps, each of which cost a red run. The workflow comments carry the detail:
 
@@ -124,7 +157,33 @@ in this build — pin it then.
 - **The engine is `dlopen`ed, never linked.** Linking `liblitert-lm.so` (39 MB,
   aarch64) would mean `cargo test` cannot run on a laptop, and an app would die at
   startup on a device without the runtime instead of reporting that it is
-  missing. CI asserts it with `readelf -d`.
+  missing. CI asserts it with `readelf -d` — on the **cdylib** now, not just the
+  bench binary, because the cdylib is the one that ships and a stray `#[link]` in
+  `mobilelm-ffi` would take this away while every test still passed.
+- **The required symbol table and the optional one are different tables.**
+  `Api` refuses to load when one of its eleven is missing, which is right. The
+  other 26 live in `ApiExt`, resolved best-effort to `None`: putting temperature
+  in the required table would mean a runtime lacking it is unusable, discovered on
+  a phone, fixed by a rebuild. `mobilelm_symbols_missing` exposes the absent list,
+  which is the answer to "why is temperature doing nothing" on an unexpected
+  device.
+- **`mobilelm-ffi` is a cdylib and must not become an rlib.** With an rlib it
+  would emit `libmobilelm_core.rlib` into the same `target/` as the
+  `mobilelm-core` package's library, and the two would overwrite each other
+  depending on build order — surfacing as an unrelated crate failing to link.
+  `doctest = false` for the same reason.
+- **The FFI's `extern "C"` functions take an `int` stream context, never a
+  pointer.** The callback fires on a LiteRT-owned thread; a pointer would leave
+  the caller owning the lifetime of its own memory across a thread it does not
+  own. An id looked up in a Dart map cannot dangle.
+- **`send_stream` blocks, and that is deliberate.** The C API's send is
+  non-blocking and the engine keeps calling back, so a call that returned
+  immediately would leave the caller owning the lifetime of its own callback
+  context. Blocking makes that impossible.
+- **`mobilelm_abi_version` returns a `c"…"` literal, not a `&str`.** A
+  `&'static str`'s pointer is its *first byte* and Rust strings carry no
+  terminator, so `CStr::from_ptr` on one walks into whatever follows. A test in
+  this crate read `0.4.0-ffi.1` followed by an unrelated `Vec` error message.
 - **`Backend`'s `Ord` is hand-written** so `Npu < GpuVulkan < Gpu < Cpu`. A
   derived `Ord` orders by declaration and silently reverses the fallback chain —
   this exact bug was introduced once and caught by

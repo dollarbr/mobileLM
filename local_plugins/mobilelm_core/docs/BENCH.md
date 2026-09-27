@@ -140,6 +140,37 @@ crosses the two rather than trusting either alone.
 Nothing measured yet. `docs/BENCH.md` keeps the targets at the top; append here
 when they land, newest last, and never overwrite a number.
 
+### The prefill column was wrong, and the fix is a switch
+
+The Milestone 1 table above records prefill as "not measured — the C API reports
+no prompt timing". **It does report it.** The claim was wrong in the easiest way
+possible: nobody looked, and a field that was never filled in got an explanation.
+
+The C API has a benchmark family:
+
+- `litert_lm_engine_settings_enable_benchmark` — the switch, on the engine
+  settings, and it is **off by default**
+- `litert_lm_conversation_get_benchmark_info` — per conversation, and it works on
+  the conversation path this app uses, not only on the session path
+- `litert_lm_benchmark_info_get_time_to_first_token`
+- `litert_lm_benchmark_info_get_prefill_token_count_at` / `_decode_token_count_at`
+- `litert_lm_benchmark_info_get_prefill_tokens_per_sec_at` /
+  `_decode_tokens_per_sec_at`
+
+All six are bound in `ApiExt` and `LiteRt::load_with` now turns the switch on, so
+`LiteRt::benchmark()` returns a populated `Bench`. The prefill number the matrix
+has been asking for is obtainable.
+
+Two things about the number when it lands:
+
+- **It is the engine's, not the harness's.** The 3.54 tok/s above and the 2,716 ms
+  TTFT came from `Instant` around a channel that also carries the JSON unwrap.
+  The benchmark family reports what the engine did. Both are worth having; they
+  are not the same measurement and should not be put in the same column.
+- **Index 0 means the first turn of the conversation.** A per-turn read needs an
+  index, and the harness runs one turn, so 0 is the turn. A multi-turn
+  conversation needs this indexed properly before its numbers mean anything.
+
 ### Milestone 1 — LiteRT-LM, CPU, Edge 60 (2026-09-27)
 
 Qwen3-0.6B (`.litertlm`, 614,236,160 bytes), one turn of 48 tokens, Portuguese
@@ -152,7 +183,7 @@ prompt, `mobilelm-bench --bench --backend cpu`.
 | total | 63,499 ms |
 | chunks | 215 |
 | decode | **3.54 tok/s** |
-| prefill | not measured — the C API reports no prompt timing, so the field stays 0 rather than being guessed |
+| prefill | not measured — see the correction below |
 | peak RSS | 1,857,948 KiB (1.77 GiB) |
 | resolved backend | `cpu` (requested `cpu`) |
 | runtime | `liblitert-lm.so` **v0.16.0** (the only release shipping `litert_lm_c_api-0.1.0.zip`), dlopen, 9/9 C API symbols |

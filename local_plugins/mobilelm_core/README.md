@@ -3,12 +3,12 @@
 The Rust engine core for **mobileLM**. A local-first AI assistant on your phone:
 the engine is C++ and stays C++, and this is the layer around it.
 
-> **Not in any APK yet.** Nothing in `lib/` imports this, Gradle does not build
-> it, and the app behaves identically with or without it. It is a library and a
-> headless harness, both gated in CI. The wiring is separate work —
-> [`docs/APK.md`](docs/APK.md) is the plan for it, with the three blockers that
-> have to be resolved first. See [`AGENTS.md`](AGENTS.md) for what "not shipped"
-> means precisely.
+> **Not used by any APK yet.** The cdylib and the Dart bindings exist and build in
+> CI, but `inference_android.dart` is untouched: the app still reaches LiteRT-LM
+> through the Kotlin plugin and behaves exactly as it did before this crate
+> existed. What remains is the device run that compares the two paths, and then
+> deleting the plugin. [`docs/APK.md`](docs/APK.md) has the plan and what is done
+> in it; [`AGENTS.md`](AGENTS.md) for what "not shipped" means precisely.
 
 It was a standalone repository (`dollarbr/mobileLM-rs`) until 2026-09-27.
 [`docs/ORIGIN.md`](docs/ORIGIN.md) has why, and the commit trail the fold
@@ -35,8 +35,12 @@ generating on the target hardware.
 |---|---|
 | Device probe | working — CPU topology, RAM, dlopen of the C API, NPU library visibility |
 | LiteRT-LM C API | **generating** — Qwen3-0.6B on an Edge 60, load 2.45 s, TTFT 2.72 s, 3.54 tok/s, backend `cpu` |
+| Prefill timing | available and now switched on — `BENCH.md` said the C API could not report it, which was wrong |
+| Vision and audio | the encoder backends are bound; **not yet run on a device** |
 | NPU | unreachable on this device, from any language. LiteRT's own registry reaches the same verdict at runtime |
-| Wired into the app | not yet |
+| `libmobilelm_core.so` | builds for arm64 in CI (~1m11s), 14 entry points, `dlopen`s the engine |
+| Dart bindings | written, 12 tests, no device needed |
+| Used by the app | **not yet** — `inference_android.dart` is untouched |
 
 3.54 tok/s is a first number, not a result: a 0.6B float model on CPU with no
 thread count and no accelerator hint. Read it as headroom, not as a verdict.
@@ -47,6 +51,7 @@ thread count and no accelerator hint. Read it as headroom, not as a verdict.
 |---|---|
 | `crates/mobilelm-core/` | `Backend`, the `Engine` trait, `LoadReport`, `dynlib`, `json`, and the device probe. No dependencies, on purpose. |
 | `crates/mobilelm-litert/` | The LiteRT-LM C API, hand-written against the official headers. |
+| `crates/mobilelm-ffi/` | The cdylib: `extern "C"` over the two crates above, for `dart:ffi`. Thin on purpose — everything testable lives below it. |
 | `crates/mobilelm-bench/` | Headless CLI: `--probe` for the device, `--bench` for a generation. |
 | `docs/BENCH.md` | The measurement matrix, the numbers, and the traps each one cost. |
 | `docs/APK.md` | The plan for putting this in the app, and what blocks it. |
@@ -59,6 +64,9 @@ thread count and no accelerator hint. Read it as headroom, not as a verdict.
 # everything a host can check, in about a second
 cargo test
 cargo clippy --all-targets
+
+# the library the APK ships, for the host
+cargo build -p mobilelm-ffi
 
 # device prerequisites, no phone needed
 scripts/run-on-device.sh --check

@@ -165,6 +165,49 @@ reservado para o núcleo híbrido (`local_plugins/mobilelm_core`) *dentro do app
 escreva uma frase do tipo "isto faz X, que antes não existia" — se a frase não sai,
 é patch.
 
+**O trabalho do 0.4.0 está na branch `core/rust-hybrid`, não em `main`.** O que já
+existe lá, e o que **não** existe:
+
+| | |
+|---|---|
+| `crates/mobilelm-ffi` | `libmobilelm_core.so`, 14 entry points `extern "C"`, cross-compila em ~1m11s |
+| As seis ligações que faltavam | vision e audio backend, sampler, contagem de tokens, histórico, família de benchmark |
+| `lib/ffi/mobilelm_core_bindings.dart` + `litert_engine.dart` | 12 testes que não precisam de aparelho |
+| `mobilelm_core::plan` | dono único da escada; `planLiteRtTier` em Dart agora pergunta |
+| `.github/workflows/rust-core.yml` | `workflow_call` que `ci.yml`, `debug-apk.yml` e `release.yml` chamam |
+
+**`inference_android.dart` está intocado.** O app não chama nada disso, e o
+`liblitertlm_jni.so` do AAR continua no APK. Não descreva o núcleo como entregue.
+Falta o run no aparelho comparando os dois caminhos, e só depois de comparar é que
+se apaga o plugin Kotlin — apagá-lo antes é como se embarca uma regressão e se
+deleta a coisa que funcionava. O plano inteiro, com os bloqueios e o que já foi
+resolvido, está em `local_plugins/mobilelm_core/docs/APK.md`.
+
+**Um workflow de tag não buildava nada.** O cross-compile morava no `ci.yml`, que
+dispara só em `push: branches: [main]`, então um push de tag chegava ao
+`release.yml` sem artefato Rust nenhum — e a falha era invisível, porque o job
+ficava verde no ci.yml e ninguém roda ci.yml ao cortar tag. Por isso o
+`rust-core.yml` é um workflow `workflow_call` e não um job. O job `native`
+**não** declara `environment: release`: ele compila uma cdylib e não precisa de
+segredo de assinatura, e um job que pode lê-los não deveria ser um job que não
+precisa deles.
+
+**O C API vendorizado é v0.16.0, não 0.17.1.** `litert_lm_c_api-0.1.0.zip` só
+existe na tag `v0.16.0`. O AAR do app é 0.17.1, então o downgrade é real — mas a
+única mudança do 0.17.1 é `f300c4fdc28b`, "keep integers as integers in tool call
+arguments", e todos os arquivos que ele toca são o parser de function-calling
+nativo do engine. O app nunca entra nesse caminho: as tool calls saem como texto e
+são parseadas por regex em `lib/services/tools/tool_call_parser.dart`. Cosmético
+hoje; volta a importar no dia em que function-calling nativo for ligado, que é
+uma chamada de distância (`LiteLmTool` já existe na API do plugin). A razão está
+escrita ao lado do pin em `fetch-litert-capi.sh`.
+
+**A coluna de prefill do `BENCH.md` estava errada.** A C API *reporta* tempo de
+prompt, atrás de `litert_lm_engine_settings_enable_benchmark`, que ninguém ligava.
+`load_with` liga agora. Duas coisas sobre o número quando ele cair: é o do engine,
+não o do harness (o 2.716 s de TTFT veio de um `Instant` em volta de um canal que
+também carrega o unwrap do JSON), e o índice 0 é o primeiro turno da conversa.
+
 ## ABI: arm64 e só
 
 Não existe APK 32-bit, e o `README.md` já dizia o contrário (oferecia um

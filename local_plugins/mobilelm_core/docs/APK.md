@@ -7,6 +7,34 @@ cost something to establish say how.
 Read [`BENCH.md`](BENCH.md) first: it has the device numbers, and this document
 assumes them.
 
+## Where this stands
+
+Steps 1–4 of the plan below are done, on `core/rust-hybrid`:
+
+| step | state | where |
+|---|---|---|
+| 1. Pin the runtime version in writing | done | `fetch-litert-capi.sh`, and the wrong `0.17.1` line in `BENCH.md` is corrected |
+| 2. `mobilelm-ffi` crate | done | `crates/mobilelm-ffi/`, 14 entry points, `readelf` assertion in CI |
+| 3. CI plumbing | done | `.github/workflows/rust-core.yml`, called by all three; `native` job passes in ~1m11s |
+| 4. Dart bindings | done | `lib/ffi/mobilelm_core_bindings.dart`, `lib/ffi/litert_engine.dart`; 12 tests that need no device |
+| 5. Device run, both paths, same prompt | **not started** | needs step 4 wired into `inference_android.dart` first |
+| 6. Delete the Kotlin plugin | **not started** | gated on step 5, deliberately |
+| 7. 0.4.0 | not started | |
+
+So the core is **not** in any APK yet, and the app does not use any of this. What
+changed is that steps 5 and 6 are now mechanical rather than exploratory.
+
+Two findings landed while doing it, both corrections:
+
+- **`litert_lm_conversation_get_benchmark_info` exists.** The matrix's prefill
+  column said the C API reports no prompt timing. It does, behind
+  `litert_lm_engine_settings_enable_benchmark`, which nothing was calling. See
+  the correction in `BENCH.md`.
+- **`mobilelm-ffi` cannot also be an rlib.** It would emit
+  `libmobilelm_core.rlib` into the same `target/` as the `mobilelm-core`
+  package's library and the two would overwrite each other depending on build
+  order — surfacing as an unrelated crate failing to link.
+
 ## What 0.4.0 has to be
 
 A minor bump is a promise that the user receives something that did not exist
@@ -102,10 +130,9 @@ already unpacks selectively (`include/*` and `lib/android_arm64/*`), so CI pays
 for a 154 MB download to place 39 MB in the APK. Caching the download is worth
 more than it looks once this runs on every debug build.
 
-## Blocker 3 — a tag push never builds the cdylib
+## Blocker 3 — resolved: a tag push now builds the cdylib
 
-The three workflows trigger on different things, and that matters more than it
-looks:
+The three workflows trigger on different things, and that mattered:
 
 | workflow | trigger |
 |---|---|
@@ -113,33 +140,33 @@ looks:
 | `debug-apk.yml` | `push` (any branch) + `workflow_dispatch` |
 | `release.yml` | `push: tags` |
 
-The `rust-core-android` job that cross-compiles the core lives in `ci.yml`. A tag
-push **does not run `ci.yml`**, so at the moment `release.yml` starts there is no
-Rust artifact to download. Building the cdylib inside the Flutter Gradle build is
-worse: it puts a `rustup` and `cargo-ndk` install into a job that is already the
-slowest in the repo, and it makes the APK depend on a toolchain the Flutter build
-has no other reason to need.
+The cross-compile lived in `ci.yml`, so a tag push built nothing and `release.yml`
+had no Rust artifact to download. The gap was invisible: the job was green in
+ci.yml, and nobody runs ci.yml when they cut a tag.
 
-The answer is a **reusable workflow** (`on: workflow_call`) that builds the
-cdylib and uploads it, called by all three. One definition, one cache, one place
-that knows the toolchain. The existing `rust-core-android` job becomes a call to
-it, and its six hard-won traps (two NDKs in the image, `file` exiting 0 on a
-missing path, `ldd` being useless, the `readelf` assertion) move with it.
+`.github/workflows/rust-core.yml` is now a `workflow_call` workflow all three call,
+and the six traps the old job had paid for moved into it. The `native` job passes
+in 1m11s. Two details worth keeping: a called workflow's jobs get their own
+runners, so the **artifact** is the only channel between them — the `cdylib` and
+`runtime` outputs are for the log, not for the files; and the `native` job does
+**not** declare `environment: release`, because it compiles a cdylib and needs no
+signing secret.
 
-## Gap 4 — the core is missing six things the app already calls
+## Gap 4 — resolved: all six bindings the app was calling past
 
 `Engine` in `mobilelm-core` is a good shape and the right rules, but the app's
-LiteRT path does more than the trait describes. Each row below is a thing
-`inference_android.dart` does today that the Rust core cannot yet do.
+LiteRT path did more than the trait described. Each row below is a thing
+`inference_android.dart` did that the Rust core could not. All six are bound now;
+the table is kept because the "why" is the part that is easy to lose.
 
-| what the app does | where | what the C API offers | state in the core |
+| what the app does | where | what the C API offers | now |
 |---|---|---|---|
-| set a vision backend | `_createLiteRtEngine` → `LiteLmEngineConfig.visionBackend` | `litert_lm_engine_settings_create(model, backend, vision_backend_str, audio_backend_str)` — `engine.h:491` | `load()` passes `null, null` (`mobilelm-litert/src/lib.rs:87`) |
-| set an audio backend | same, `audioBackend` | same signature | `null` |
-| per-turn temperature | `_ensureLiteRtConversation` | `litert_lm_sampler_params_create` / `_set_top_k` / `_set_top_p` / `_set_temperature` — `engine.h:155–180` | not bound |
-| send an image | `LiteLmContent.imageFile` → `Content.ImageFile` | `message_json` with `content: [{"type":"image",…}]` — confirmed in `runtime/conversation/model_data_processor/multimodal_processor_helper.cc:64` | not bound; `send_once(&str)` only |
-| send audio | `LiteLmContent.audioFile` | same, `{"type":"audio",…}` — same file, line 66 | not bound |
-| count tokens | `countTokens` on the plugin channel | `litert_lm_session_get_*` family | not bound |
+| set a vision backend | `_createLiteRtEngine` → `LiteLmEngineConfig.visionBackend` | `litert_lm_engine_settings_create(model, backend, vision_backend_str, audio_backend_str)` — `engine.h:491` | `EngineExtras::vision_backend` |
+| set an audio backend | same, `audioBackend` | same signature | `EngineExtras::audio_backend` |
+| per-turn temperature | `_ensureLiteRtConversation` | `litert_lm_sampler_params_*` — `engine.h:155–180`, reached through a **session** config hung off the conversation | `Sampler` + `reopen_conversation` |
+| send an image | `LiteLmContent.imageFile` → `Content.ImageFile` | `message_json` with `content: [{"type":"image",…}]` — `multimodal_processor_helper.cc:64` | `json::parts_message` |
+| send audio | `LiteLmContent.audioFile` | same, `{"type":"audio",…}` — same file, line 66 | same |
+| count tokens | `countTokens` on the plugin channel | `litert_lm_engine_tokenize` + `…_get_num_tokens` | `LiteRt::count_tokens` |
 
 **The audio backend is not a nicety, it is a crash.** The comment on
 `inference_android.dart:516` says leaving `audioBackend` null and then sending
@@ -154,20 +181,25 @@ array of typed items (`multimodal_processor_helper.cc:54-69`). Writing that
 builder, and testing it against the literal JSON the device emitted, is the same
 discipline that caught the response-side bug.
 
-## Gap 5 — the ladder would exist in two places
+## Gap 5 — resolved: the ladder has one owner, and it is a pure function
 
-`lib/services/acceleration.dart:79` holds `planLiteRtTier`, and
-`mobilelm_core::probe` holds the Rust answer. They will disagree the first time
-one changes. The core's own rule is explicit — *"Accelerator decisions live in
-`mobilelm-core::probe`, never in the UI"* — and the moment there is a Rust
-engine, the Dart copy is the one that has to go, or it becomes the one that is
-consulted. `settings_view.dart` also calls `NpuStatus.probe()` from the plugin,
-which is a third answer to the same question.
+`lib/services/acceleration.dart` held `planLiteRtTier` and
+`mobilelm_core::probe` held the Rust answer. Two implementations of one rule is
+two answers waiting to disagree, usually on the device nobody tests on.
 
-Decide this before the FFI layer, because the answer changes what the FFI
-exposes: a `probe()` that returns the resolved tier, or a `plan()` that takes the
-user's mode and returns one. The second is what the app needs; the first is what
-the core has.
+The rule is now `mobilelm_core::plan::plan_litert_tier`, reached over FFI as
+`mobilelm_plan`, and it is a pure function — so the app's accelerator choice is
+covered by `cargo test` instead of by trying a model on a phone. The test that
+matters is `a_cpu_safe_request_is_never_upgraded`: a plan that quietly upgrades a
+CPU-safe request to GPU makes the phone hot and the setting useless, and neither
+shows up in a log.
+
+`planLiteRtTier` keeps its old body as the fallback for a build without the
+native library — a debug build predating the wiring, a web target, a laptop test.
+That body is the *only* other implementation, and it exists for exactly that case.
+
+`settings_view.dart` still calls `NpuStatus.probe()` from the Kotlin plugin, which
+is a third answer to the same question. It goes with the plugin in step 6.
 
 One honest limit to carry into the UI: `LoadReport.actual` is set to
 `cfg.backend` with a comment saying LiteRT-LM does not report which backend it
