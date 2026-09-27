@@ -254,6 +254,30 @@ incorrect", indistinguível de senha errada. E a descoberta parseia a saída
 **não-verbose** de `keytool -list`: a verbose é traduzida ("Nome do alias:" em
 pt_BR), a linha de entrada `alias, <data>, PrivateKeyEntry,` não é.
 
+**Os três secrets vivem no environment `release`, não no repositório.** E o job
+declara `environment: release`. Duas coisas decorrem, e as duas são o ponto:
+
+- Só um job que declara aquele environment lê os secrets. No nível de repositório
+  eles eram visíveis para **todo** workflow do repo, inclusive o `debug-apk.yml`,
+  que roda a cada push.
+- O environment tem política de ref customizada **só para tags**. Push em branch
+  não chega perto da chave. Verificado: um run disparado por branch é rejeitado
+  em 2s com `Branch "..." is not allowed to deploy to release due to environment
+  protection rules`, e um disparado por tag abre os secrets e o certificado confere.
+
+`gh secret list --repo` deve voltar **vazio**. Se aparecer algo ali, o environment
+não está protegendo nada.
+
+**Required reviewers NÃO funciona neste repositório.** A API responde `App not
+installed on organization`: revisão obrigatória em environment é feature de
+organização, e `dollarbr/mobileLM` é de conta pessoal. A restrição por tag cobre
+o cenário concreto (alguém faz push), mas não dá o portão humano que um org
+permitiria. Se um dia o repo mover para uma org, vale adicionar.
+
+**Secret scanning está ligado** (`secret_scanning` e
+`secret_scanning_push_protection`, ambos `enabled`). Grátis em repo público, e é a
+rede contra alguém um dia fazer `git add -f` de um secret.
+
 Debug APK continua com chave de debug — é o correto, elas não são distribuídas e
 precisam instalar por cima de qualquer build.
 

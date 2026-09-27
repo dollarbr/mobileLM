@@ -13,6 +13,21 @@ jobs:
     name: Build & Publish
     runs-on: ubuntu-latest
 
+    # The three RELEASE_* secrets live in the `release` environment, not at
+    # repository level. Two things follow from this, and both are the point:
+    #
+    # - Only a job that declares `environment: release` can read them. At
+    #   repository level they were visible to *every* workflow in the repo,
+    #   including debug-apk.yml, which runs on every single push.
+    # - The environment has a custom branch policy allowing tags only, so a
+    #   workflow run from a branch cannot deploy to it. Pushing to main, or
+    #   opening a branch, does not get anybody near the signing key.
+    #
+    # Combined with the certificate fingerprint asserted after the build, the
+    # path from "someone pushed code" to "a release got signed" now requires a
+    # tag and produces a key that is checked against a known-good value.
+    environment: release
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
