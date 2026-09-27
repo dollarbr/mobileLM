@@ -108,22 +108,38 @@ writing down rather than rediscovering:
 runtime as "`liblitert-lm.so` 0.17.1". The file on disk came from the v0.16.0
 C API package. Whatever v0.16.0 is, that line overstates it.
 
-## Blocker 2 — the APK grows by about 20 MB
+## Blocker 2 — the APK grows by about 17 MB
 
-| | now | after |
+Measured, not estimated. From a real `unzip -l` of a debug APK built with the
+natives in place:
+
+| | bytes | note |
 |---|---|---|
-| `liblitertlm_jni.so` (AAR, arm64) | 21.8 MB | — removed with the plugin |
-| `liblitert-lm.so` (C API, arm64) | — | 38.9 MB |
-| `libmobilelm_core.so` (new cdylib) | — | ~2–4 MB |
-| published APK | 78 MB | **~98 MB** |
+| `liblitertlm_jni.so` (AAR, arm64) | 21,802,952 | removed with the plugin |
+| `liblitert-lm.so` (C API, arm64) | 38,969,320 | the same runtime, a different ABI |
+| `libmobilelm_core.so` (new cdylib) | **435,568** | |
+| net | **+17.6 MB** | before compression |
+
+The cdylib is 436 KB, not the 2–4 MB this section guessed when it was written. It
+is a thin ABI over code that was already there, and `opt-level = 3` with
+`strip = "symbols"` leaves very little. That correction moves the number by a few
+megabytes and changes nothing about the decision, but the number should be the
+measured one.
 
 Deleting the AAR pays for a third of the growth, not all of it. The two binaries
 are the same runtime with different ABIs, so the C API one is simply larger.
 
 This is a product decision, not an engineering one, and it belongs in the release
 notes and the README where the download size is stated. It is also the honest
-answer to "is the Kotlin plugin worth keeping": 20 MB is the price of the Rust
+answer to "is the Kotlin plugin worth keeping": ~18 MB is the price of the Rust
 path, and the alternative to paying it is not "no Rust".
+
+**For scale, and not as a proposal:** the same listing shows
+`libsd_jni_vulkan.so` at 55.0 MB, `libsd_jni_opencl.so` at 25.2 MB and
+`libsd_jni.so` at 24.2 MB — 104 MB of stable-diffusion engines, two and a half
+times the LiteRT question and three times its whole budget. If APK size is worth
+attacking, that is where it is. It is out of scope here and nothing in this plan
+touches it.
 
 Note the C API zip is 154 MB but only 39 MB of it is needed — the fetch script
 already unpacks selectively (`include/*` and `lib/android_arm64/*`), so CI pays

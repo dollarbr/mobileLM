@@ -192,6 +192,14 @@ ficava verde no ci.yml e ninguém roda ci.yml ao cortar tag. Por isso o
 segredo de assinatura, e um job que pode lê-los não deveria ser um job que não
 precisa deles.
 
+**O APK cresce ~17 MB, e o número é medido.** De um `unzip -l` real: o
+`liblitertlm_jni.so` do AAR são 21,8 MB e saem com o plugin, o `liblitert-lm.so`
+da C API são 39,0 MB e a cdylib nova são **436 KB** — não os 2–4 MB que o plano
+estimava. Saldo +17,6 MB antes de comprimir. Para escala: o mesmo APK tem
+`libsd_jni_vulkan.so` com 55 MB, `libsd_jni_opencl.so` com 25 MB e `libsd_jni.so`
+com 24 MB, ou seja 104 MB de engines de stable diffusion. Se tamanho de APK
+importar, é aí — está fora do escopo deste plano e nada aqui toca nisso.
+
 **O C API vendorizado é v0.16.0, não 0.17.1.** `litert_lm_c_api-0.1.0.zip` só
 existe na tag `v0.16.0`. O AAR do app é 0.17.1, então o downgrade é real — mas a
 única mudança do 0.17.1 é `f300c4fdc28b`, "keep integers as integers in tool call
