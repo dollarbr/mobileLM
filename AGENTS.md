@@ -121,6 +121,26 @@ reservado para o núcleo híbrido (`local_plugins/mobilelm_core`) *dentro do app
 escreva uma frase do tipo "isto faz X, que antes não existia" — se a frase não sai,
 é patch.
 
+## ABI: arm64 e só
+
+Não existe APK 32-bit, e o `README.md` já dizia o contrário (oferecia um
+`armeabi-v7a` "cloud only") por anos. A regra, para não voltar:
+
+- Todo workflow de build passa `--target-platform android-arm64`. Com
+  `--split-per-abi` isso rende **um** arquivo. Sem o `--target-platform`, rende um
+  `app-release.apk` gordo. Não remova o `--target-platform` achando que ele é
+  redundante ao lado do split.
+- Os três plugins nativos fixam arm64: `llama_flutter_android` e
+  `sd_flutter_android` declaram `abiFilters 'arm64-v8a'`. O
+  `llama_flutter_android/.../llama.cpp/examples/llama.android/lib/build.gradle.kts`
+  também menciona `x86_64`, mas é código de exemplo do upstream que **não é
+  compilado** por este projeto — não é evidência de nada.
+- O alvo web (`web/`, no Firebase) **não é fallback**: `inference_stub.dart` não
+  tem engine local, só providers cloud. Não escreva no README que 32-bit usa a
+  web.
+- Para conferir o que uma release entregou de fato:
+  `gh release view <tag> --repo dollarbr/mobileLM --json assets`.
+
 ## Catálogo de modelos — como adicionar sem quebrar
 
 Entradas em `AppConstants.availableModels` (`lib/core/constants.dart`). Os campos

@@ -23,13 +23,15 @@ scheduled tasks that run even with the app closed.
   ones get i8mm/SME automatically.
 - **Multimodal in the chat** — images, PDFs, office docs, audio (STT), and
   video (contact-sheet frames) via `libmtmd` + projectors (`mmproj`).
-- **Agent tools** — 18 built-in tools, including clock, calculator, device info,
+- **Agent tools** — 24 built-in tools, including clock, calculator, device info,
   clipboard, haptics, share, file management scoped to the active project
   (`list_files`, `read_file`, `create_file`, `write_file`, `delete_file`,
   `rename_file`), web tools (`web_search`, `read_url`), and task management
   (`schedule_task`, `list_scheduled_tasks`, `cancel_scheduled_task`).
   Write-class tools pause for a human tap before they run. Tool chains are
   capped (default single hop, up to 8) so small models can't spin forever.
+  Eight more exist only with [Shizuku](https://shizuku.dev) installed — read-only
+  system inspection that never needs root. See [docs/SHIZUKU.md](docs/SHIZUKU.md).
 - **Workspace projects** — pick one folder on the device once; every project
   is a subfolder inside it, and a chat binds to a project so the file tools
   are scoped to it. New chats stay in the project you are already in; the
@@ -43,16 +45,22 @@ scheduled tasks that run even with the app closed.
 - **OpenAI-compatible local server** on port 8080 for other apps on the
   same network.
 - **Thinking toggle** (`<think>` parsing) with auto/on/off.
+- **45 models in the catalogue**, from 150 MB to 2.4 GB — 18 of them multimodal.
+  Every download is a direct link to a verified file; nothing is proxied through
+  a server of ours.
 
 ## Install
 
-Grab a split APK from
-[Releases](https://github.com/dollarbr/mobileLM/releases):
+Grab the APK from
+[Releases](https://github.com/dollarbr/mobileLM/releases) — one file,
+`mobileLM-<version>-arm64-v8a.apk`.
 
-| APK | Contents |
-|---|---|
-| `arm64-v8a` | Everything: native inference, vision, image gen |
-| `armeabi-v7a` | Cloud chat + image gen only (native engines are arm64) |
+**arm64-v8a only.** There is no 32-bit build and there is not going to be one:
+llama.cpp, LiteRT-LM and Stable Diffusion are all vendored as arm64, and the
+plugins pin `abiFilters 'arm64-v8a'`. Every device Android has shipped since
+2017 is arm64, so a 32-bit APK would buy nothing and cost a second native build
+of the whole engine. On a 32-bit device the app will not run — and note the web
+build is not a fallback, it has no local engine at all, only cloud providers.
 
 Every push also produces a debug APK in the
 [Debug workflow artifacts](https://github.com/dollarbr/mobileLM/actions/workflows/debug-apk.yml).
@@ -64,8 +72,14 @@ flutter pub get
 flutter build apk --release --split-per-abi --target-platform android-arm64
 ```
 
+`--target-platform android-arm64` is what makes the split produce exactly one APK.
+Without it you get a single fat `app-release.apk`; with it and
+`--split-per-abi` you get one file per ABI, which is one file.
+
 The native engines are vendored under `local_plugins/` and compiled by
 Gradle/CMake on first build — no extra setup beyond Flutter + Android SDK/NDK.
+The first build is slow: llama.cpp with its Vulkan shader set, LiteRT and Stable
+Diffusion together fill the disk and take the better part of half an hour.
 
 ## Credits
 
