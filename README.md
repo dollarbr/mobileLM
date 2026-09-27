@@ -61,6 +61,34 @@ scheduled tasks that keep running with the app closed.
 Download from [Releases](https://github.com/dollarbr/mobileLM/releases). One
 file: `mobileLM-<version>-arm64-v8a.apk`.
 
+> [!WARNING]
+> **0.3.4 is the first release that is genuinely signed. Take it, not an older one.**
+>
+> Every release up to 0.3.3 was signed with the **Android debug key** — and not
+> the same one twice. Each CI run generated a throwaway `debug.keystore` on an
+> ephemeral runner, so all seven older releases carry seven different
+> certificates. That makes them two things at once: **not verifiable** (anyone can
+> produce a debug-signed APK that claims to be mobileLM, because the debug key is
+> public), and **not updatable** (no two of them can install over each other, and
+> the keys are gone, so that will not change).
+>
+> 0.3.4 and every version after it are signed with **one fixed key**, held in
+> repository secrets — the same secrets every time. Check it:
+>
+> ```sh
+> apksigner verify --print-certs mobilelm-<version>-arm64-v8a.apk
+> ```
+>
+> ```
+> CN=dollarbr, OU=mobileLM, O=mobileLM, C=BR
+> SHA-256: 1cd43cb7daddcec2a70c35926939a00247c66df5b1bd0a08db4293fc556cfb6d
+> ```
+>
+> Anything reporting `CN=Android Debug` is not from a release you should be
+> installing. The release workflow fails the build if the certificate is not this
+> one, so it cannot be published by accident. More detail in
+> [Signing](#signing).
+
 **arm64-v8a only, and that is not going to change.** llama.cpp, LiteRT-LM and
 Stable Diffusion are all vendored as arm64, and the native plugins pin
 `abiFilters 'arm64-v8a'`. Every Android device shipped since 2017 is arm64, so a
