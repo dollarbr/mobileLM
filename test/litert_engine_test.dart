@@ -161,4 +161,49 @@ void main() {
       );
     });
   });
+
+  group('LiteRtEngine.load', () {
+    // The device run found the bug this pins. With the switch on, `load` spawned the
+    // isolate, completed the handshake, and returned an engine whose native handle
+    // was never created — because the isolate only builds the engine inside its
+    // `case 'load':` and nothing ever sent that command. Every later call then
+    // failed on a null handle, three calls away from the cause.
+    //
+    // A laptop cannot reproduce that: there is no core library here, so the guard
+    // throws first. What *is* reproducible, and is the class of the bug, is the
+    // shape of the failure — `load` either produces a working engine or throws. It
+    // must never return something that looks loaded and is not, because that is
+    // what turns one missing line into a null-pointer three calls later.
+    test('throws rather than returning a half-built engine', () async {
+      expect(
+        () => LiteRtEngine.load(
+          modelPath: '/does/not/exist.litertlm',
+          backend: 'cpu',
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('the guard names the missing library, not a symptom of it', () async {
+      // "the core is not in this build" is actionable. "engine handle is null" is
+      // the same information one indirection further from the cause, and is what
+      // the device actually reported.
+      Object? caught;
+      try {
+        await LiteRtEngine.load(
+          modelPath: '/does/not/exist.litertlm',
+          backend: 'cpu',
+        );
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, isNotNull,
+          reason: 'load must not succeed on a build with no core');
+      final text = caught.toString();
+      expect(text, contains('not in this build'),
+          reason: 'the error must name the cause: $text');
+      expect(text, isNot(contains('handle is null')),
+          reason: 'a null handle is a symptom, not a cause: $text');
+    });
+  });
 }
