@@ -1,0 +1,10 @@
+[package]
+name = "mobilelm-litert"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "LiteRT-LM engine over the official C API, as a mobilelm_core::Engine"
+
+[dependencies]
+mobilelm-core = { path = "../mobilelm-core" }
