@@ -15,6 +15,14 @@ name = "mobilelm-core"
 version = "0.1.0"
 
 [[package]]
+name = "mobilelm-ffi"
+version = "0.1.0"
+dependencies = [
+ "mobilelm-core",
+ "mobilelm-litert",
+]
+
+[[package]]
 name = "mobilelm-litert"
 version = "0.1.0"
 dependencies = [

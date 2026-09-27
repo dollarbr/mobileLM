@@ -13,6 +13,7 @@
 
 pub mod dynlib;
 pub mod json;
+pub mod plan;
 pub mod probe;
 
 /// Which compute backend an engine is running on.

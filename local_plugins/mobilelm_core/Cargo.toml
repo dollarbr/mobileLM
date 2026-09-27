@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/mobilelm-core", "crates/mobilelm-litert", "crates/mobilelm-bench"]
+members = [
+    "crates/mobilelm-core",
+    "crates/mobilelm-litert",
+    "crates/mobilelm-ffi",
+    "crates/mobilelm-bench",
+]
 
 [workspace.package]
 version = "0.1.0"

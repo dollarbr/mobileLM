@@ -16,7 +16,7 @@
 //! - Every handle is freed. The C API has no RAII, and a leaked engine on a
 //!   phone is a leaked model in RAM.
 
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, Mutex};
@@ -34,6 +34,9 @@ pub use ffi::*;
 #[derive(Debug)]
 pub struct LiteRt {
     api: ffi::Api,
+    /// The optional half of the surface. Resolved best-effort, so a runtime that
+    /// lacks a capability reports it instead of failing to load.
+    ext: ffi::ApiExt,
     /// Kept alive for as long as `api`, which points into it. Declared after
     /// `api` so it outlives it on drop.
     _lib: Lib,
@@ -46,6 +49,82 @@ pub struct LiteRt {
 // Pointers are only touched from the thread that created the engine, which is
 // the same contract as the C++ engine: Send, not Sync.
 unsafe impl Send for LiteRt {}
+
+/// The engine-settings knobs that are not part of [`EngineConfig`].
+///
+/// Separate because they are all optional and all default to "off", and because
+/// grouping them keeps `load`'s signature from growing a `bool` per turn of the
+/// screw. Each field maps to exactly one `litert_lm_engine_settings_set_*` call.
+#[derive(Debug, Clone, Default)]
+pub struct EngineExtras<'a> {
+    /// Where compiled graphs are cached. The app passes its own temp dir so a
+    /// cleared cache actually frees the disk.
+    pub cache_dir: Option<&'a str>,
+    /// Directory holding a `libLiteRtDispatch_*.so`, for the NPU. On this phone
+    /// it is a dead end -- see `docs/BENCH.md` "Arm E" -- so this stays `None`
+    /// unless a device actually exposes one, and what the runtime does about it
+    /// is reported rather than assumed.
+    pub dispatch_dir: Option<&'a str>,
+    /// Which backend runs the **vision encoder**. `None` means the model has no
+    /// vision encoder built, and sending it an image is a crash rather than an
+    /// error: the encoder is never constructed and the first frame dereferences
+    /// it. The Flutter path learned this the hard way; see the comment on
+    /// `audioBackend` in `inference_android.dart`.
+    pub vision_backend: Option<Backend>,
+    /// Same, for the audio encoder. The app ties audio to vision because the
+    /// multimodal `.litertlm` files it loads carry both in one file and there is
+    /// no separate flag to key off.
+    pub audio_backend: Option<Backend>,
+}
+
+/// Sampling parameters.
+///
+/// A conversation's sampler is fixed when the conversation is created, so
+/// changing the temperature means recreating it. The app already does exactly
+/// that (`_ensureLiteRtConversation` compares the temperature), which is why
+/// this is a conversation setting and not a per-turn one.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Sampler {
+    pub temperature: Option<f32>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<f32>,
+    /// `kLiteRtLmSamplerTypeGreedy`. Set this to pin sampling, which is what a
+    /// deterministic benchmark needs and what an image-generation prompt wants.
+    pub greedy: bool,
+}
+
+/// Everything that describes a conversation, so one can be opened or replaced.
+///
+/// The app rebuilds a conversation when the system prompt changes, when the
+/// temperature changes, or when it has sent messages and the caller shows up
+/// with no history. All three are inputs here, and recreating is one call.
+#[derive(Debug, Clone, Default)]
+pub struct ConversationSpec<'a> {
+    pub system_prompt: Option<&'a str>,
+    /// Pre-rendered message objects, oldest first. Empty is legal and means "no
+    /// history", which the app sends after a clear.
+    pub history: &'a [String],
+    pub sampler: Option<Sampler>,
+    pub max_output_tokens: Option<i32>,
+    /// Caps how many tokens the vision encoder may spend. `None` uses the
+    /// engine's own default.
+    pub visual_token_budget: Option<i32>,
+}
+
+/// Timings the C API actually measured, once benchmarking is switched on.
+///
+/// `docs/BENCH.md` recorded prefill as "not measured - the C API reports no
+/// prompt timing". That was wrong: `litert_lm_conversation_get_benchmark_info`
+/// exposes it, gated behind `litert_lm_engine_settings_enable_benchmark`. The
+/// switch was simply never turned on.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Bench {
+    pub ttft_ms: f64,
+    pub prefill_tokens: i32,
+    pub decode_tokens: i32,
+    pub prefill_tps: f64,
+    pub decode_tps: f64,
+}
 
 /// Bound on waiting for a final chunk. Not a limit on generation time -- a 0.6B
 /// model on a phone takes seconds. It only trips when the producer died without
@@ -63,6 +142,18 @@ impl LiteRt {
         cfg: &EngineConfig,
         system_prompt: Option<&str>,
     ) -> Result<Self, EngineError> {
+        Self::load_with(runtime_path, cfg, &EngineExtras::default(), system_prompt)
+    }
+
+    /// [`LiteRt::load`] plus the encoder backends, cache dir and NPU dispatch
+    /// dir. Benchmarking is switched on here, which is what makes [`Bench`]
+    /// non-empty.
+    pub fn load_with(
+        runtime_path: &str,
+        cfg: &EngineConfig,
+        extras: &EngineExtras<'_>,
+        system_prompt: Option<&str>,
+    ) -> Result<Self, EngineError> {
         let lib = Lib::open(runtime_path).map_err(|why| {
             EngineError::BackendUnavailable {
                 backend: cfg.backend,
@@ -75,16 +166,46 @@ impl LiteRt {
             backend: cfg.backend,
             reason: format!("{runtime_path} is not a LiteRT-LM C API build: {why}"),
         })?;
+        let ext = ffi::ApiExt::load(&lib);
+        let mut notes = Vec::new();
+        let missing = ext.missing();
+        if !missing.is_empty() {
+            // Not fatal. Text generation works without any of them; say so
+            // rather than refusing a model the user can otherwise run.
+            notes.push(format!(
+                "runtime lacks {} optional C API symbol(s): {}",
+                missing.len(),
+                missing.join(", ")
+            ));
+        }
 
         let model = cstring(&cfg.model_path)?;
         let backend = cstring(backend_str(cfg.backend))?;
         // NULL rather than "": an empty string names a backend, and an unknown
-        // name is handled differently from "not specified".
+        // name is handled differently from "not specified". This is the
+        // distinction that decides whether a missing encoder is a segfault or an
+        // error, so it is the reason the encoder backends are plumbed at all.
         let null = ptr::null();
+        let vision = extras
+            .vision_backend
+            .map(|b| cstring(backend_str(b)))
+            .transpose()?;
+        let audio = extras
+            .audio_backend
+            .map(|b| cstring(backend_str(b)))
+            .transpose()?;
+        let vision_ptr = vision
+            .as_ref()
+            .map_or(null, |c| c.as_ptr() as *const c_char);
+        let audio_ptr = audio.as_ref().map_or(null, |c| c.as_ptr() as *const c_char);
 
-        let mut notes = Vec::new();
         let settings = unsafe {
-            (api.litert_lm_engine_settings_create)(model.as_ptr(), backend.as_ptr(), null, null)
+            (api.litert_lm_engine_settings_create)(
+                model.as_ptr(),
+                backend.as_ptr(),
+                vision_ptr,
+                audio_ptr,
+            )
         };
         if settings.is_null() {
             return Err(EngineError::Model(format!(
@@ -107,6 +228,27 @@ impl LiteRt {
             if let Some(t) = cfg.n_threads {
                 (api.litert_lm_engine_settings_set_num_threads)(settings, t as i32);
             }
+            if let Some(dir) = extras.cache_dir {
+                let c = cstring(dir)?;
+                (api.litert_lm_engine_settings_set_cache_dir)(settings, c.as_ptr());
+            }
+            if let Some(dir) = extras.dispatch_dir {
+                let c = cstring(dir)?;
+                (api.litert_lm_engine_settings_set_litert_dispatch_lib_dir)(settings, c.as_ptr());
+                notes.push(format!(
+                    "NPU dispatch dir set to {dir}; the runtime decides if it works"
+                ));
+            }
+        }
+
+        // Turn the runtime's own measurement on. It costs a little per turn and
+        // it is the only source of a real prefill number — the alternative
+        // recorded in BENCH.md was leaving the field at 0 and calling that
+        // "not measured".
+        if let Some(f) = ext.litert_lm_engine_settings_enable_benchmark {
+            unsafe { f(settings, true) };
+        } else {
+            notes.push("benchmarking unavailable: enable_benchmark symbol absent".into());
         }
 
         let engine = unsafe { (api.litert_lm_engine_create)(settings) };
@@ -125,6 +267,7 @@ impl LiteRt {
 
         Ok(Self {
             api,
+            ext,
             _lib: lib,
             engine,
             conversation,
@@ -179,6 +322,247 @@ impl LiteRt {
             Ok(out)
         }
     }
+
+    /// Replace the open conversation.
+    ///
+    /// The C API fixes a conversation's sampler at creation time, so a
+    /// temperature change is a new conversation. The old one is deleted first,
+    /// which is what makes this safe to call before every turn.
+    ///
+    /// `optional` is built from `spec` and handed to each send; it is
+    /// per-turn state, unlike the sampler, so it does not force a rebuild.
+    pub fn reopen_conversation(&mut self, spec: &ConversationSpec<'_>) -> Result<(), EngineError> {
+        if let Some(set_session) = self.ext.litert_lm_conversation_config_set_session_config {
+            if let Some(s) = spec.sampler {
+                let params = sampler_params(&self.ext, s)?;
+                let session = unsafe { self.ext.litert_lm_session_config_create.unwrap()() };
+                if session.is_null() {
+                    return Err(EngineError::Runtime("session config is NULL".into()));
+                }
+                unsafe {
+                    (self
+                        .ext
+                        .litert_lm_session_config_set_sampler_params
+                        .unwrap())(session, params);
+                }
+                // The config copies the sampler, so the params are ours to free
+                // as soon as it is built. Leaking them would leak on every
+                // conversation recreate, and the app recreates on every
+                // temperature change.
+                unsafe { (self.ext.litert_lm_sampler_params_delete.unwrap())(params) };
+                let config = unsafe { (self.api.litert_lm_conversation_config_create)() };
+                if config.is_null() {
+                    unsafe { (self.ext.litert_lm_session_config_delete.unwrap())(session) };
+                    return Err(EngineError::Runtime("conversation config is NULL".into()));
+                }
+                unsafe {
+                    set_session(config, session);
+                    (self.ext.litert_lm_session_config_delete.unwrap())(session);
+                }
+                let conversation = self.finish_conversation(config, spec)?;
+                self.swap_conversation(conversation);
+                return Ok(());
+            }
+        } else if spec.sampler.is_some() {
+            self.report.notes.push(
+                "temperature/top_k/top_p unavailable: this runtime has no sampler API".into(),
+            );
+        }
+
+        let config = unsafe { (self.api.litert_lm_conversation_config_create)() };
+        if config.is_null() {
+            return Err(EngineError::Runtime("conversation config is NULL".into()));
+        }
+        let conversation = self.finish_conversation(config, spec)?;
+        self.swap_conversation(conversation);
+        Ok(())
+    }
+
+    /// Apply the system prompt, history and turn limits to a fresh config, then
+    /// create the conversation. The config is always deleted, on every path.
+    fn finish_conversation(
+        &mut self,
+        config: *mut ffi::LiteRtLmConversationConfig,
+        spec: &ConversationSpec<'_>,
+    ) -> Result<*mut ffi::LiteRtLmConversation, EngineError> {
+        if let Some(p) = spec.system_prompt {
+            let as_json = cstring(&json::message("system", p))?;
+            unsafe {
+                (self.api.litert_lm_conversation_config_set_system_message)(
+                    config,
+                    as_json.as_ptr(),
+                )
+            };
+        }
+        if !spec.history.is_empty() {
+            let arr = cstring(&json::messages_array(spec.history))?;
+            if let Some(f) = self.ext.litert_lm_conversation_config_set_messages {
+                unsafe { f(config, arr.as_ptr()) };
+            } else {
+                self.report
+                    .notes
+                    .push("history ignored: set_messages absent from this runtime".into());
+            }
+        }
+        let conversation = unsafe { (self.api.litert_lm_conversation_create)(self.engine, config) };
+        unsafe { (self.api.litert_lm_conversation_config_delete)(config) };
+        if conversation.is_null() {
+            return Err(EngineError::Runtime(
+                "conversation_create returned NULL".into(),
+            ));
+        }
+        Ok(conversation)
+    }
+
+    fn swap_conversation(&mut self, conversation: *mut ffi::LiteRtLmConversation) {
+        unsafe {
+            if !self.conversation.is_null() {
+                (self.api.litert_lm_conversation_delete)(self.conversation);
+            }
+            self.conversation = conversation;
+        }
+    }
+
+    /// Stream one turn of arbitrary content — text, or text plus an image and
+    /// an audio file.
+    ///
+    /// The parts are rendered with `json::parts_message`, whose field names are
+    /// pinned against the C++ that reads them. The alternative, a bare string
+    /// message, silently drops media: the runtime ignores a part whose key it
+    /// does not recognise and answers from the text alone.
+    pub fn send_parts(
+        &mut self,
+        parts: &[json::Content],
+        req: &GenRequest,
+        on_token: &mut dyn FnMut(&str),
+    ) -> Result<GenOutcome, EngineError> {
+        let msg = json::parts_message("user", parts);
+        self.stream(&msg, req, on_token)
+    }
+
+    /// Stream one turn of an already-rendered message.
+    ///
+    /// This is what the FFI boundary calls. Rendering happens on the Dart side of
+    /// the boundary in that arrangement, so there is exactly one place that knows
+    /// the engine's JSON dialect and it is [`json`], reachable from both sides.
+    ///
+    /// **Blocks** until the terminal chunk, the watchdog, or an error. The caller
+    /// is expected to be a worker: the C callback fires on an engine-owned thread
+    /// and `on_token` runs on this one, as chunks arrive.
+    pub fn send_message_json(
+        &mut self,
+        message_json: &str,
+        req: &GenRequest,
+        on_token: &mut dyn FnMut(&str),
+    ) -> Result<GenOutcome, EngineError> {
+        self.stream(message_json, req, on_token)
+    }
+
+    /// Tokens `text` would occupy, via the engine's own tokenizer.
+    ///
+    /// The plugin's `countTokens` used the AAR's tokenizer; this is the C API's.
+    /// They should agree, and if they do not the smaller number is the one that
+    /// fits the context.
+    pub fn count_tokens(&mut self, text: &str) -> Result<usize, EngineError> {
+        let (Some(tokenize), Some(count)) = (
+            self.ext.litert_lm_engine_tokenize,
+            self.ext.litert_lm_tokenize_result_get_num_tokens,
+        ) else {
+            return Err(EngineError::NotImplemented("engine_tokenize"));
+        };
+        let c = cstring(text)?;
+        let result = unsafe { tokenize(self.engine, c.as_ptr()) };
+        if result.is_null() {
+            return Err(EngineError::Runtime("engine_tokenize returned NULL".into()));
+        }
+        let n = unsafe { count(result) };
+        if let Some(delete) = self.ext.litert_lm_tokenize_result_delete {
+            unsafe { delete(result) };
+        }
+        Ok(n)
+    }
+
+    /// What the runtime itself measured for the turns so far.
+    ///
+    /// `None` when the switch was never thrown, or when the runtime has no
+    /// benchmark family. The numbers are the engine's, not derived from wall
+    /// time here, which is why they are worth having: the harness's own TTFT
+    /// includes the JSON unwrap and the channel hop.
+    pub fn benchmark(&mut self) -> Option<Bench> {
+        let get = self.ext.litert_lm_conversation_get_benchmark_info?;
+        if self.conversation.is_null() {
+            return None;
+        }
+        let info = unsafe { get(self.conversation) };
+        if info.is_null() {
+            return None;
+        }
+        // Turn index 0: the first turn of this conversation. A per-turn read
+        // would need an index the app does not track, and for a single-turn
+        // measurement -- which is what the matrix records -- 0 is the turn.
+        let at = |f: Option<
+            unsafe extern "C" fn(*const ffi::LiteRtLmBenchmarkInfo, c_int) -> i32,
+        >| { f.map(|f| unsafe { f(info, 0) }).unwrap_or(0) };
+        let rate = |f: Option<
+            unsafe extern "C" fn(*const ffi::LiteRtLmBenchmarkInfo, c_int) -> f64,
+        >| { f.map(|f| unsafe { f(info, 0) }).unwrap_or(0.0) };
+        let bench = Bench {
+            ttft_ms: self
+                .ext
+                .litert_lm_benchmark_info_get_time_to_first_token
+                .map(|f| unsafe { f(info) })
+                .unwrap_or(0.0),
+            prefill_tokens: at(self.ext.litert_lm_benchmark_info_get_prefill_token_count_at),
+            decode_tokens: at(self.ext.litert_lm_benchmark_info_get_decode_token_count_at),
+            prefill_tps: rate(
+                self.ext
+                    .litert_lm_benchmark_info_get_prefill_tokens_per_sec_at,
+            ),
+            decode_tps: rate(
+                self.ext
+                    .litert_lm_benchmark_info_get_decode_tokens_per_sec_at,
+            ),
+        };
+        if let Some(delete) = self.ext.litert_lm_benchmark_info_delete {
+            unsafe { delete(info) };
+        }
+        Some(bench)
+    }
+}
+
+/// Build sampler params, or say which symbol is missing.
+fn sampler_params(
+    ext: &ffi::ApiExt,
+    s: Sampler,
+) -> Result<*mut ffi::LiteRtLmSamplerParams, EngineError> {
+    let create = ext
+        .litert_lm_sampler_params_create
+        .ok_or(EngineError::NotImplemented(
+            "litert_lm_sampler_params_create",
+        ))?;
+    // engine.h:127-138 -- kLiteRtLmSamplerTypeTopK 1, TopP 2, Greedy 3. A C enum
+    // crosses the boundary as int. TopK is the default because it is what the
+    // app's plugin sent (topK 64, topP 0.95, temperature from the slider), and
+    // the type only chooses which knobs are consulted.
+    let kind: c_int = if s.greedy { 3 } else { 1 };
+    let params = unsafe { create(kind) };
+    if params.is_null() {
+        return Err(EngineError::Runtime(
+            "sampler_params_create returned NULL".into(),
+        ));
+    }
+    unsafe {
+        if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_temperature, s.temperature) {
+            f(params, v);
+        }
+        if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_top_k, s.top_k) {
+            f(params, v);
+        }
+        if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_top_p, s.top_p) {
+            f(params, v);
+        }
+    }
+    Ok(params)
 }
 
 impl Engine for LiteRt {
@@ -195,8 +579,37 @@ impl Engine for LiteRt {
         req: &GenRequest,
         on_token: &mut dyn FnMut(&str),
     ) -> Result<GenOutcome, EngineError> {
+        let msg = json::message("user", &req.prompt);
+        self.stream(&msg, req, on_token)
+    }
+
+    fn unload(&mut self) {
+        unsafe {
+            if !self.conversation.is_null() {
+                (self.api.litert_lm_conversation_delete)(self.conversation);
+                self.conversation = ptr::null_mut();
+            }
+            if !self.engine.is_null() {
+                (self.api.litert_lm_engine_delete)(self.engine);
+                self.engine = ptr::null_mut();
+            }
+        }
+    }
+}
+
+impl LiteRt {
+    /// Send one already-rendered message and drive the stream to its terminal
+    /// chunk. Shared by [`Engine::generate`] and [`LiteRt::send_parts`] so there
+    /// is one watchdog, one unwind of the JSON envelope, and one place that
+    /// knows the send is non-blocking.
+    fn stream(
+        &mut self,
+        message_json: &str,
+        req: &GenRequest,
+        on_token: &mut dyn FnMut(&str),
+    ) -> Result<GenOutcome, EngineError> {
         let started = Instant::now();
-        let msg = cstring(&json::message("user", &req.prompt))?;
+        let msg = cstring(message_json)?;
 
         // The C callback runs on an engine-owned thread and cannot touch the
         // caller's `&mut dyn FnMut`, so an mpsc channel is the seam: the callback
@@ -289,19 +702,6 @@ impl Engine for LiteRt {
             decode_tokens: sink.chunks.load(Ordering::Relaxed),
             total_ms,
         })
-    }
-
-    fn unload(&mut self) {
-        unsafe {
-            if !self.conversation.is_null() {
-                (self.api.litert_lm_conversation_delete)(self.conversation);
-                self.conversation = ptr::null_mut();
-            }
-            if !self.engine.is_null() {
-                (self.api.litert_lm_engine_delete)(self.engine);
-                self.engine = ptr::null_mut();
-            }
-        }
     }
 }
 
@@ -455,6 +855,52 @@ mod tests {
         // A wrong spelling does not error: it selects a different, slower path.
         assert_eq!(backend_str(Backend::Cpu), "cpu");
         assert_eq!(backend_str(Backend::Gpu), "gpu");
+    }
+
+    #[test]
+    fn a_runtime_without_the_sampler_api_says_so_instead_of_pretending() {
+        // An empty table is a runtime with none of the optional symbols. The
+        // error has to name the symbol: "temperature did nothing" is
+        // indistinguishable from a slider that is not wired to anything.
+        let ext = ffi::ApiExt::load(Lib::open("libc.so.6").as_ref().unwrap());
+        let e = sampler_params(
+            &ext,
+            Sampler {
+                temperature: Some(0.7),
+                top_k: Some(64),
+                top_p: Some(0.95),
+                greedy: false,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                e,
+                EngineError::NotImplemented("litert_lm_sampler_params_create")
+            ),
+            "{e}"
+        );
+        assert!(
+            e.to_string().contains("litert_lm_sampler_params_create"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn greedy_and_topk_are_different_enum_values() {
+        // engine.h:127-138 -- TopK 1, TopP 2, Greedy 3. Sending the wrong one is
+        // not an error; it is silently a different sampler, so the boundary
+        // between the two is worth pinning in one place.
+        fn kind(greedy: bool) -> c_int {
+            if greedy {
+                3
+            } else {
+                1
+            }
+        }
+        assert_ne!(kind(true), kind(false));
+        assert!(matches!(kind(true), 3));
+        assert!(matches!(kind(false), 1));
     }
 
     #[test]
