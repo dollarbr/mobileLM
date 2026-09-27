@@ -278,6 +278,13 @@ class LiteRtEngine {
       errorsAreFatal: false,
     );
     await ready.future;
+
+    // The load is a *command*, not something the spawn does. The isolate reads the
+    // boot map inside its `load` case and nothing else would ever reach that case,
+    // so the engine was never created and every later call saw a null handle. Sent
+    // explicitly, and awaited, so a load failure surfaces here as an exception
+    // rather than as a puzzling error three calls later.
+    await _ask('load');
   }
 
   /// One listener for the isolate's whole life: the handshake, then tagged
@@ -296,7 +303,11 @@ class LiteRtEngine {
     if (completer == null || completer.isCompleted) return;
     final error = message['error'];
     if (error != null) {
-      completer.completeError(MobilelmException('$error'));
+      // The isolate already stringified a `MobilelmException`, prefix and all, so
+      // re-wrapping it here produced "mobilelm_core: mobilelm_core: …" — which
+      // reads like two failures rather than one. Passed through as a plain
+      // exception, keeping the wording the far side chose.
+      completer.completeError('$error');
     } else {
       completer.complete(message['result']);
     }
