@@ -6,7 +6,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.4+1**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.4+2004**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
@@ -113,17 +113,31 @@ CPU, não a libc, e o binário fixa `/system/bin/linker64` como interpretador). 
 build; o aparelho garante o motor. Ver [`local_plugins/mobilelm_core/AGENTS.md`](local_plugins/mobilelm_core/AGENTS.md).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.3.4+1` → tag `0.3.4`. O workflow falha de propósito se divergirem.
+`+build`: `0.3.4+2004` → tag `0.3.4`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
 Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade).
 
-**0.3.4 é a primeira release assinada com a chave do projeto.** Até 0.3.3 inclusive
-todas saíram com `CN=Android Debug`. Quem instalou uma dessas precisa **desinstalar**
-antes de instalar a 0.3.4 — o Android recusa substituir por assinatura diferente, e
-desinstalar apaga modelos baixados, histórico e workspace. Está avisado no README.
+**0.3.4 é a primeira release assinada com a chave do projeto** (`CN=dollarbr`, SHA-256
+`1cd43cb7…`). Quem instalou uma das anteriores precisa **desinstalar** antes — o Android
+recusa substituir por assinatura diferente, e desinstalar apaga modelos baixados,
+histórico e workspace. Avisado no README.
+
+Isso não é novidade: **as 7 releases anteriores têm 7 chaves de debug diferentes**,
+uma por run do CI, porque o runner efêmero gerava um `debug.keystore` novo a cada
+build. Nenhuma instalava por cima de outra — todo bump de versão já era desinstalar e
+reinstalar. Verificado com `apksigner verify --print-certs` em cada asset. As chaves
+antigas não existem mais; recriar as releases antigas não resolveria nada, porque quem
+tem 0.3.3 instalado tem o APK assinado com uma chave que está perdida.
+
+**O `+build` do pubspec É o `versionCode` do Android e tem que crescer sempre.** Não é
+decorativo. Os valores publicados foram 2002, 2003, 2001, 2001, 2001, 2001, 2001 —
+ad-hoc, e 0.2.1 (2001) é *menor* que 0.2.0 (2003), uma regressão. A 0.3.4 ficou em
+**2004** porque 2003 era o maior até então; com `+1` ela seria downgrade e não
+instalaria por cima de nada. Daqui em diante: bump de release ⇒ `versionCode` maior,
+ou o update falha com `INSTALL_FAILED_VERSION_DOWNGRADE`.
 
 **Minor = feature, patch = conteúdo.** Um catálogo maior não é uma feature, é uma
 lista maior — o bump de minor teria prometido algo que o APK não traz. `0.4.0` fica

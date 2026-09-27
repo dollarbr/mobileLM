@@ -74,18 +74,42 @@ Every push also produces a debug APK, available from the
 
 ### Before you install an update
 
-Releases up to and including **0.3.3** were signed with the Android **debug
-key**, which is public — anyone could produce an APK that updates over yours.
-From **0.3.4** on, releases are signed with the project's own key.
+**0.3.4 is the first release you cannot install over an earlier one.** Android
+refuses to replace an app with a differently-signed build, so uninstall first —
+that deletes your downloaded models, chat history and workspace bindings.
+Export anything you care out of the app before you do.
 
-That means 0.3.4 is the first release you *cannot* update over an earlier one.
-Android refuses to replace an app with a differently-signed build, so you will
-have to uninstall first — and that deletes your downloaded models, chat history
-and workspace bindings. Export anything you care about from the app before you
-do. After 0.3.4, updates are normal again.
+You have almost certainly had to do this at every previous version too, and the
+README used to imply otherwise. It did not. Every release through 0.3.3 was
+signed with a *different* Android debug key:
+
+| Release | Signing certificate SHA-256 (first 12) | versionCode |
+|---|---|---|
+| 0.1.0 | `150430ee483f` | 2002 |
+| 0.2.0 | `af4642b184f1` | 2003 |
+| 0.2.1 | `0f407a555bb3` | 2001 |
+| 0.3.0 | `bc1a801ffd19` | 2001 |
+| 0.3.1 | `ef9321cf0798` | 2001 |
+| 0.3.2 | `4e8436507d35` | 2001 |
+| 0.3.3 | `0c508b931263` | 2001 |
+
+Seven releases, seven keys. Each CI run generated a throwaway `debug.keystore`
+on an ephemeral runner, so no two of them could install over each other. The
+keys are gone; nobody kept them. There was no upgrade path to lose — every
+version bump was already an uninstall and a reinstall.
+
+From 0.3.4 the key is fixed and stored as a repository secret, so from here on
+updates are ordinary installs. Check any release yourself:
+
+```sh
+gh release download 0.3.3 --repo dollarbr/mobileLM
+apksigner verify --print-certs mobilelm-0.3.3-arm64-v8a.apk   # CN=Android Debug
+apksigner verify --print-certs mobilelm-0.3.4-arm64-v8a.apk   # CN=dollarbr
+```
 
 Debug APKs from CI are still debug-signed. That is correct and intended: they
-are not distributed, and they must be able to install over any build.
+are not distributed, they must be able to install over any build, and a stable
+debug key would defeat the point of the assertion in [Signing](#signing).
 
 ## Build from source
 
@@ -131,12 +155,20 @@ reason this cannot silently regress again.
 
 The first version of this setup had the secrets configured and the workflow
 never reading them, while the build fell back to the debug key — so every APK
-through 0.3.3 shipped forgeable. Nothing about the keystore was wrong; nobody
-was using it. If you want to check a given release for yourself:
+through 0.3.3 shipped forgeable, each with a *different* debug key. Nothing
+about the keystore was wrong; nobody was using it.
 
-```sh
-apksigner verify --print-certs mobilelm-<version>-arm64-v8a.apk
-```
+The release key is `CN=dollarbr, OU=mobileLM, O=mobileLM, C=BR`, SHA-256
+`1cd43cb7daddcec2a70c35926939a00247c66df5b1bd0a08db4293fc556cfb6d`. The
+keystore lives outside every repository, with its password beside it, and is
+valid until 2054. **If you ever need to verify a build is really ours, that
+fingerprint is the thing to compare** — not the file name, not the tag, and
+definitely not the version string, all of which are forgeable.
+
+An earlier `mobilelm_release.jks` (2780 bytes, 2026-09-16) is kept as
+`mobilelm_release.jks.orphaned`. Its password was never recorded, so it can
+never sign anything. Nothing was ever signed with it, so there is nothing to
+recover; it is there only in case you want to look at its certificate.
 
 ## Credits
 
