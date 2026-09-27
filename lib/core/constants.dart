@@ -50,6 +50,21 @@ class AppConstants {
       'litert_gpu_warning_accepted';
   static const String keyLiteRtGpuLoadPending = 'litert_gpu_load_pending';
   static const String keyLiteRtGpuCrashDetected = 'litert_gpu_crash_detected';
+
+  /// Routes `.litertlm` models through the Rust core (`libmobilelm_core.so`)
+  /// instead of the Kotlin plugin.
+  ///
+  /// **Defaults to off, and that is a decision, not an omission.** The Rust path is
+  /// the claim 0.4.0 makes, and the claim is not earned until it has been run
+  /// beside the plugin on the same phone, same model, same prompt. Until then the
+  /// default is the path that has been generating for months, and this switch is
+  /// how the comparison gets made. It flips to on in the same commit that deletes
+  /// the plugin — after the numbers are in `docs/BENCH.md`, not before.
+  ///
+  /// Off is also the safe state on a device whose runtime the core cannot use: the
+  /// Rust attempt fails at load and the load falls through to the plugin, so a bad
+  /// runtime costs a few seconds of load time rather than an unusable model.
+  static const String keyHybridCoreEnabled = 'hybrid_core_enabled';
   /// Per-model Auto Fast benchmark verdicts. Key = prefix + 'name:bytes',
   /// value = 'cpu' | 'gpu'. Measured once, reused on every later load.
   static const String autoFastBenchKeyPrefix = 'auto_fast_bench_';

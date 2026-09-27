@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'ffi/core_self_check.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 // import 'firebase_options.dart';
@@ -74,6 +75,12 @@ void main() {
 
     // Settings controller must be initialized before runApp for theme support
     final settingsController = Get.put(SettingsController());
+
+    // Says once whether this APK is actually using the Rust core, and which
+    // optional C API symbols the device's runtime lacks. Not awaited: it must not be
+    // able to delay the first frame, and a diagnostic that can slow down the app it
+    // is diagnosing eventually gets removed.
+    unawaited(CoreSelfCheck.run());
     Get.put(CloudModelController());
 
     Get.put(InferenceService());

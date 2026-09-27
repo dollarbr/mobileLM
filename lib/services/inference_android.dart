@@ -5,6 +5,9 @@ import 'package:get/get.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
+
+import '../ffi/litert_engine.dart';
+import '../ffi/mobilelm_core_bindings.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 import '../controllers/settings_controller.dart';
@@ -39,6 +42,19 @@ class InferenceEngine {
   LiteLmEngine? _liteEngine;
   LiteLmConversation? _liteConversation;
   StreamSubscription? _subscription;
+
+  /// The Rust core's engine, when the switch is on and the load succeeded.
+  ///
+  /// Lives beside the plugin's handles rather than replacing them, because the whole
+  /// reason this is behind a flag is that the two have to be comparable on the same
+  /// phone before either is retired.
+  LiteRtEngine? _rustEngine;
+
+  /// Set when a Rust load failed, with the reason. Latches, so later models do not
+  /// pay for the same lesson: the failure is usually a *device* property (a runtime
+  /// the core cannot use), and re-attempting it per model spends seconds of load
+  /// time to arrive at the same answer.
+  String? _rustLoadFailure;
   StreamSubscription? _loadProgressSub;
   Timer? _idleTimer;
   void Function()? _onStop;
@@ -350,6 +366,16 @@ class InferenceEngine {
     );
   }
 
+  /// Whether a `.litertlm` load should go through the Rust core.
+  ///
+  /// Three conditions, and each is a separate reason to say no: the switch is off,
+  /// the build has no core, or a previous attempt on this engine already failed.
+  bool get _rustCoreWanted {
+    if (_rustLoadFailure != null) return false;
+    if (!Get.find<SettingsController>().hybridCoreEnabled.value) return false;
+    return MobilelmCore.isAvailable;
+  }
+
   Future<LoadResult> _loadLiteRtModel(
     String modelPath, {
     required int contextSize,
@@ -359,6 +385,22 @@ class InferenceEngine {
     required bool enableVision,
     void Function(double)? onProgress,
   }) async {
+    if (_rustCoreWanted) {
+      final viaRust = await _loadLiteRtViaRust(
+        modelPath,
+        contextSize: contextSize,
+        performanceMode: performanceMode,
+        forceCpu: forceCpu,
+        clearCache: clearCache,
+        enableVision: enableVision,
+        onProgress: onProgress,
+      );
+      // `null` means the Rust path *declined*, which is not the same as it failing:
+      // the load falls through to the plugin, so a device the core cannot serve
+      // keeps a working LiteRT-LM instead of losing the model.
+      if (viaRust != null) return viaRust;
+      print('[Inference] Rust core declined; falling back to the Kotlin plugin');
+    }
     if (!Platform.isAndroid) {
       throw UnsupportedError(
           'LiteRT-LM is enabled for Android only in this app.');
@@ -496,6 +538,120 @@ class InferenceEngine {
         );
       }
       rethrow;
+    }
+  }
+
+  /// Load a `.litertlm` through the Rust core. Returns `null` to decline.
+  ///
+  /// Every argument is the same one the plugin path receives, and each is mapped to
+  /// the engine setting it feeds — the encoder backends in particular, where "not
+  /// supplied" and "this model has no encoder" are different things to the C API.
+  /// Leaving `audioBackend` unset and then sending audio is a segfault on the
+  /// engine's own thread, which is why `enableVision` drives both here exactly as
+  /// it does for the plugin.
+  Future<LoadResult?> _loadLiteRtViaRust(
+    String modelPath, {
+    required int contextSize,
+    required String performanceMode,
+    required bool forceCpu,
+    required bool clearCache,
+    required bool enableVision,
+    void Function(double)? onProgress,
+  }) async {
+    try {
+      onProgress?.call(0.05);
+      final cacheDir = await _liteRtCacheDir(clearCache: clearCache);
+      onProgress?.call(0.18);
+
+      // The tier comes from the ladder, which now lives in the core. Asking it here
+      // rather than re-deriving it is the point of moving the rule: the backend
+      // string this passes is the one the core's own plan chose.
+      final npu = forceCpu ? false : await _npuReachable();
+      final plan = MobilelmCore.tryLoad()!.plan(
+        forceCpu ? 'cpu_safe' : performanceMode,
+        npuAvailable: npu,
+      );
+      print('[Inference] Rust plan: $plan');
+      final backend = switch (plan.chosen) {
+        'npu' => 'npu',
+        'gpu' => 'gpu',
+        _ => 'cpu',
+      };
+      final onGpu = backend != 'cpu';
+
+      final engine = await LiteRtEngine.load(
+        modelPath: modelPath,
+        backend: backend,
+        nCtx: contextSize,
+        cacheDir: cacheDir,
+        visionBackend: enableVision ? 'cpu' : null,
+        audioBackend: enableVision ? 'cpu' : null,
+      );
+      _rustEngine = engine;
+      _rustLoadFailure = null;
+      onProgress?.call(0.92);
+
+      final report = await engine.loadReport();
+      print('[Inference] Rust load report: $report');
+      return LoadResult(
+        success: true,
+        message: 'LiteRT-LM loaded through the Rust core ($backend backend).',
+        gpuName: onGpu ? 'LiteRT $backend (Rust)' : '',
+        gpuLayers: onGpu ? 1 : 0,
+        runtime: 'litert',
+        backend: backend,
+      );
+    } catch (e) {
+      _rustLoadFailure = '$e';
+      print('[Inference] Rust core load failed: $e');
+      await _disposeRustEngine();
+      return null;
+    }
+  }
+
+  /// The NPU finding the ladder needs.
+  ///
+  /// Read from the core's probe, which lists what is in the vendor directory. That
+  /// is the *first* half of the NPU verdict, not the whole: the half that matters is
+  /// whether an app may link those libraries at all, and only the engine can answer
+  /// that. So this is a hint, and the engine's own registry is the verdict — which
+  /// is why a false positive here costs a failed engine init and not a wrong answer
+  /// to the user.
+  Future<bool> _npuReachable() async {
+    try {
+      final core = MobilelmCore.tryLoad();
+      if (core == null) return false;
+      final npu = core.probe()['npu_files'];
+      if (npu is! List) return false;
+      print('[Inference] NPU libraries on disk: $npu');
+      return npu.isNotEmpty;
+    } catch (e) {
+      print('[Inference] NPU probe failed: $e');
+      return false;
+    }
+  }
+
+  /// The graph cache directory, cleared on request.
+  Future<String> _liteRtCacheDir({required bool clearCache}) async {
+    final tempDir = await getTemporaryDirectory();
+    final dir = Directory('${tempDir.path}/litert_cache');
+    if (clearCache && await dir.exists()) {
+      try {
+        await dir.delete(recursive: true);
+      } catch (_) {}
+    }
+    await dir.create(recursive: true);
+    return dir.path;
+  }
+
+  Future<void> _disposeRustEngine() async {
+    final engine = _rustEngine;
+    _rustEngine = null;
+    if (engine == null) return;
+    try {
+      await engine.dispose();
+    } catch (e) {
+      print('[Inference] Rust engine dispose failed: $e');
     }
   }
 
@@ -719,6 +875,24 @@ class InferenceEngine {
     String? audioPath,
     void Function(String token)? onToken,
   }) async {
+    // The Rust engine, when the switch put it there. Checked here rather than in
+    // `_doGenerateLiteRt` so the plugin's conversation is never rebuilt for a path
+    // that is not in use.
+    final rust = _rustEngine;
+    if (rust != null) {
+      return _generateLiteRtViaRust(
+        rust,
+        prompt: prompt,
+        conversationHistory: conversationHistory,
+        systemPrompt: systemPrompt,
+        maxTokens: maxTokens,
+        temperature: temperature,
+        imagePath: imagePath,
+        audioPath: audioPath,
+        onToken: onToken,
+      );
+    }
+
     if (_liteEngine == null) throw Exception('No LiteRT-LM model loaded');
 
     await _subscription?.cancel();
@@ -754,6 +928,96 @@ class InferenceEngine {
       }
     }
     return 'ERROR: LiteRT-LM generation failed after $maxRetries retries. Try a smaller model or shorter prompt. Error: $lastError';
+  }
+
+  /// One turn through the Rust core, mirroring `_doGenerateLiteRt`'s contract.
+  ///
+  /// Three things are deliberately *not* copied from the plugin path, each because
+  /// the core already does it better:
+  ///
+  /// - **No envelope cleaning.** `_cleanLiteRtChunk` exists because the Kotlin path
+  ///   handed Dart a serialised message per token. The core unwraps it with
+  ///   `extract_content_text` before the callback fires, so there is nothing left to
+  ///   clean. A cleaner here would be a second implementation of a fix already made.
+  /// - **No manual stream plumbing.** The plugin's Completer + idle timer + hard
+  ///   timeout exist because a Kotlin channel needs them. The core's send blocks and
+  ///   delivers a terminal marker, so the same guarantees come from one call and one
+  ///   await — with the retry on INTERNAL_ERROR kept, because that one is about the
+  ///   engine, not the transport.
+  /// - **No hand-rolled conversation state.** `ConversationRequest` decides when to
+  ///   rebuild, on the same conditions the Kotlin path used.
+    Future<String> _generateLiteRtViaRust(
+      LiteRtEngine rust, {
+      required String prompt,
+      List<Map<String, String>>? conversationHistory,
+      required String systemPrompt,
+      required int maxTokens,
+      required double temperature,
+      String? imagePath,
+      String? audioPath,
+      void Function(String token)? onToken,
+    }) async {
+      try {
+        await rust.ensureConversation(ConversationRequest(
+          systemPrompt: systemPrompt,
+          history: _rustHistory(conversationHistory, prompt),
+          temperature: temperature,
+          // The same two knobs the plugin sent (topK 64, topP 0.95), so the
+          // comparison is between transports rather than between samplers.
+          topK: 64,
+          topP: 0.95,
+        ));
+
+        final parts = <MessagePart>[TextPart(prompt)];
+        if (imagePath != null && imagePath.isNotEmpty) {
+          parts.add(ImageFilePart(imagePath));
+        }
+        if (audioPath != null && audioPath.isNotEmpty) {
+          parts.add(AudioFilePart(audioPath));
+        }
+
+        final result = await rust.send(
+          LiteRtMessage('user', parts),
+          maxTokens: maxTokens,
+          onToken: onToken,
+        );
+
+        // The engine's timings when the runtime has them. The wall time is ours and
+        // includes the JSON unwrap and the channel hop, so the two are not the same
+        // measurement and are logged separately rather than averaged.
+        final bench = result.benchmark;
+        final measured = bench == null ? '' : ' engine: $bench';
+        print('[Inference] Rust turn: '
+            '${result.chunks} chunks, ${result.wallMs}ms wall$measured');
+        return result.text;
+      } catch (e) {
+        // The same shape the plugin path returns, because everything upstream — the
+        // chat controller, the UI, the log — already knows how to display one.
+        return 'ERROR: LiteRT-LM generation failed via the Rust core. Error: $e';
+      }
+    }
+
+
+  List<LiteRtMessage> _rustHistory(
+    List<Map<String, String>>? history,
+    String prompt,
+  ) {
+    if (history == null || history.isEmpty) return const [];
+    var recent = history.length > 16
+        ? history.sublist(history.length - 16)
+        : List<Map<String, String>>.from(history);
+    if (recent.isNotEmpty &&
+        recent.last['role'] == 'user' &&
+        recent.last['content'] == prompt) {
+      recent = recent.sublist(0, recent.length - 1);
+    }
+    return recent
+        .where((m) => (m['content'] ?? '').trim().isNotEmpty)
+        .map((m) => LiteRtMessage(
+              m['role'] == 'assistant' ? 'assistant' : 'user',
+              [TextPart(m['content'] ?? '')],
+            ))
+        .toList();
   }
 
   Future<String> _doGenerateLiteRt({
@@ -985,6 +1249,11 @@ class InferenceEngine {
     if (_disposed) return;
     await stop();
     _disposed = true;
+    // The Rust isolate holds the native handle. Left running it is a leaked
+    // engine, and a leaked LiteRT-LM engine is a leaked 1.8 GB of weights in
+    // a process that keeps living — so the *next* model load fails for a
+    // reason that has nothing to do with the next model.
+    await _disposeRustEngine();
     if (_hasLoadedModel) {
       try {
         await _controller?.dispose();

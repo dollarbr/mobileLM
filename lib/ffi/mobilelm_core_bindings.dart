@@ -630,6 +630,13 @@ class AccelerationPlan {
 
   /// True when the requested tier survived.
   final bool exact;
+
+  /// One line for a log, in the same shape the native side emits — so a line copied
+  /// out of a Dart print and one out of a `mobilelm_plan` response are comparable
+  /// by eye, which is the point of reading both.
+  @override
+  String toString() => 'requested=$requested chosen=$chosen exact=$exact'
+      '${reason == null ? '' : ' reason="$reason"'}';
 }
 
 /// What a load actually produced.
