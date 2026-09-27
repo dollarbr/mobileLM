@@ -38,6 +38,11 @@ chunk, then `done` with TTFT, prefill and decode throughput, and peak RSS.
 `scripts/run-on-device.sh` in this archive does all of the above; `--check`
 validates the tree without a phone attached.
 
+For the full flag list: `cargo run -p mobilelm-bench -- --help` on a host. It
+cannot be captured into this README at build time — the binary is aarch64
+Android and the runner is x86-64, so executing it there fails with
+`exec format error`.
+
 ## Why there is no generation job in CI
 
 The obvious thing to try is `qemu-aarch64-static` on the runner. It does not

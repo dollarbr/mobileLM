@@ -153,21 +153,22 @@ jobs:
       # is 586 MB and stays out of the artifact; the instructions that explain
       # which model, and where, are docs/ARTIFACT.md -- versioned prose rather
       # than a heredoc inside a YAML block scalar, which cannot be indented.
+      #
+      # No `working-directory` here: steps.build.outputs.path is repo-root
+      # relative, because the readelf step and the upload path need it that way,
+      # and mixing the two is a `cp: cannot stat` that names nothing useful.
       - name: Stage the artifact
-        working-directory: local_plugins/mobilelm_core
         run: |
-          mkdir -p dist
-          cp "${{ steps.build.outputs.path }}" dist/mobilelm-bench
-          cp rt/liblitert-lm.so dist/
-          cp scripts/run-on-device.sh dist/
-          cp docs/ARTIFACT.md dist/README.md
-          {
-            cat docs/ARTIFACT.md
-            echo
-            echo "--- --help output ---"
-            ./dist/mobilelm-bench --help 2>&1 || true
-          } > dist/README.txt
-          cat dist/README.txt
+          core=local_plugins/mobilelm_core
+          mkdir -p "$core/dist"
+          cp "${{ steps.build.outputs.path }}" "$core/dist/mobilelm-bench"
+          cp "$core/rt/liblitert-lm.so" "$core/dist/"
+          cp "$core/scripts/run-on-device.sh" "$core/dist/"
+          cp "$core/docs/ARTIFACT.md" "$core/dist/README.md"
+          # `--help` cannot be captured here: this binary is aarch64 Android and
+          # this runner is x86-64, so running it fails with exec format error.
+          # ARTIFACT.md points at the flag instead.
+          ls -lh "$core/dist/"
 
       - uses: actions/upload-artifact@v4
         with:
