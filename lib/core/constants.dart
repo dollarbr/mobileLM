@@ -262,6 +262,201 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'template': 'chatml',
       'runtime': 'llama',
     },
+    // LFM2.5-VL — the vision-language half of the same family. Liquid AI ships
+    // the projector only as Q8_0 (or worse), so the vision floor is set by the
+    // projector, not the weights: 450M costs 98 MB of projector, 1.6B and 3B
+    // both cost 556 MB of the same one.
+    //
+    // Every URL and size below was read from the Hugging Face API on 2026-09-27,
+    // not copied from a model card. Re-check with
+    //   curl -sI "https://huggingface.co/<repo>/resolve/main/<file>" | grep -i content-length
+    // before trusting one: a renamed or removed file is a 404 at download time
+    // with no other symptom, and the catalogue is the only place it shows up.
+    {
+      'name': 'LFM2.5-VL 450M (Q4_0 + vision)',
+      'filename': 'LFM2.5-VL-450M-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/LFM2.5-VL-450M-Q4_0.gguf',
+      'size': '209 MB',
+      'description':
+          'Smallest vision-language model here. 209 MB of weights plus a 98 MB projector',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/mmproj-LFM2.5-VL-450m-Q8_0.gguf',
+      'mmprojFilename': 'mmproj-LFM2.5-VL-450m-Q8_0.gguf',
+    },
+    {
+      'name': 'LFM2.5-VL 1.6B (Q4_0 + vision)',
+      'filename': 'LFM2.5-VL-1.6B-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF/resolve/main/LFM2.5-VL-1.6B-Q4_0.gguf',
+      'size': '664 MB',
+      'description':
+          'The sweet spot of the VL line. The projector is 556 MB, so vision costs more than the weights',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF/resolve/main/mmproj-LFM2.5-VL-1.6b-Q8_0.gguf',
+      'mmprojFilename': 'mmproj-LFM2.5-VL-1.6b-Q8_0.gguf',
+    },
+    {
+      'name': 'LFM2.5-VL 3B (Q4_0 + vision)',
+      'filename': 'LFM2.5-VL-3B-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF/resolve/main/LFM2.5-VL-3B-Q4_0.gguf',
+      'size': '1.52 GB',
+      'description':
+          'Largest LFM2.5-VL. Same 556 MB projector as the 1.6B, so the step up buys text quality only',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF/resolve/main/mmproj-LFM2.5-VL-3B-Q8_0.gguf',
+      'mmprojFilename': 'mmproj-LFM2.5-VL-3B-Q8_0.gguf',
+    },
+    // Spark X2.5 — a distinct architecture, not a Qwen or Llama derivative in
+    // disguise. It arrived in llama.cpp as LLM_ARCH_SPARK2_5 (PR #27868) in the
+    // 2026-09-23 vendor sync, so it needs an engine from that sync or newer; on
+    // an older build the GGUF fails to load with an unknown-architecture error.
+    // The 1.7B filename is the same one already used in the field, so the app
+    // recognises a copy the user downloaded by hand instead of re-fetching it.
+    {
+      'name': 'Spark X2.5 1.7B (Q4_K_M)',
+      'filename': 'Spark-X2.5-1.7B-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/XHToken/Spark-X2.5-1.7B-GGUF/resolve/main/Spark-X2.5-1.7B-Q4_K_M.gguf',
+      'size': '1.03 GB',
+      'description':
+          'New architecture (LLM_ARCH_SPARK2_5), text only. Needs the engine from the 2026-09-23 sync',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'Spark X2.5 4B (Q4_K_M)',
+      'filename': 'Spark-X2.5-4B-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/XHToken/Spark-X2.5-4B-GGUF/resolve/main/Spark-X2.5-4B-Q4_K_M.gguf',
+      'size': '2.42 GB',
+      'description':
+          'Largest Spark. Same architecture requirement as the 1.7B; needs a roomy phone',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    // Qwen3.5 — the current Qwen generation, and all three sizes under 4B are
+    // multimodal. The catalogue still had Qwen2.5-3B and a LiteRT-only Qwen3 0.6B,
+    // so this whole line was missing. The projector is the smaller file here,
+    // roughly a quarter of the weights, which is unusual and worth knowing before
+    // budgeting RAM for a vision turn.
+    {
+      'name': 'Qwen3.5 0.8B (Q4_K_M + vision)',
+      'filename': 'Qwen3.5-0.8B-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
+      'size': '508 MB',
+      'description': 'Multimodal at 0.8B. 195 MB projector, so about 700 MB with vision',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf',
+      'mmprojFilename': 'mmproj-Qwen3.5-0.8B-F16.gguf',
+    },
+    {
+      'name': 'Qwen3.5 2B (Q4_K_M + vision)',
+      'filename': 'Qwen3.5-2B-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
+      'size': '1.19 GB',
+      'description': 'The balanced Qwen3.5. 637 MB projector on top of the weights',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/mmproj-F16.gguf',
+      'mmprojFilename': 'mmproj-Qwen3.5-2B-F16.gguf',
+    },
+    {
+      'name': 'Qwen3.5 4B (Q4_K_M + vision)',
+      'filename': 'Qwen3.5-4B-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
+      'size': '2.55 GB',
+      'description':
+          'Best quality under 4B here, and multimodal. 641 MB projector; a vision turn needs ~3.2 GB',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/mmproj-F16.gguf',
+      'mmprojFilename': 'mmproj-Qwen3.5-4B-F16.gguf',
+    },
+    // The rest of what is worth having under 4B. Each one is here for a reason a
+    // size alone would not give you: a different licence, a different trade, or a
+    // capability nothing else in this list covers.
+    {
+      'name': 'Ministral 3 3B Instruct (Q4_K_M + vision)',
+      'filename': 'Ministral-3-3B-Instruct-2512-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf',
+      'size': '2.00 GB',
+      'description':
+          "Mistral's own weights, ungated. Vision needs the 803 MB BF16 projector — the heaviest one here",
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf',
+      'mmprojFilename': 'Ministral-3-3B-Instruct-2512-BF16-mmproj.gguf',
+    },
+    {
+      'name': 'Phi-4-mini Instruct 3.8B (Q4_K_M)',
+      'filename': 'microsoft_Phi-4-mini-instruct-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf',
+      'size': '2.32 GB',
+      'description': 'Microsoft, MIT licence. Strong at reasoning for its size, text only',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'SmolLM3 3B (Q4_K_M)',
+      'filename': 'SmolLM3-Q4_K_M.gguf',
+      'url': 'https://huggingface.co/ggml-org/SmolLM3-3B-GGUF/resolve/main/SmolLM3-Q4_K_M.gguf',
+      'size': '1.78 GB',
+      'description':
+          "HuggingFace's own 3B, in the llama.cpp org's repo. Text only; reasoning variant exists upstream",
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'SmolVLM2 2.2B Instruct (Q4_K_M + vision)',
+      'filename': 'SmolVLM2-2.2B-Instruct-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/resolve/main/SmolVLM2-2.2B-Instruct-Q4_K_M.gguf',
+      'size': '1.04 GB',
+      'description':
+          'The larger sibling of the 500M already listed. 565 MB projector; good at screenshots and UI',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/resolve/main/mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf',
+      'mmprojFilename': 'mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf',
+    },
+    {
+      'name': 'Gemma 3 270M Instruct (QAT Q4_0)',
+      'filename': 'gemma-3-270m-qat-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/ggml-org/gemma-3-270m-qat-GGUF/resolve/main/gemma-3-270m-qat-Q4_0.gguf',
+      'size': '230 MB',
+      'description':
+          'The smallest useful text model here. For testing the pipeline, not for answers',
+      'template': 'gemma',
+      'runtime': 'llama',
+    },
     {
       'name': 'Gemma 3 1B Instruct (QAT Q4_0)',
       'filename': 'gemma-3-1B-it-QAT-Q4_0.gguf',
