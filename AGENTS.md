@@ -132,12 +132,31 @@ reinstalar. Verificado com `apksigner verify --print-certs` em cada asset. As ch
 antigas não existem mais; recriar as releases antigas não resolveria nada, porque quem
 tem 0.3.3 instalado tem o APK assinado com uma chave que está perdida.
 
-**O `+build` do pubspec É o `versionCode` do Android e tem que crescer sempre.** Não é
-decorativo. Os valores publicados foram 2002, 2003, 2001, 2001, 2001, 2001, 2001 —
-ad-hoc, e 0.2.1 (2001) é *menor* que 0.2.0 (2003), uma regressão. A 0.3.4 ficou em
-**2004** porque 2003 era o maior até então; com `+1` ela seria downgrade e não
-instalaria por cima de nada. Daqui em diante: bump de release ⇒ `versionCode` maior,
-ou o update falha com `INSTALL_FAILED_VERSION_DOWNGRADE`.
+**O `versionCode` publicado NÃO é o `+build` do pubspec. É `+build + 2000`.**
+
+Isso não é detalhe menor nem folklore: com `--split-per-abi` o FlutterPlugin
+sobrescreve o versionCode por ABI (`FlutterPlugin.kt`,
+`output.versionCodeOverride = abiVersionCode * 1000 + versionCode`), para que
+APKs de ABIs diferentes possam coexistir. Os índices estão em
+`FlutterPluginConstants.ABI_VERSION`:
+
+| ABI | índice | `0.3.4+2004` sai como |
+|---|---|---|
+| `armeabi-v7a` | 1 | 3004 |
+| `arm64-v8a` | **2** | **4004** |
+| `x86_64` | 4 (o 3 foi reservado e removido) | 6004 |
+
+O APK arm64 da 0.3.4 tem `versionCode='4004'`, medido com `aapt2 dump badging` —
+`2 * 1000 + 2004`. Sem `--split-per-abi` o override não se aplica e o versionCode é
+o número cru; é por isso que as releases antigas (2001, 2002, 2003) batem com o
+build number e a 0.3.4 não bate. **Não compare pubspec com `dumpsys` sem essa conta.**
+
+Regra prática: o que precisa crescer é o **publicado**. Os publicados até 0.3.3
+foram 2002, 2003, 2001, 2001, 2001, 2001, 2001 — ad-hoc, e 0.2.1 (2001) é *menor*
+que 0.2.0 (2003), uma regressão. A 0.3.4 usa `+2004` e publica 4004, bem acima do
+maior de todos. Daqui em diante: bump de release ⇒ build number tal que
+`build + 2000` fique acima do publicado anterior, senão o update falha com
+`INSTALL_FAILED_VERSION_DOWNGRADE`.
 
 **Minor = feature, patch = conteúdo.** Um catálogo maior não é uma feature, é uma
 lista maior — o bump de minor teria prometido algo que o APK não traz. `0.4.0` fica
