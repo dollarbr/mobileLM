@@ -509,6 +509,9 @@ class LiteRtEngine {
     replyPort.send(_Handshake(commands.sendPort));
 
     Pointer<Void> handle = nullptr;
+    // One stream callback for the whole engine, not one per turn. See
+    // `_StreamBridge` for why the per-turn version lost chunks and hung.
+    final bridge = _StreamBridge();
     commands.listen((dynamic raw) {
       final msg = (raw as Map).cast<String, dynamic>();
       final op = msg['op'] as String;
@@ -550,7 +553,7 @@ class LiteRtEngine {
             );
             result = true;
           case 'send':
-            result = _send(core, handle, args);
+            result = _send(core, bridge, handle, args);
           case 'countTokens':
             result = core.countTokens(handle, msg['arg'] as String);
           case 'benchmark':
@@ -561,6 +564,10 @@ class LiteRtEngine {
               core.freeEngine(handle);
               handle = nullptr;
             }
+            // The stream callable is closed here, and only here: it lives as long
+            // as the engine, so there is no turn boundary for a queued callback
+            // to be caught on.
+            bridge.close();
             result = true;
           default:
             throw MobilelmException('unknown op $op');
@@ -581,38 +588,32 @@ class LiteRtEngine {
   /// which is every turn.
   static Map<String, dynamic> _send(
     MobilelmCore core,
+    _StreamBridge bridge,
     Pointer<Void> handle,
     Map<String, dynamic> args,
   ) {
-    final streamPort = args['port'] as SendPort;
-    final callable = NativeCallable<MobilelmStreamCallbackNative>.listener(
-      (int ctx, Pointer<Utf8> text, int isFinal, Pointer<Utf8> err) {
-        if (err != nullptr) {
-          streamPort.send(_StreamEnd(err.toDartString()));
-          return;
-        }
-        if (text != nullptr) {
-          final piece = text.toDartString();
-          if (piece.isNotEmpty) streamPort.send(piece);
-        }
-        if (isFinal != 0) streamPort.send(const _StreamEnd(null));
-      },
+    final messageJson = args['messageJson'] as String;
+    bridge.beginTurn(
+      args['port'] as SendPort,
+      maxTokens: args['maxTokens'] as int,
+      messageBytes: messageJson.length,
     );
-    try {
-      core.sendStream(
-        handle,
-        args['messageJson'] as String,
-        args['maxTokens'] as int,
-        callable,
-        // The context is an id, and the native side only passes it back. Nothing
-        // is allocated for it and nothing can dangle.
-        0,
-      );
-    } finally {
-      // Closed only after the blocking call returns, which is the ABI's promise:
-      // the last callback with `isFinal` is the last callback.
-      callable.close();
-    }
+    final result = core.sendStream(
+      handle,
+      messageJson,
+      args['maxTokens'] as int,
+      bridge.callable,
+      // The context is an id, and the native side only passes it back. Nothing
+      // is allocated for it and nothing can dangle.
+      0,
+    );
+    // No `finally`, and no `close()` here. The callback outlives this call by
+    // design: a `listener` trampoline returns as soon as it has queued the Dart
+    // invocation, so the last `isFinal` message is still in the queue at the
+    // moment `sendStream` returns. Closing the callable here dropped it, and the
+    // turn then waited forever for a `_StreamEnd` that had already been
+    // discarded. See [_StreamBridge].
+    bridge.endTurn(nativeStatus: result);
     final b = core.benchmark(handle);
     return {'benchmark': b == null ? null : _benchmarkToJson(b)};
   }
@@ -658,3 +659,115 @@ class _StreamEnd {
   const _StreamEnd(this.error);
   final String? error;
 }
+
+/// Owns the one stream callback an engine has, for the engine's whole life.
+///
+/// **Why not one per turn.** A `NativeCallable.listener` is asynchronous: the
+/// native trampoline hands the invocation to the isolate's event loop and
+/// *returns*, so the `is_final` callback the engine issues immediately before
+/// `mobilelm_send_stream` returns is still queued when that call returns. The
+/// per-turn version closed the callable in a `finally`, which therefore raced
+/// the last message and could discard it — the turn then waited on a
+/// `_StreamEnd` that had already been thrown away, with no timeout, which is a
+/// hang rather than an error. The same race could drop a non-final chunk and
+/// shorten the answer without any signal, which is the one failure the `is_final`
+/// design exists to make impossible.
+///
+/// A callable per engine removes the race by removing the moment of destruction:
+/// there is no turn boundary to close across, and `close()` happens in `dispose`,
+/// where nothing is in flight. One trampoline per engine instead of one per turn
+/// is also a smaller cost than the thing it is preventing.
+///
+/// **The counters exist so a failure can be located from the log alone.** Three
+/// device runs in a row failed in ways the log could not distinguish — one was a
+/// flag, one was an undispatched command, one is this. Each cost a 22-minute
+/// build to diagnose. If the process dies mid-turn, the last line written says
+/// whether the engine ever started producing (`beginTurn` with no `firstChunk`),
+/// produced and stopped (`lastChunk` far short of `endTurn`), or finished and
+/// lost the ending (`endTurn` with no `endPort`).
+class _StreamBridge {
+  SendPort? _port;
+  int _turn = 0;
+  int _chunks = 0;
+  bool _announcedFirst = false;
+  int _lastChunkAtMs = 0;
+
+  late final NativeCallable<MobilelmStreamCallbackNative> callable =
+      NativeCallable<MobilelmStreamCallbackNative>.listener(_onNative);
+
+  void _onNative(int ctx, Pointer<Utf8> text, int isFinal, Pointer<Utf8> err) {
+    final port = _port;
+    // A callback with no turn in progress is a turn that already ended, which
+    // means the previous one was closed early. Counted rather than ignored,
+    // because "chunks for a turn that is over" is exactly the symptom that is
+    // otherwise invisible.
+    if (port == null) {
+      _orphanedCallbacks++;
+      return;
+    }
+    if (err != nullptr) {
+      port.send(_StreamEnd(err.toDartString()));
+      return;
+    }
+    if (text != nullptr) {
+      final piece = text.toDartString();
+      if (piece.isNotEmpty) {
+        if (!_announcedFirst) {
+          _announcedFirst = true;
+          _firstChunkAtMs = DateTime.now().millisecondsSinceEpoch;
+          print('[LiteRt] firstChunk turn=$_turn after '
+              '${_firstChunkAtMs - _turnStartMs}ms');
+        }
+        _chunks++;
+        _lastChunkAtMs = DateTime.now().millisecondsSinceEpoch;
+        port.send(piece);
+      }
+    }
+    if (isFinal != 0) {
+      print('[LiteRt] streamEnd turn=$_turn chunks=$_chunks');
+      port.send(const _StreamEnd(null));
+    }
+  }
+
+  int _firstChunkAtMs = 0;
+  int _turnStartMs = 0;
+  int _orphanedCallbacks = 0;
+
+  void beginTurn(SendPort port, {required int maxTokens, required int messageBytes}) {
+    _port = port;
+    _turn++;
+    _chunks = 0;
+    _announcedFirst = false;
+    _orphanedCallbacks = 0;
+    _turnStartMs = DateTime.now().millisecondsSinceEpoch;
+    print('[LiteRt] beginTurn turn=$_turn '
+        'messageBytes=$messageBytes maxTokens=$maxTokens');
+  }
+
+  /// Called once the blocking native call has returned, which is *before* the
+  /// queued callbacks have necessarily run.
+  void endTurn({required int nativeStatus}) {
+    // `lastChunkAtMs` is 0 when the engine produced nothing at all, which reads
+    // differently from "produced some and then stopped" — the two are the
+    // prefill-crash and the mid-decode-death, and the gap between them is the
+    // difference between a model that would not answer and one that stopped.
+    final tail = _lastChunkAtMs == 0
+        ? -1
+        : DateTime.now().millisecondsSinceEpoch - _lastChunkAtMs;
+    print('[LiteRt] endTurn turn=$_turn nativeStatus=$nativeStatus '
+        'chunks=$_chunks firstChunk=${_announcedFirst ? 'yes' : 'NO'} '
+        'lastChunkToEndMs=$tail orphaned=$_orphanedCallbacks');
+    // The port is cleared only after the ending has been queued, and the queue
+    // holds the `_StreamEnd` before it holds nothing.
+    _port = null;
+  }
+
+  void close() {
+    if (_port != null) {
+      print('[LiteRt] close while a turn was still open: '
+          'turn=$_turn chunks=$_chunks');
+    }
+    callable.close();
+  }
+}
+
