@@ -8,7 +8,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
 <https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.3+1**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
-(18 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
+(24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
 
 ## Regras herdadas (aprendidas nas sessões anteriores)
@@ -86,8 +86,14 @@ flutter build apk --release --split-per-abi --target-platform android-arm64
 
 ## Branch e commit
 
-Branch **`dev`** é onde se testa; merge na `main` só depois de análise e testes
-(com `--no-ff`). Ambos publicados em `origin`.
+Branch **`core/rust-hybrid`** é onde se testa; merge na `main` só depois de análise e testes
+(com `--no-ff`), via PR para o `ci.yml` rodar. **Não existe branch `dev`** — este guia
+dizia que existe desde que o fork foi importado, e não existe. `main` é o que trackeia
+`origin/main`; sobraram só umas `pdf-markdown-*` locais.
+
+**Minor = feature, patch = conteúdo.** Um catálogo maior não é feature. Antes de subir um
+minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é patch. `0.4.0`
+está reservado para o núcleo RustHybrid chegando ao APK.
 
 Todo commit em mobileLM-app deve ser **documentado** (pedido explícito do usuário) —
 diferente do resto do workspace, onde commit só ocorre se pedido.
