@@ -1,3 +1,5 @@
+import '../ffi/mobilelm_core_bindings.dart';
+
 /// Which compute tier a model load should aim at.
 ///
 /// The ladder is NPU -> GPU -> CPU. Every tier degrades on its own: LiteRT-LM
@@ -76,7 +78,31 @@ AccelerationPlan planAcceleration({
 /// llama.cpp Vulkan capability says nothing about it, and it has no notion of a
 /// layer count. What the NPU tier *does* need is a vendor dispatch driver, which
 /// is what [npuAvailable] reports.
+///
+/// **The rule now lives in Rust** (`mobilelm_core::plan::plan_litert_tier`) and
+/// this asks it. It used to be implemented here as well, which meant two
+/// implementations of one rule — and two implementations is two answers waiting
+/// to disagree, usually on the device nobody tests on, in the code that decides
+/// whether a model's NPU gets used. The Rust copy is a pure function, so
+/// `cargo test` covers it; this one was covered by nothing.
+///
+/// The fallback below is the pre-existing Dart logic, kept verbatim so a debug
+/// build without the native library still behaves the way it always did. It
+/// exists only for that case, and it is the *only* other implementation — the
+/// point of delegating is that there is one rule, not one rule plus a copy.
 AccelTier planLiteRtTier({required String mode, required bool npuAvailable}) {
+  final core = MobilelmCore.tryLoad();
+  if (core != null) {
+    final plan = core.plan(mode, npuAvailable: npuAvailable);
+    switch (plan.chosen) {
+      case 'npu':
+        return AccelTier.npu;
+      case 'gpu':
+        return AccelTier.gpu;
+      case 'cpu':
+        return AccelTier.cpu;
+    }
+  }
   if (mode == 'cpu_safe') return AccelTier.cpu;
   if (npuAvailable) return AccelTier.npu;
   return AccelTier.gpu;
