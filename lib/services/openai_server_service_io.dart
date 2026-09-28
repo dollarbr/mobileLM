@@ -219,10 +219,24 @@ class OpenAiServerService {
           'rather than a vector. Use /v1/rerank or /v1/classify.';
     }
     if (wanted == 'rerank' && !info.isReranker) {
-      return 'The loaded model returns ${info.nClsOut} class score(s), not a single '
-          'relevance score. Use /v1/classify for it, or load a model with one class.';
+      // A count of classes is not evidence here, and saying so is the point.
+      // bge-small reports n_cls_out: 1 with a LABEL_0 and pooling: cls — it is a
+      // 384-value embedding model with the residue of a size-1 head, so a
+      // message that quoted the count would confidently call an embedding model a
+      // one-class classifier. The pooling type is the thing that decides.
+      final what = info.pooling == 'rank'
+          ? '${info.nClsOut} class score(s)'
+          : 'a ${info.outputLength}-value embedding';
+      return 'The loaded model is not a reranker: it returns $what, and rerank '
+          'needs a RANK-pooling model with a single relevance score. '
+          '${info.isEmbedding ? 'Use /v1/embeddings for it.' : ''}';
     }
     if (wanted == 'classify' && !info.isClassifier) {
+      if (info.isEmbedding) {
+        return 'The loaded model is an embedding model (${info.pooling} pooling, '
+            '${info.outputLength} values), not a classifier. Classify needs a '
+            'RANK-pooling model with more than one class.';
+      }
       return 'The loaded model returns ${info.outputLength} value(s) and '
           '${info.labels.length} label(s), so it is not a multi-class classifier.';
     }
@@ -240,12 +254,19 @@ class OpenAiServerService {
     return null;
   }
 
-  static List<String> _stringList(Object? raw, {String? field}) {
+  /// Coerce a JSON value to a list of strings, or throw with a message that
+  /// says which of the two things went wrong.
+  ///
+  /// "must be an array of strings" for a field that was simply absent sends the
+  /// caller looking for a type problem in a request that had no field at all —
+  /// found on the device, where `{}` came back with that message.
+  static List<String> _stringList(Object? raw, String field) {
+    if (raw == null) {
+      throw FormatException("'$field' is required");
+    }
+    if (raw is String) return [raw];
     if (raw is! List) {
-      if (field != null) {
-        throw FormatException("'$field' must be an array of strings");
-      }
-      return const [];
+      throw FormatException("'$field' must be a string or an array of strings");
     }
     return raw.map((e) => '$e').toList();
   }
@@ -277,10 +298,7 @@ class OpenAiServerService {
 
     final List<String> inputs;
     try {
-      final raw = body['input'];
-      inputs = raw is String
-          ? [raw]
-          : _stringList(raw, field: 'input');
+      inputs = _stringList(body['input'], 'input');
     } on FormatException catch (e) {
       await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
       return;
@@ -363,9 +381,14 @@ class OpenAiServerService {
           status: HttpStatus.badRequest);
       return;
     }
-    final documents = (body['documents'] ?? body['texts']) is List
-        ? _stringList(body['documents'] ?? body['texts'])
-        : const <String>[];
+    final List<String> documents;
+    try {
+      documents =
+          _stringList(body['documents'] ?? body['texts'], 'documents');
+    } on FormatException catch (e) {
+      await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
+      return;
+    }
     if (documents.isEmpty) {
       await _json(request, {'error': "'documents' is required"},
           status: HttpStatus.badRequest);
@@ -428,9 +451,13 @@ class OpenAiServerService {
       return;
     }
 
-    final inputs = (body['input'] ?? body['inputs']) is List
-        ? _stringList(body['inputs'] ?? body['input'])
-        : [if (body['input'] is String) body['input'] as String];
+    final List<String> inputs;
+    try {
+      inputs = _stringList(body['input'] ?? body['inputs'], 'input');
+    } on FormatException catch (e) {
+      await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
+      return;
+    }
     if (inputs.isEmpty) {
       await _json(request, {'error': "'input' is required"},
           status: HttpStatus.badRequest);

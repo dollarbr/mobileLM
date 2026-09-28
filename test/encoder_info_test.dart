@@ -18,6 +18,27 @@ void main() {
       expect(info.isClassifier, isFalse);
     });
 
+    test('an embedding model with a one-class head is still an embedding model', () {
+      // Measured on the device, and the reason `nClsOut` cannot be the test.
+      // A real bge-small-en-v1.5 reports all three of these at once:
+      //   pooling: cls, output_length: 384, n_cls_out: 1, labels: [LABEL_0]
+      // It returns 384 values. Classifying on n_cls_out > 0 would tell a caller
+      // that a 384-dimension embedding model is a classifier, and the /v1/rerank
+      // refusal would quote "1 class score" as its evidence. It did, until this
+      // test existed.
+      const info = EncoderInfo(
+        isEncoder: true,
+        pooling: 'cls',
+        nClsOut: 1,
+        nEmbdOut: 384,
+        outputLength: 384,
+        labels: ['LABEL_0'],
+      );
+      expect(info.isEmbedding, isTrue);
+      expect(info.isReranker, isFalse);
+      expect(info.isClassifier, isFalse);
+    });
+
     test('MEAN pooling with no classes is an embedding model', () {
       const info = EncoderInfo(
         isEncoder: true,
