@@ -16,20 +16,23 @@ void main() {
       expect(info.isReranker, isTrue);
     });
 
-    test('an inferred reranker is still a reranker, and says so', () {
-      // What jina-reranker-v1-tiny-en produces on the device: no pooling_type in
-      // the GGUF, llama.cpp falls back to NONE, and the native side infers RANK
-      // from the architecture plus a usable boundary. The classification is
-      // unaffected; what the flag adds is that a caller can tell the difference.
+    test('an inferred reranker with no class count is still a reranker', () {
+      // Exactly what jina-reranker-v1-tiny-en reports on the device: no
+      // pooling_type in the GGUF, llama.cpp falls back to NONE, the native side
+      // infers RANK from the architecture plus a usable boundary — and
+      // n_cls_out is 0, not 1. Testing `== 1` refused it with a message that
+      // said the model returned "0 class scores", which is true and useless.
       const info = EncoderInfo(
         isEncoder: true,
         pooling: 'rank',
-        nClsOut: 1,
+        nClsOut: 0,
         nEmbdOut: 384,
         outputLength: 1,
         inferredPooling: true,
       );
       expect(info.isReranker, isTrue);
+      expect(info.isClassifier, isFalse);
+      expect(info.isEmbedding, isFalse);
       expect(info.inferredPooling, isTrue);
     });
   });

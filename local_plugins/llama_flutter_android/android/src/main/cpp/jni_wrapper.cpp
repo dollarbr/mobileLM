@@ -275,15 +275,24 @@ static const char* pooling_name(enum llama_pooling_type p) {
 //
 // The header says RANK returns float[n_cls_out] and everything else
 // float[n_embd]; examples/embedding/embedding.cpp instead reads n_embd and
-// keeps min(n_embd, n_cls_out). Both agree for a reranker, where n_cls_out is
-// 1, and disagree for a multi-class classifier — where the header is the one
-// that describes the buffer, so the header wins. n_embd is used as a ceiling
-// either way, since reading past what was written is not a thing to do.
+// keeps min(n_embd, n_cls_out). They agree for a reranker with a class head
+// (n_cls_out == 1) and disagree for a multi-class classifier, where the header
+// describes the buffer and the example does not — so the header wins, clamped by
+// n_embd because reading past what was written is not a thing to do.
+//
+// The case they both get wrong is the one the device found:
+// **jina-reranker-v1-tiny-en reports `n_cls_out == 0` while being a RANK
+// model.** Neither the header nor the example has an answer, and taking
+// n_embd here would return 384 floats for a one-element score — a plausible
+// vector, wrong, and the first 383 of it is whatever follows in memory. A RANK
+// model with no declared class count has exactly one output by definition, so
+// that is what it gets.
 static int32_t pooled_output_len(const llama_model* model, enum llama_pooling_type pooling) {
     const int32_t n_embd = llama_model_n_embd_out(model);
     if (pooling == LLAMA_POOLING_TYPE_RANK) {
         const int32_t n_cls = static_cast<int32_t>(llama_model_n_cls_out(model));
-        return n_cls > 0 ? std::min(n_embd, n_cls) : n_embd;
+        if (n_cls <= 0) return 1;
+        return std::min(n_embd, n_cls);
     }
     return n_embd;
 }
