@@ -151,7 +151,15 @@ class EncoderInfo {
   bool get isClassifier => isEncoder && pooling == 'rank' && nClsOut > 1;
 
   /// A model that scores a query/document pair.
-  bool get isReranker => isEncoder && pooling == 'rank' && nClsOut == 1;
+  ///
+  /// `nClsOut <= 1`, not `== 1`, for the same reason `isClassifier` requires
+  /// `pooling == 'rank'`: the device reports
+  /// **jina-reranker-v1-tiny-en as `pooling: rank` with `n_cls_out: 0`**, and it
+  /// is a reranker. It has exactly one output by definition, and the count is
+  /// simply absent from the file. Testing `== 1` refuses the one model this
+  /// classification exists to serve, with a message that reads as though the
+  /// model were something else.
+  bool get isReranker => isEncoder && pooling == 'rank' && nClsOut <= 1;
 
   /// A model that produces a vector, for semantic search.
   bool get isEmbedding => isEncoder && pooling != 'rank';

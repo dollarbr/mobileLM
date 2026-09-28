@@ -231,7 +231,9 @@ class OpenAiServerService {
       // message that quoted the count would confidently call an embedding model a
       // one-class classifier. The pooling type is the thing that decides.
       final what = info.pooling == 'rank'
-          ? '${info.nClsOut} class score(s)'
+          ? (info.nClsOut > 1
+              ? '${info.nClsOut} class scores'
+              : 'a single relevance score, but it is not a RANK-pooling model')
           : 'a ${info.outputLength}-value embedding';
       return 'The loaded model is not a reranker: it returns $what, and rerank '
           'needs a RANK-pooling model with a single relevance score. '
