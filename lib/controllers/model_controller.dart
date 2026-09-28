@@ -225,9 +225,29 @@ class ModelController extends GetxController {
   void onInit() {
     super.onInit();
     _loadCustomModels();
-    availableModels.value = AppConstants.availableModels
-        .map((m) => AiModel.fromMap(m))
-        .toList()
+    // Encoders first, so they are the first thing in the list rather than
+    // something to scroll to. They are a different kind of model: a BERT has no
+    // LM head, so loading one puts the chat's encoder console on screen instead
+    // of a conversation, and that is a bigger change for the user than the
+    // download size is. See `encoderModels` for the screening that put them here.
+    //
+    // The *same* instances go into both the catalogue and the two role lists, so
+    // "is this downloaded" and "is this the loaded one" answer for the same
+    // object the card is showing rather than for a copy of it.
+    final encoders = <AiModel>[];
+    for (final entry in AppConstants.encoderModels) {
+      final model = AiModel.fromMap(entry);
+      encoders.add(model);
+      if (entry['role'] == 'rerank') {
+        curatedRerankers.add(model);
+      } else if (entry['role'] == 'embed') {
+        curatedEmbedders.add(model);
+      }
+    }
+    availableModels.value = [
+      ...encoders,
+      ...AppConstants.availableModels.map((m) => AiModel.fromMap(m)),
+    ]
       ..addAll(customModels);
     refreshDownloaded();
     _loadMmprojOverrides();
@@ -683,6 +703,10 @@ class ModelController extends GetxController {
     await refreshDownloaded();
     // Unload if this was the active model
     if (_inference.loadedModelName.value == filename) {
+      // The server goes with it: the file it is serving is gone, so a client
+      // asking for embeddings would get a model that is no longer on disk.
+      // Routed through `unloadModel` rather than repeating the order — the
+      // local image model is a different file and is left alone either way.
       await _inference.unloadModel();
     }
   }
@@ -1995,6 +2019,21 @@ class ModelController extends GetxController {
       barrierDismissible: false,
     );
   }
+
+  /// The curated rerankers, from `AppConstants.encoderModels`.
+  ///
+  /// Built once in [onInit] and never again. The alternative — filtering the
+  /// catalogue inside the screen's `build` — allocates ten [AiModel] objects on
+  /// every frame the list rebuilds, and it is also the one thing on that path
+  /// that touches a class-level `const` list during a widget build, which is a
+  /// bad shape for a screen to have whatever the reason turns out to be.
+  ///
+  /// The role comes from the catalogue entry, not from the filename. See the
+  /// note on `AppConstants.encoderModels`: a name does not carry the
+  /// architecture, and `bge-small-en-v1.5` was called a classifier once because
+  /// something read it that way.
+  final curatedRerankers = <AiModel>[].obs;
+  final curatedEmbedders = <AiModel>[].obs;
 
   Future<void> unloadModel() async {
     await _inference.unloadModel();

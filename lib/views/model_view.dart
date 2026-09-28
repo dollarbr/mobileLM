@@ -71,6 +71,8 @@ class ModelView extends GetView<ModelController> {
 
                 if (controller.modelScope.value == 'local') ...[
                   _buildImportingProgress(context),
+                  _buildEncoderMenu(context),
+                  const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -147,6 +149,238 @@ class ModelView extends GetView<ModelController> {
         selected: {controller.modelScope.value},
         onSelectionChanged: (selection) =>
             controller.modelScope.value = selection.first,
+      );
+    });
+  }
+
+  /// The curated encoders, behind their own entry rather than mixed into the
+  /// model list.
+  ///
+  /// A submenu and not a section, because a BERT is not a chat model with a
+  /// different size: loading one puts the encoder console on screen instead of a
+  /// conversation, and someone who taps it expecting a chat would be right to be
+  /// annoyed. Finding that out by scrolling a list of forty is the wrong place.
+  /// The two roles are listed apart too, because "scores documents" and "returns
+  /// a vector" are different purchases of the same hundred megabytes.
+  Widget _buildEncoderMenu(BuildContext context) {
+    // No `Obx` here, and the reason is measured rather than stylistic.
+    //
+    // The list this sits in is built inside an `Obx`, and the scope toggle
+    // directly above is an `Obx` of its own. That is one nested builder and it
+    // works. Adding a *second* one — even `Obx(() => const ListTile(...))`, with
+    // no catalogue access, no `Get.find`, no decoration, nothing — takes the
+    // whole list off the screen: no exception, no error widget, just an empty
+    // area under a working app bar. GetX's notifier stack does not survive the
+    // second nesting and the outer widget stops rendering.
+    //
+    // Six builds went into that, and the reason is worth writing down: the
+    // symptom points at the screen, so every probe exonerated the obvious
+    // culprits one at a time while the constant was hiding in plain sight.
+    //
+    // Nothing reactive is lost by omitting it. Both lists are filled once in
+    // `ModelController.onInit` and never change, so the counts on this tile are
+    // the same for the life of the process. The cards inside the sheet do need
+    // reactivity for download and load state, and they are safe there because the
+    // sheet is not inside the list's `Obx`.
+    final rerank = controller.curatedRerankers.length;
+    final embed = controller.curatedEmbedders.length;
+    // A `Material` and not a `Container` with a `BoxDecoration`.
+    //
+    // This is the bug that cost eight builds. `ListTile` paints its background
+    // and its ink splash on the nearest `Material` ancestor, so putting a
+    // decorated box between the two does not merely hide the splash — it trips a
+    // `debugAssert` inside `ListTile` and takes the whole list off the screen.
+    // No exception reached `FlutterError.onError` in any form worth reading, the
+    // app bar above kept working, and the assertion only fires on the branch
+    // that builds the `InkWell`, so it needed `onTap` *and* a background on the
+    // parent. Every build that had one without the other rendered fine, which is
+    // why each probe exonerated a real part of the tile in turn.
+    //
+    // `Material` is also the right thing rather than the fix that satisfies the
+    // assert: it gives the tap something to ripple on, so the feedback is
+    // visible instead of merely legal.
+    return Material(
+      color: Theme.of(context)
+          .colorScheme
+          .surfaceContainerHighest
+          .withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: Icon(Icons.memory_rounded,
+            color: Theme.of(context).colorScheme.primary),
+        title: Text('Encoders',
+            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+        subtitle: Text('$rerank rerankers · $embed embedders',
+            style: GoogleFonts.inter(
+                fontSize: 12, color: Theme.of(context).hintColor)),
+        trailing: const Icon(Icons.chevron_right, size: 20),
+        onTap: () => _showEncoderSheet(context),
+      ),
+    );
+  }
+
+  void _showEncoderSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.75,
+        maxChildSize: 0.95,
+        builder: (_, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).dividerColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Encoders', style: GoogleFonts.inter(
+                fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Text(
+              'These do not chat. Loading one replaces the conversation with a '
+              'console that runs the embeddings, rerank and classify endpoints, '
+              'and the API server has to be on to use it.',
+              style: GoogleFonts.inter(
+                  fontSize: 12, color: Theme.of(context).hintColor),
+            ),
+            const SizedBox(height: 20),
+            _encoderSection(ctx, 'Rerank — score a query against documents',
+                controller.curatedRerankers),
+            const SizedBox(height: 22),
+            _encoderSection(ctx, 'Embed — turn each text into one vector',
+                controller.curatedEmbedders),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _encoderSection(BuildContext ctx, String title, List<AiModel> models) {
+    // `mainAxisSize: min`: a section is a direct child of the sheet's ListView,
+    // which hands it unbounded height on the scroll axis, and a Column that
+    // sizes itself to max under an unbounded constraint throws in layout.
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: GoogleFonts.spaceGrotesk(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+                color: Theme.of(ctx).hintColor)),
+        const SizedBox(height: 10),
+        for (final m in models) _encoderCard(ctx, m),
+      ],
+    );
+  }
+
+  Widget _encoderCard(BuildContext ctx, AiModel model) {
+    return Obx(() {
+      final inference = Get.find<InferenceService>();
+      final isDownloaded = controller.isDownloaded(model.filename);
+      final isActive = inference.loadedModelName.value == model.filename;
+      final dp = controller.getDownloadProgress(model.filename);
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(ctx)
+              .colorScheme
+              .surfaceContainerHighest
+              .withValues(alpha: 0.30),
+          borderRadius: BorderRadius.circular(12),
+          border:
+              isActive ? Border.all(color: AppColors.primary, width: 1.5) : null,
+        ),
+        // `Material` for the same reason as the tile above: the buttons inside
+        // paint their ink on the nearest `Material`, and a decorated `Container`
+        // in between is exactly what makes it invisible. The border stays on the
+        // `Container` because that is decoration, not a surface.
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(13),
+            // `min`: a card is a direct child of the sheet's ListView, which
+            // hands it unbounded height on the scroll axis.
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(model.name,
+                        style: GoogleFonts.inter(
+                            fontSize: 14, fontWeight: FontWeight.w600)),
+                  ),
+                  Text(model.size,
+                      style: GoogleFonts.inter(
+                          fontSize: 11, color: Theme.of(ctx).hintColor)),
+                ]),
+                const SizedBox(height: 6),
+                Text(model.description,
+                    style: GoogleFonts.inter(
+                        fontSize: 12, color: Theme.of(ctx).hintColor)),
+                const SizedBox(height: 10),
+                Row(children: [
+                  if (isActive)
+                    const Chip(
+                      avatar: Icon(Icons.check_circle_rounded,
+                          size: 14, color: AppColors.primary),
+                      label: Text('loaded', style: TextStyle(fontSize: 11)),
+                      visualDensity: VisualDensity.compact,
+                    )
+                  else if (isDownloaded)
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        controller.loadModel(model.filename);
+                      },
+                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                      label: const Text('load'),
+                      style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact),
+                    )
+                  else
+                    FilledButton.icon(
+                      onPressed: dp != null
+                          ? null
+                          : () => controller.downloadModel(model),
+                      icon: dp != null
+                          ? const SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.download_rounded, size: 16),
+                      label: Text(dp != null ? 'downloading' : 'download'),
+                      style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          minimumSize: const Size(0, 34),
+                          textStyle: GoogleFonts.inter(fontSize: 12)),
+                    ),
+                  if (dp != null && dp.progress.value > 0) ...[
+                    const SizedBox(width: 10),
+                    Text('${(dp.progress.value * 100).toStringAsFixed(0)}%',
+                        style: GoogleFonts.inter(fontSize: 11)),
+                  ],
+                ]),
+              ],
+            ),
+          ),
+        ),
       );
     });
   }
