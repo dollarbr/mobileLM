@@ -77,12 +77,27 @@ Dark-first, accent Volt `#B9F53E`, Pulse `#8B7CFF` com parcimônia.
 ```bash
 cd mobileLM-app
 flutter pub get
-flutter analyze --no-fatal-infos --no-fatal-warnings   # ~40 infos/warnings pre-existentes
+flutter analyze --no-fatal-infos --no-fatal-warnings   # 88 issues pre-existentes, 0 erros
 flutter test                                           # único arquivo: flutter test test/x_test.dart
+./tool/jni-syntax.sh                                   # sintaxe do JNI, ~8 s
 flutter run --debug
 flutter build apk --debug --target-platform android-arm64
 flutter build apk --release --split-per-abi --target-platform android-arm64
 ```
+
+**`tool/jni-syntax.sh` antes de qualquer push que toque `jni_wrapper.cpp`.**
+`flutter analyze` não compila C++ nem Kotlin, e cada um dos dois erros que
+apareceram só no CI custou um run de 22 minutos. O script compila o
+`jni_wrapper.cpp` real contra o `llama.h` vendorizado, no alvo aarch64, com o
+clang do NDK, em segundos. Ele **não** cobre Kotlin (não há `kotlinc` aqui) nem
+link — o que ele cobre é o que o CI demora 22 minutos para dizer.
+
+Ele usa o clang do NDK, não o `g++` do host: misturar os headers do NDK com a
+libstdc++ do host dá `__GLIBC_PREREQ` quebrado e uma parede de erros que não tem
+nada a ver com o seu código. E compilar para arm64 **é** possível nesta máquina
+aarch64 — o `AGENTS.md` da raiz diz que as ferramentas do NDK são x86-64, o que é
+verdade para *executar* o artefato e para linkar, mas um compilador cruz produz
+saída aarch64 de um host x86-64 sem custo.
 
 ## Branch e commit
 
