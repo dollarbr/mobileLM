@@ -185,6 +185,12 @@ class OpenAiServerService {
               'pooling': encoder.pooling,
               'output_length': encoder.outputLength,
               'n_cls_out': encoder.nClsOut,
+              // A caller reading `pooling: rank` should be able to tell whether
+              // the file said so or the architecture implied it. A reranker
+              // whose GGUF omits the key is common — jina-reranker-v1-tiny-en is
+              // one — and the difference is worth surfacing rather than folding
+              // into a single field that looks equally confident either way.
+              'inferred_pooling': encoder.inferredPooling,
               'labels': encoder.labels,
             }
           : null,
