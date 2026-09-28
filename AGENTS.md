@@ -6,7 +6,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.4+2004**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.5+2005**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
@@ -113,12 +113,12 @@ CPU, não a libc, e o binário fixa `/system/bin/linker64` como interpretador). 
 build; o aparelho garante o motor. Ver [`local_plugins/mobilelm_core/AGENTS.md`](local_plugins/mobilelm_core/AGENTS.md).
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.3.4+2004` → tag `0.3.4`. O workflow falha de propósito se divergirem.
+`+build`: `0.3.5+2005` → tag `0.3.5`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade).
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.3.5` (botão de ir para o final acima do de enviar, em vez de sobre ele; núcleo híbrido Rust estacionado com o teto registrado).
 
 **0.3.4 é a primeira release assinada com a chave do projeto** (`CN=dollarbr`, SHA-256
 `1cd43cb7…`). Quem instalou uma das anteriores precisa **desinstalar** antes — o Android
@@ -140,20 +140,20 @@ sobrescreve o versionCode por ABI (`FlutterPlugin.kt`,
 APKs de ABIs diferentes possam coexistir. Os índices estão em
 `FlutterPluginConstants.ABI_VERSION`:
 
-| ABI | índice | `0.3.4+2004` sai como |
+| ABI | índice | `0.3.5+2005` sai como |
 |---|---|---|
-| `armeabi-v7a` | 1 | 3004 |
-| `arm64-v8a` | **2** | **4004** |
-| `x86_64` | 4 (o 3 foi reservado e removido) | 6004 |
+| `armeabi-v7a` | 1 | 3005 |
+| `arm64-v8a` | **2** | **4005** |
+| `x86_64` | 4 (o 3 foi reservado e removido) | 6005 |
 
-O APK arm64 da 0.3.4 tem `versionCode='4004'`, medido com `aapt2 dump badging` —
-`2 * 1000 + 2004`. Sem `--split-per-abi` o override não se aplica e o versionCode é
+O APK arm64 da 0.3.5 tem `versionCode='4005'`, medido com `aapt2 dump badging` —
+`2 * 1000 + 2005`. Sem `--split-per-abi` o override não se aplica e o versionCode é
 o número cru; é por isso que as releases antigas (2001, 2002, 2003) batem com o
 build number e a 0.3.4 não bate. **Não compare pubspec com `dumpsys` sem essa conta.**
 
 Regra prática: o que precisa crescer é o **publicado**. Os publicados até 0.3.3
 foram 2002, 2003, 2001, 2001, 2001, 2001, 2001 — ad-hoc, e 0.2.1 (2001) é *menor*
-que 0.2.0 (2003), uma regressão. A 0.3.4 usa `+2004` e publica 4004, bem acima do
+que 0.2.0 (2003), uma regressão. A 0.3.5 usa `+2005` e publica 4005, bem acima do
 maior de todos. Daqui em diante: bump de release ⇒ build number tal que
 `build + 2000` fique acima do publicado anterior, senão o update falha com
 `INSTALL_FAILED_VERSION_DOWNGRADE`.
@@ -200,8 +200,41 @@ estimava. Saldo +17,6 MB antes de comprimir. Para escala: o mesmo APK tem
 com 24 MB, ou seja 104 MB de engines de stable diffusion. Se tamanho de APK
 importar, é aí — está fora do escopo deste plano e nada aqui toca nisso.
 
-**O C API vendorizado é v0.16.0, não 0.17.1.** `litert_lm_c_api-0.1.0.zip` só
-existe na tag `v0.16.0`. O AAR do app é 0.17.1, então o downgrade é real — mas a
+**O C API vendorizado é v0.16.0, não 0.17.1 — e 0.17.1 é a última.** Todas as
+tags foram conferidas na API do GitHub em 2026-09-28, não de memória: `v0.17.1`
+(2026-09-16), `v0.17.0` e `v0.16.1` publicam **só** `CLiteRTLM.xcframework` /
+`CLiteRTLM_mac.xcframework` e um binário macOS. `litert_lm_c_api-0.1.0.zip`
+(154,1 MB) existe apenas na `v0.16.0`, e `v0.17.1` é a ponta — não há `main` mais
+novo para compilar. Ou seja: a última versão é justamente a que não pode ser
+usada, e a C API mais nova que existe em qualquer lugar está quatro tags e cinco
+semanas atrás.
+
+**Consequência já demonstrada, não hipotética:** o sampler.
+`litert_lm_sampler_params_create(1)` devolve ponteiro **não-nulo** num runtime que
+**não** implementa o tipo 1, e a recusa só chega na geração, ~3 s depois, com
+prefill e decode já construídos. Ou seja "o create() devolveu ponteiro?" **não**
+responde "este tipo existe?", e a sonda construída sobre isso respondeu a pergunta
+errada com um `full: true` confiante. A rota JNI que o app já usa alcança um
+sampler; a rota C API do pin não alcança. **A lista do que a C API de 0.16.0 não
+faz é maior que o único item que foi encontrado**, e cada item novo custa um ciclo
+de build.
+
+Por isso o núcleo híbrido está **estacionado** (decisão de 2026-09-28) e o `0.4.0`
+não sai dele. O caminho de *load* está provado e fica provado (`actual: cpu`, sem
+recuo, 1,75 GiB); o que falta é o de envio, e contra ele: o engine é C++ e
+continua C++ (a amarra não dá velocidade nenhuma), o APK cresce 17,6 MB, e o app
+**já tem** uma rota funcional para esse engine. A frase de minor — "isto faz X,
+que antes não existia" — saiu como: um slider de temperatura que não faz nada,
+17,6 MB a mais e o mesmo tok/s. Pela regra *Minor = feature* isso é patch, no
+máximo. O Kotlin plugin fica.
+
+O que **não** se joga fora: `mobilelm_core::plan` já está no app de produção
+(`planLiteRtTier` pergunta a escada ao Rust), 74 testes de host, clippy e fmt
+limpos, zero dependências, e as medições do `BENCH.md`. A rota para retomar está
+escrita no fim de `local_plugins/mobilelm_core/docs/APK.md` — **leia a tabela de
+tags antes de gastar um build**: a pergunta não é mais "dá pra fazer o envio
+funcionar", é se vale compilar a C API atual do fonte, e a resposta tem que
+enfrentar os três bullets antes. O AAR do app é 0.17.1, então o downgrade é real — mas a
 única mudança do 0.17.1 é `f300c4fdc28b`, "keep integers as integers in tool call
 arguments", e todos os arquivos que ele toca são o parser de function-calling
 nativo do engine. O app nunca entra nesse caminho: as tool calls saem como texto e

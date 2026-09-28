@@ -507,28 +507,41 @@ fn split_message_array(raw: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
+/// The sampler the app asked for, or none — which is currently always none.
+///
+/// **A sampler type cannot be verified before generation, so none is set.** The
+/// device established that the obvious check is not a check:
+///
+/// ```text
+/// [LiteRt] sampler: top_k, which consults every knob the app set
+/// [Inference] Rust turn failed: UNIMPLEMENTED: Sampler type: 1 not implemented yet.
+/// ```
+///
+/// `litert_lm_sampler_params_create(1)` returned a non-NULL pointer on a runtime
+/// that does not implement type 1. Creation always succeeds; the refusal arrives
+/// when the engine builds the sampler during the first turn, three seconds in,
+/// after prefill and decode are done. So "did create() return non-NULL" cannot
+/// answer "is this type implemented", and the probe built on it answered the
+/// wrong question with a confident `full: true`.
+///
+/// What is left is to try a type and read the verdict off a turn, which is a
+/// fallback ladder rather than a lookup, and it costs a device run per attempt.
+/// Until that exists the engine's own default is used: it is a working sampler,
+/// and it is strictly better than a turn that dies reporting that a slider had a
+/// value. The cost is stated rather than hidden — `mobilelm_sampler_report`
+/// reports `actual: null`, `full: false`, and the Dart side prints that the
+/// temperature setting will not change the reply.
+///
+/// The function keeps its shape and its callers. Removing the sampler is a
+/// decision about *this* runtime, not about whether the core can do it.
 fn build_sampler(
     temperature: c_double,
     top_k: c_int,
     top_p: c_double,
     greedy: bool,
 ) -> Option<Sampler> {
-    let temperature = if temperature > 0.0 {
-        Some(temperature as f32)
-    } else {
-        None
-    };
-    let top_k = (top_k > 0).then_some(top_k);
-    let top_p = (top_p > 0.0).then_some(top_p as f32);
-    if temperature.is_none() && top_k.is_none() && top_p.is_none() && !greedy {
-        return None;
-    }
-    Some(Sampler {
-        temperature,
-        top_k,
-        top_p,
-        greedy,
-    })
+    let _ = (temperature, top_k, top_p, greedy);
+    None
 }
 
 // ---------------------------------------------------------------------------

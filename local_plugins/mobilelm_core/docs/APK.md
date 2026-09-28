@@ -451,3 +451,76 @@ Two things have to be true before the plugin is deleted, and neither is yet:
 2. The app tells the user when the setting is inert, or the slider is disabled
    when the report says `full: false`. A control that silently does nothing is
    worse than one that is absent.
+
+## Parked on 2026-09-28 — the ceiling is the C API, not the effort
+
+**`0.4.0` is not being cut from this branch, and the reason is structural.**
+
+Every release of LiteRT-LM was checked, not inferred:
+
+| tag | date | ships a C API for Android? |
+|---|---|---|
+| **v0.17.1** (latest) | 2026-09-16 | **no** — `CLiteRTLM.xcframework` and `CLiteRTLM_mac.xcframework` only |
+| v0.17.0 | 2026-09-09 | no — the same two, plus a macOS binary |
+| v0.16.1 | 2026-08-18 | no — one macOS binary |
+| **v0.16.0** | 2026-08-11 | **yes** — `litert_lm_c_api-0.1.0.zip`, 154.1 MB |
+
+So v0.17.1 is the last release, and it is also the reason the last release cannot
+be used: the newest C API available anywhere is v0.16.0, four tags and five weeks
+behind, and Apple-only assets are the only thing 0.17.x publishes. There is no
+newer `main` to build from either — `v0.17.1` is the tip.
+
+**The sampler is the first demonstrated consequence of that pin, not an isolated
+bug.** The C API route cannot set a sampler on the pinned runtime, because
+`litert_lm_sampler_params_create` returns a valid pointer for a type that is not
+implemented and only refuses at generation time. The JNI route the app already
+uses reaches one. So the list of what v0.16.0's C API cannot do is longer than the
+one item that was found, and it will be found one item at a time, at 22 minutes
+per attempt.
+
+The only route to a current C API is building it from source — LiteRT-LM is open,
+and the C API is in the tree. That is a large C++ cross-compile in CI, and it is
+a different project from wiring a cdylib into an app. It is also not worth it for
+this app, because of the three lines below.
+
+### Why the whole hybrid core is parked, given the load path works
+
+The load path is proven and stays proven: `actual: cpu`, `fallbackReason: null`,
+no decline to the Kotlin plugin, 1.75 GiB RSS. What is not proven is the send
+path, and against that:
+
+1. **The engine is C++ and stays C++.** The binding buys no speed. 1B Q4_0 does
+   21.2 tok/s prefill on CPU against Vulkan's 3.4 — that is the engine, not the
+   transport.
+2. **The APK grows 17.6 MB** (39.0 MB of C API runtime, minus 21.8 MB of JNI,
+   plus 436 KB of cdylib).
+3. **The app already has a working route to this engine.** The argument for the
+   core was *reach* — Kotlin cannot `dlopen`, so the C API is the only way from
+   Dart. True, and irrelevant while a hand-written Kotlin plugin does the job.
+
+So the honest sentence for a minor bump — "this does X, that did not exist
+before" — came out as: a temperature slider that does nothing, 17.6 MB more, and
+the same tok/s. That is not a feature, and by this repo's own rule
+(`mobileLM-app/AGENTS.md`, *Minor = feature*) it is a patch at best. Hence
+`0.3.5`, and hence the Kotlin plugin stays.
+
+### What is not thrown away
+
+The branch keeps everything that has independent value, and one piece of it is
+already in the shipping app:
+
+- **`mobilelm_core::plan`** is live. `planLiteRtTier` in Dart asks the Rust
+  ladder, so the accelerator decision already has one owner.
+- 74 host tests, `cargo fmt`/`clippy` clean, no dependencies.
+- `mobilelm_sampler_report` and the load-report path, both device-verified.
+- The `dlopen`-never-link rule, which is why `cargo test` runs on a laptop at all.
+- `BENCH.md`'s measurements, including the Kotlin baseline, which are the reason
+  any future comparison can be made.
+
+### If someone opens this again
+
+Read the table above before spending a build. The question is no longer "can the
+send path be made to work" — it can, one sampler ladder at a time. The question is
+whether a current C API is worth building from source, and the answer has to
+argue against the three bullets first. A sixth device run is not the thing that is
+missing.

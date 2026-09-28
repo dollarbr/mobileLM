@@ -198,6 +198,21 @@ in this build — pin it then.
   which is indistinguishable from "this device reports nothing".
 - **The probe never `dlclose`s.** Unloading a 39 MB runtime while a model handle
   is alive is a use-after-free.
+- **A sampler type cannot be verified before generation, so this core sets none.**
+  The C API takes a `LiteRtLmSamplerType`, the runtime is free not to implement
+  it, and — this is the part that cost a build — `litert_lm_sampler_params_create`
+  **returns a valid pointer for a type that is not implemented**. The refusal
+  arrives at generation, ~3 s in, after prefill and decode. So a probe on
+  `create()` answering "is this type implemented" is a probe on the wrong
+  question, and it answers confidently; one did, reporting `full: true` and then
+  killing the turn. The v0.16.0 C API is the newest that exists anywhere
+  (`v0.17.1` is the tip and ships Apple xcframeworks only), so this is a ceiling,
+  not a bug — see the parked decision at the end of `docs/APK.md`.
+  `build_sampler` therefore returns `None` and keeps its callers: the engine's own
+  default is a working sampler, and the cost is stated through
+  `mobilelm_sampler_report` (`actual: null`, `full: false`) instead of being
+  discovered. **Do not "restore" it** without a ladder that tries a type and reads
+  the verdict off a turn, which is a different thing from a lookup.
 - **A sampler type is a capability, not a preference.** The C API takes a
   `LiteRtLmSamplerType` and the runtime is free not to implement it — v0.16.0
   answers `UNIMPLEMENTED: Sampler type: 1 not implemented yet.` for

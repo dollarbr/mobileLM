@@ -87,19 +87,30 @@ fn a_null_argument_means_absent_not_empty() {
 }
 
 #[test]
-fn a_sampler_is_only_built_when_something_was_asked_for() {
-    // All-zero means "leave the engine's own default alone". Building a sampler
-    // anyway would pin top_k to a value nobody chose, which on a model with a
-    // small vocab is how a model that should be free becomes repetitive.
-    assert!(build_sampler(0.0, 0, 0.0, false).is_none());
-    let s = build_sampler(0.7, 64, 0.95, false).expect("three values set");
-    assert_eq!(s.temperature, Some(0.7));
-    assert_eq!(s.top_k, Some(64));
-    assert!(s.top_p.unwrap() > 0.94 && s.top_p.unwrap() < 0.96);
-    // Greedy alone is a request too.
-    let g = build_sampler(0.0, 0, 0.0, true).expect("greedy alone");
-    assert!(g.greedy);
-    assert_eq!(g.temperature, None);
+fn no_sampler_is_ever_built_because_the_type_cannot_be_verified_up_front() {
+    // This asserted the opposite once. `litert_lm_sampler_params_create` returns a
+    // non-NULL pointer for a type the runtime does not implement, and the refusal
+    // only arrives on the first turn — so a sampler that looks successfully
+    // created is a sampler that kills the turn three seconds later:
+    //
+    //     [LiteRt] sampler: top_k, which consults every knob the app set
+    //     Rust turn failed: UNIMPLEMENTED: Sampler type: 1 not implemented yet.
+    //
+    // The engine's own default is a working sampler, so building none is the
+    // correct answer until a type can be proved by a turn rather than by a
+    // pointer. The trade is the temperature slider, and it is reported through
+    // `mobilelm_sampler_report` rather than left to be discovered.
+    for (t, k, p, g) in [
+        (0.0, 0, 0.0, false),   // nothing asked for
+        (0.7, 64, 0.95, false), // the app's actual values
+        (0.0, 0, 0.0, true),    // greedy alone
+        (0.0, 40, 0.0, true),   // greedy with a stray knob
+    ] {
+        assert!(
+            build_sampler(t, k, p, g).is_none(),
+            "t={t} k={k} p={p} greedy={g} must not attach a sampler"
+        );
+    }
 }
 
 #[test]
