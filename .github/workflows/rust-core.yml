@@ -188,14 +188,14 @@ jobs:
           for sym in mobilelm_abi_version mobilelm_engine_create mobilelm_engine_free \
                       mobilelm_conversation_open mobilelm_send_stream mobilelm_send_text \
                       mobilelm_count_tokens mobilelm_benchmark mobilelm_probe mobilelm_plan \
-                      mobilelm_symbols_missing mobilelm_last_error mobilelm_string_free \
-                      mobilelm_engine_load_report; do
+                      mobilelm_symbols_missing mobilelm_sampler_report mobilelm_last_error \
+                      mobilelm_string_free mobilelm_engine_load_report; do
             if ! nm -D --defined-only "$CDYLIB" | grep -q " T $sym\$"; then
               echo "::error::$sym is not exported; the Dart bindings would fail at first call" >&2
               exit 1
             fi
           done
-          echo "ok: all 14 ABI entry points exported"
+          echo "ok: all 15 ABI entry points exported"
 
       - name: Cross-compile the headless probe
         if: ${{ inputs.upload-bench }}

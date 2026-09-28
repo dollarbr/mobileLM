@@ -330,3 +330,61 @@ decline, not a failure — which is safe, and means the gemma-4 E2B run will sho
 the fallback working rather than Rust working. Deleting the plugin before that
 retry ladder exists would delete gemma-4 E2B and E4B from the catalogue. See
 Gap 6 in [APK.md](APK.md).
+
+## A sampler type is a capability, not a preference
+
+The fifth device run got further than the four before it, because the
+instrumentation from the fourth finally answered its question, and the answer was
+not the one the log was shaped around:
+
+```
+[LiteRt] sendStream fn=Pointer: address=0x6be6b00090 maxTokens=2048 jsonBytes=91
+[LiteRt] sendStream rc=-1
+[Inference] Rust turn failed: mobilelm_core: runtime:
+    UNIMPLEMENTED: Sampler type: 1 not implemented yet. (in mobilelm_send_stream)
+```
+
+`fn=` is a real address, so the callback pointer was never the problem and the
+`nullptr` theory was wrong. What failed is one line of policy: the code asked for
+`kLiteRtLmSamplerTypeTopK` and the v0.16.0 runtime does not implement it.
+
+**TopK is the type the app's own plugin requests** — `topK: 64, topP: 0.95,
+temperature from the slider` — and it was being passed as a constant. A runtime
+that does not implement a sampler type answers `UNIMPLEMENTED` **on the first
+turn of the conversation, after the model has been built**, not at load. So the
+turn died with a runtime error about a setting, having produced no token.
+
+| | |
+|---|---|
+| where it surfaced | the turn, ~3 s in, after prefill and decode were built |
+| what it cost | five device runs, four of them chasing a null function pointer |
+| what was actually wrong | a hardcoded enum value treated as universal |
+
+Two things worth writing down because both were believed and neither was true:
+the callback pointer arrives fine, and `-999` never meant anything beyond
+"`nativeStatus` was not assigned".
+
+### The fix, and the part that is not a fix
+
+`sampler_params` now probes — requested type first, then the others, and takes
+the first the runtime accepts — and **no outcome of the probe can fail a turn**.
+A runtime that implements none of the three gets the engine's own default, which
+is a working sampler, and the substitution is reported by a fifteenth ABI entry
+point, `mobilelm_sampler_report`, rather than absorbed.
+
+Greedy is the one request that does not fall back, and the reason is the point:
+substituting top-k for greedy would not honour the request more precisely, it
+would change it. A non-greedy request does fall back, TopK → TopP → Greedy,
+because all three are constrained sampling and the default is narrower than any.
+
+### The gap this opens between the two paths
+
+Not fixed, and it decides something: **on the Rust path the temperature slider may
+be inert, and the app has no way to know which it is.** The Kotlin plugin's
+`samplerConfig` goes through the AAR's own JNI, which is a different route to the
+same engine and evidently reaches a sampler. The C API route is the one that
+just learned it may not get one at all.
+
+So the comparison is not only speed. It is that the Kotlin path can be shown to
+honour the setting and the Rust path has to be asked. `mobilelm_sampler_report`
+is that answer, and `APK.md` Gap 9 tracks closing it before the plugin goes.

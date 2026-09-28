@@ -15,7 +15,7 @@ started — the device is the only place it can be done.
 | step | state | where |
 |---|---|---|
 | 1. Pin the runtime version in writing | done | `fetch-litert-capi.sh`, and the wrong `0.17.1` line in `BENCH.md` is corrected |
-| 2. `mobilelm-ffi` crate | done | `crates/mobilelm-ffi/`, 14 entry points, `readelf` assertion in CI |
+| 2. `mobilelm-ffi` crate | done | `crates/mobilelm-ffi/`, 15 entry points, `readelf` assertion in CI |
 | 3. CI plumbing | done | `.github/workflows/rust-core.yml`, called by all three; `native` job passes in ~1m11s |
 | 4. Dart bindings | done | `lib/ffi/mobilelm_core_bindings.dart`, `lib/ffi/litert_engine.dart`; 12 tests that need no device |
 | 5. Device run, both paths, same prompt | **load proven, turn not yet measured** | the load runs on the device with no fallback; generation is pending the third build |
@@ -425,3 +425,29 @@ each close it, in ascending order of work:
 
 Do (1) before 0.4.0 regardless of which of the others gets done. A shipped
 control that lies is a bug the moment anyone presses it.
+
+## Gap 9 — open: the Rust path may not honour the temperature at all
+
+The C API takes a sampler *type*, and the vendored v0.16.0 runtime refuses
+`kLiteRtLmSamplerTypeTopK` — the type the app's Kotlin plugin requests, and the
+one the Rust path was hardcoded to. It surfaces on the first turn, so this read as
+a generation failure until the fifth device run named it.
+
+Handled for now: `sampler_params` probes for a type the runtime accepts, greedy
+does not fall back, and `mobilelm_sampler_report` reports what is in force so the
+app can say so.
+
+**Not handled, and it is the reason this is a gap and not a note:** if the probe
+settles on `greedy` or on the engine default, the temperature slider does
+nothing on the Rust path and the user has no way to find out. The Kotlin path
+reaches a sampler through the AAR's JNI, which is a different route to the same
+engine; the C API route may simply not have one. `BENCH.md` has the measurement
+and the reasoning.
+
+Two things have to be true before the plugin is deleted, and neither is yet:
+
+1. A run with a temperature the user can tell apart from a different one, on both
+   paths, so the difference is measured and not assumed.
+2. The app tells the user when the setting is inert, or the slider is disabled
+   when the report says `full: false`. A control that silently does nothing is
+   worse than one that is absent.

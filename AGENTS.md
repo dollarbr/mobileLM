@@ -170,7 +170,7 @@ existe lá, e o que **não** existe:
 
 | | |
 |---|---|
-| `crates/mobilelm-ffi` | `libmobilelm_core.so`, 14 entry points `extern "C"`, cross-compila em ~1m11s |
+| `crates/mobilelm-ffi` | `libmobilelm_core.so`, 15 entry points `extern "C"`, cross-compila em ~1m11s |
 | As seis ligações que faltavam | vision e audio backend, sampler, contagem de tokens, histórico, família de benchmark |
 | `lib/ffi/mobilelm_core_bindings.dart` + `litert_engine.dart` | 12 testes que não precisam de aparelho |
 | `mobilelm_core::plan` | dono único da escada; `planLiteRtTier` em Dart agora pergunta |

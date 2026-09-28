@@ -577,7 +577,7 @@ class LiteRtEngine {
               greedy: args['greedy'] as bool,
               maxOutputTokens: args['maxOutputTokens'] as int,
             );
-            result = true;
+            result = _samplerNote(core, handle);
           case 'send':
             result = _send(core, bridge, handle, args);
           case 'countTokens':
@@ -604,6 +604,29 @@ class LiteRtEngine {
       }
     });
   }
+
+  /// What the runtime is actually sampling with, as a one-line note, or null when
+  /// it is the same as last time.
+  ///
+  /// Printed only when it changes. The app replaces the conversation on every
+  /// temperature change, so logging unconditionally puts one line in the log per
+  /// slider move, and a line per turn that always says the same thing is a line
+  /// nobody reads. The first call always prints: the first call is when the
+  /// question gets an answer, and "the temperature is being ignored" has to be
+  /// findable without knowing to look for it.
+  static String? _samplerNote(MobilelmCore core, Pointer<Void> handle) {
+    final report = core.samplerReport(handle);
+    if (report == null) return null;
+    if (report.note == _lastSamplerNote) return null;
+    _lastSamplerNote = report.note;
+    print('[LiteRt] ${report.note}'
+        '${report.full ? '' : ' — the temperature setting will not change the reply'}');
+    return report.note;
+  }
+
+  /// Thread-confined to the generation isolate: one engine, one sampler decision
+  /// at a time, and the isolate is the only place that can read it.
+  static String? _lastSamplerNote;
 
   /// The blocking native call, with a `NativeCallable.listener` bridging the
   /// engine's thread to this isolate's port.

@@ -38,7 +38,7 @@ generating on the target hardware.
 | Prefill timing | available and now switched on — `BENCH.md` said the C API could not report it, which was wrong |
 | Vision and audio | the encoder backends are bound; **not yet run on a device** |
 | NPU | unreachable on this device, from any language. LiteRT's own registry reaches the same verdict at runtime |
-| `libmobilelm_core.so` | builds for arm64 in CI (~1m11s), 14 entry points, `dlopen`s the engine |
+| `libmobilelm_core.so` | builds for arm64 in CI (~1m11s), 15 entry points, `dlopen`s the engine |
 | Dart bindings | written, 12 tests, no device needed |
 | Used by the app | **not yet** — `inference_android.dart` is untouched |
 

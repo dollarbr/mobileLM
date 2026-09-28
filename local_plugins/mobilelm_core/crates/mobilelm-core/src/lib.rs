@@ -183,12 +183,64 @@ pub trait Engine: Send {
     /// The tier that is actually live. Never the requested one.
     fn backend(&self) -> Backend;
     fn load_report(&self) -> &LoadReport;
+    /// Which sampler the open conversation is actually using, when this engine
+    /// has the notion. `None` for an engine that does not sample (llama.cpp reads
+    /// its own GGUF sampler settings), and that is the answer — not a default.
+    fn sampler_choice(&self) -> Option<&SamplerChoice> {
+        None
+    }
     fn generate(
         &mut self,
         req: &GenRequest,
         on_token: &mut dyn FnMut(&str),
     ) -> Result<GenOutcome, EngineError>;
     fn unload(&mut self);
+}
+
+/// Which sampler type the open conversation is actually sampling with.
+///
+/// The type is not a detail. It decides which of the knobs the API exposes are
+/// consulted at all — on a `greedy` sampler a temperature of 0.8 and one of 0.2
+/// are the same reply — so a runtime that does not implement the type the caller
+/// asked for has not honoured the request, and the difference between the two
+/// cases is invisible from the chat.
+///
+/// It exists because the v0.16.0 runtime refuses `kLiteRtLmSamplerTypeTopK`, the
+/// type the app's own plugin requests: `UNIMPLEMENTED: Sampler type: 1 not
+/// implemented yet.` The core now probes for a type the runtime does implement,
+/// and this is how the substitution is reported instead of absorbed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SamplerChoice {
+    /// What the caller asked for, by name. `"engine default"` when it asked for
+    /// nothing at all.
+    pub requested: &'static str,
+    /// The type in force, or `None` when the engine's own default applies.
+    pub actual: Option<&'static str>,
+    /// True only when every knob the caller set is consulted by `actual`.
+    pub full: bool,
+}
+
+impl SamplerChoice {
+    /// One line, for a log. Deliberately says which knobs are ignored rather
+    /// than reporting the type alone, because the type is the part nobody can
+    /// act on and the ignored knobs are the part they can.
+    pub fn describe(&self) -> String {
+        match self.actual {
+            None => format!(
+                "sampler: the engine default is in use — {} has nothing to say about the \
+                 temperature, top_k or top_p the app set",
+                self.requested
+            ),
+            Some(actual) if self.full => {
+                format!("sampler: {actual}, which consults every knob the app set")
+            }
+            Some(actual) => format!(
+                "sampler: {actual}, substituted for {} — this runtime does not implement the \
+                 type the app asked for, so not every knob it set is consulted",
+                self.requested
+            ),
+        }
+    }
 }
 
 #[derive(Debug)]

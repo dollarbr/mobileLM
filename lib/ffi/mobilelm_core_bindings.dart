@@ -101,6 +101,49 @@ typedef MobilelmEngineFree = void Function(Pointer<Void>);
 typedef MobilelmEngineLoadReportNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef MobilelmEngineLoadReport = Pointer<Utf8> Function(Pointer<Void>);
 
+/// `mobilelm_sampler_report` — which sampler type the open conversation is
+/// actually sampling with, and what the app asked for instead. Null for a null
+/// handle or an engine with no sampler (llama.cpp reads its own GGUF settings).
+typedef MobilelmSamplerReportNative = Pointer<Utf8> Function(Pointer<Void>);
+typedef MobilelmSamplerReport = Pointer<Utf8> Function(Pointer<Void>);
+
+/// What the engine is sampling with.
+///
+/// [full] is the field that matters: it is false whenever the type in force is
+/// not the type requested, and on a `greedy` sampler the temperature is not
+/// consulted at all — so "the slider is set to 0.8" and "the reply ignores it"
+/// look identical from the chat without this.
+class SamplerReport {
+  const SamplerReport({
+    required this.requested,
+    required this.actual,
+    required this.full,
+    required this.note,
+  });
+
+  /// What the app asked for, or `engine default` when it asked for nothing.
+  final String requested;
+
+  /// The type in force, or null when the engine's own default applies.
+  final String? actual;
+
+  /// True only when every knob the app set is consulted by [actual].
+  final bool full;
+
+  /// One line for a log, from the Rust side.
+  final String note;
+
+  factory SamplerReport.fromJson(Map<String, dynamic> d) => SamplerReport(
+        requested: d['requested'] as String,
+        actual: d['actual'] as String?,
+        full: d['full'] as bool,
+        note: d['note'] as String,
+      );
+
+  @override
+  String toString() => note;
+}
+
 typedef MobilelmConversationOpenNative = Int32 Function(
   Pointer<Void> handle,
   Pointer<Utf8> systemPrompt,
@@ -228,6 +271,9 @@ class MobilelmCore {
       _lib
           .lookupFunction<MobilelmEngineLoadReportNative, MobilelmEngineLoadReport>(
               'mobilelm_engine_load_report');
+  late final MobilelmSamplerReport _samplerReport =
+      _lib.lookupFunction<MobilelmSamplerReportNative, MobilelmSamplerReport>(
+          'mobilelm_sampler_report');
 
   // --- conversation --------------------------------------------------------
 
@@ -423,6 +469,28 @@ class MobilelmCore {
   /// Free an engine. Null is a no-op, so a double free from a shutdown path that
   /// races a cancel is harmless.
   void freeEngine(Pointer<Void> handle) => _engineFree(handle);
+
+  /// Which sampler type the open conversation is actually sampling with.
+  ///
+  /// Nullable because the answer genuinely is "none" in two different cases —
+  /// an engine with no sampler at all, and a LiteRT runtime that implements none
+  /// of the three types. Both end in the engine's default, and neither is worth
+  /// an exception on a path that runs per turn.
+  SamplerReport? samplerReport(Pointer<Void> handle) {
+    final p = _samplerReport(handle);
+    if (p == nullptr) {
+      final err = lastError;
+      // A runtime that cannot say is not a failure of the turn: the engine's
+      // default is in force, which is a working sampler.
+      if (err != null) {
+        print('[LiteRt] sampler report unavailable: $err');
+      }
+      return null;
+    }
+    final decoded = jsonDecode(p.toDartString()) as Map<String, dynamic>;
+    _stringFree(p);
+    return SamplerReport.fromJson(decoded);
+  }
 
   /// The load report: the tier asked for, the tier that ran, why they differ.
   LoadReport engineLoadReport(Pointer<Void> handle) {

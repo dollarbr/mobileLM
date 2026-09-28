@@ -25,6 +25,7 @@ use std::time::{Duration, Instant};
 use mobilelm_core::dynlib::Lib;
 use mobilelm_core::{
     json, Backend, Engine, EngineConfig, EngineError, GenOutcome, GenRequest, LoadReport,
+    SamplerChoice,
 };
 
 mod ffi;
@@ -44,6 +45,14 @@ pub struct LiteRt {
     conversation: *mut LiteRtLmConversation,
     report: LoadReport,
     system_prompt: Option<String>,
+    /// Which sampler type the open conversation is actually sampling with.
+    ///
+    /// Not a `notes` entry. The decision happens when the conversation is
+    /// replaced, which is after the load report has already been read by the app,
+    /// and it changes — a conversation opened with a different temperature can
+    /// land on a different type. So it is current state, readable at any time,
+    /// and it is what `mobilelm_sampler_report` returns.
+    sampler: SamplerChoice,
 }
 
 // Pointers are only touched from the thread that created the engine, which is
@@ -306,12 +315,26 @@ impl LiteRt {
                 notes,
             },
             system_prompt: system_prompt.map(str::to_string),
+            // No conversation has asked for a sampler yet, so nothing is in force
+            // but the engine's own default. Distinct from "asked for one and did
+            // not get it", which is what the app will be told later.
+            sampler: SamplerChoice {
+                requested: "engine default",
+                actual: None,
+                full: false,
+            },
         })
     }
 
     /// The system prompt this conversation was opened with, if any.
     pub fn system_prompt(&self) -> Option<&str> {
         self.system_prompt.as_deref()
+    }
+
+    /// Which sampler type the open conversation is sampling with, and what it
+    /// took to find out.
+    pub fn sampler(&self) -> &SamplerChoice {
+        &self.sampler
     }
 
     /// One-shot, non-streaming generation. Used to prove the path before anything
@@ -352,39 +375,51 @@ impl LiteRt {
     pub fn reopen_conversation(&mut self, spec: &ConversationSpec<'_>) -> Result<(), EngineError> {
         if let Some(set_session) = self.ext.litert_lm_conversation_config_set_session_config {
             if let Some(s) = spec.sampler {
-                let params = sampler_params(&self.ext, s)?;
-                let session = unsafe { self.ext.litert_lm_session_config_create.unwrap()() };
-                if session.is_null() {
-                    return Err(EngineError::Runtime("session config is NULL".into()));
+                let (params, choice) = sampler_params(&self.ext, s)?;
+                // Recorded before the params are attached, and on every path —
+                // including the ones that end up with no sampler at all. A
+                // degradation only written down where it cannot be observed is
+                // not a degradation, it is a surprise.
+                self.sampler = choice;
+                if let Some(params) = params {
+                    let session = unsafe { self.ext.litert_lm_session_config_create.unwrap()() };
+                    if session.is_null() {
+                        return Err(EngineError::Runtime("session config is NULL".into()));
+                    }
+                    unsafe {
+                        (self
+                            .ext
+                            .litert_lm_session_config_set_sampler_params
+                            .unwrap())(session, params);
+                    }
+                    // The config copies the sampler, so the params are ours to free
+                    // as soon as it is built. Leaking them would leak on every
+                    // conversation recreate, and the app recreates on every
+                    // temperature change.
+                    unsafe { (self.ext.litert_lm_sampler_params_delete.unwrap())(params) };
+                    let config = unsafe { (self.api.litert_lm_conversation_config_create)() };
+                    if config.is_null() {
+                        unsafe { (self.ext.litert_lm_session_config_delete.unwrap())(session) };
+                        return Err(EngineError::Runtime("conversation config is NULL".into()));
+                    }
+                    unsafe {
+                        set_session(config, session);
+                        (self.ext.litert_lm_session_config_delete.unwrap())(session);
+                    }
+                    let conversation = self.finish_conversation(config, spec)?;
+                    self.swap_conversation(conversation);
+                    return Ok(());
                 }
-                unsafe {
-                    (self
-                        .ext
-                        .litert_lm_session_config_set_sampler_params
-                        .unwrap())(session, params);
-                }
-                // The config copies the sampler, so the params are ours to free
-                // as soon as it is built. Leaking them would leak on every
-                // conversation recreate, and the app recreates on every
-                // temperature change.
-                unsafe { (self.ext.litert_lm_sampler_params_delete.unwrap())(params) };
-                let config = unsafe { (self.api.litert_lm_conversation_config_create)() };
-                if config.is_null() {
-                    unsafe { (self.ext.litert_lm_session_config_delete.unwrap())(session) };
-                    return Err(EngineError::Runtime("conversation config is NULL".into()));
-                }
-                unsafe {
-                    set_session(config, session);
-                    (self.ext.litert_lm_session_config_delete.unwrap())(session);
-                }
-                let conversation = self.finish_conversation(config, spec)?;
-                self.swap_conversation(conversation);
-                return Ok(());
             }
-        } else if spec.sampler.is_some() {
-            self.report.notes.push(
-                "temperature/top_k/top_p unavailable: this runtime has no sampler API".into(),
-            );
+        } else if let Some(s) = spec.sampler {
+            // No sampler API at all, which is the same situation as a runtime that
+            // implements no type and gets the same answer. Routed through `sampler`
+            // so one place decides what was asked for and what is in force.
+            self.sampler = SamplerChoice {
+                requested: if s.greedy { "greedy" } else { "top_k" },
+                actual: None,
+                full: false,
+            };
         }
 
         let config = unsafe { (self.api.litert_lm_conversation_config_create)() };
@@ -548,39 +583,115 @@ impl LiteRt {
     }
 }
 
-/// Build sampler params, or say which symbol is missing.
+/// Sampler types, from `engine.h:127-138`. A C enum crosses the boundary as an
+/// int, and a runtime is not obliged to implement every one of them.
+const SAMPLER_TOP_K: c_int = 1;
+const SAMPLER_TOP_P: c_int = 2;
+const SAMPLER_GREEDY: c_int = 3;
+
+/// The name a type has in `engine.h`, for a message a person will read.
+fn sampler_name(kind: c_int) -> &'static str {
+    match kind {
+        SAMPLER_TOP_K => "top_k",
+        SAMPLER_TOP_P => "top_p",
+        SAMPLER_GREEDY => "greedy",
+        _ => "unknown",
+    }
+}
+
+/// The sampler types to try, in order, for a request that is or is not greedy.
+///
+/// Split out of [`sampler_params`] so the selection policy is testable without a
+/// runtime. Only the `create` call itself is device-only; *which* types are
+/// attempted, and in what order, is a decision, and a decision is worth a test.
+///
+/// The order is not arbitrary. Greedy never falls back to a sampling type, because
+/// "greedy" means argmax and substituting random-ish sampling for it would change
+/// what the user asked for rather than how precisely it is honoured. A non-greedy
+/// request does fall back — TopK, TopP, Greedy — because all three are still
+/// constrained sampling, and the engine's own default is narrower than any of them.
+fn sampler_attempts(greedy: bool) -> Vec<c_int> {
+    if greedy {
+        vec![SAMPLER_GREEDY]
+    } else {
+        vec![SAMPLER_TOP_K, SAMPLER_TOP_P, SAMPLER_GREEDY]
+    }
+}
+
+/// Build sampler params for whatever type this runtime actually implements.
+///
+/// **The type is probed, never assumed, and no outcome of the probe can fail a
+/// turn.** Both halves are there because the device said so:
+///
+/// ```text
+/// runtime: UNIMPLEMENTED: Sampler type: 1 not implemented yet.
+/// ```
+///
+/// That is the v0.16.0 runtime refusing `kLiteRtLmSamplerTypeTopK` — the type
+/// the app's own plugin requests (topK 64, topP 0.95, temperature from the
+/// slider) — after the conversation was created and the turn was already under
+/// way. Passing TopK unconditionally meant a preference, a cosmetic setting on a
+/// slider, took the whole turn down with it.
 fn sampler_params(
     ext: &ffi::ApiExt,
     s: Sampler,
-) -> Result<*mut ffi::LiteRtLmSamplerParams, EngineError> {
-    let create = ext
-        .litert_lm_sampler_params_create
-        .ok_or(EngineError::NotImplemented(
-            "litert_lm_sampler_params_create",
-        ))?;
-    // engine.h:127-138 -- kLiteRtLmSamplerTypeTopK 1, TopP 2, Greedy 3. A C enum
-    // crosses the boundary as int. TopK is the default because it is what the
-    // app's plugin sent (topK 64, topP 0.95, temperature from the slider), and
-    // the type only chooses which knobs are consulted.
-    let kind: c_int = if s.greedy { 3 } else { 1 };
-    let params = unsafe { create(kind) };
-    if params.is_null() {
-        return Err(EngineError::Runtime(
-            "sampler_params_create returned NULL".into(),
+) -> Result<(Option<*mut ffi::LiteRtLmSamplerParams>, SamplerChoice), EngineError> {
+    let wanted = if s.greedy {
+        SAMPLER_GREEDY
+    } else {
+        SAMPLER_TOP_K
+    };
+    let requested = sampler_name(wanted);
+
+    let Some(create) = ext.litert_lm_sampler_params_create else {
+        // A runtime with no sampler API at all is the same situation as one that
+        // implements no type, and gets the same answer.
+        return Ok((
+            None,
+            SamplerChoice {
+                requested,
+                actual: None,
+                full: false,
+            },
+        ));
+    };
+
+    for kind in sampler_attempts(s.greedy) {
+        let params = unsafe { create(kind) };
+        if params.is_null() {
+            continue;
+        }
+        unsafe {
+            if let (Some(f), Some(v)) =
+                (ext.litert_lm_sampler_params_set_temperature, s.temperature)
+            {
+                f(params, v);
+            }
+            if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_top_k, s.top_k) {
+                f(params, v);
+            }
+            if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_top_p, s.top_p) {
+                f(params, v);
+            }
+        }
+        return Ok((
+            Some(params),
+            SamplerChoice {
+                requested,
+                actual: Some(sampler_name(kind)),
+                full: kind == wanted,
+            },
         ));
     }
-    unsafe {
-        if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_temperature, s.temperature) {
-            f(params, v);
-        }
-        if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_top_k, s.top_k) {
-            f(params, v);
-        }
-        if let (Some(f), Some(v)) = (ext.litert_lm_sampler_params_set_top_p, s.top_p) {
-            f(params, v);
-        }
-    }
-    Ok(params)
+
+    Ok((
+        None,
+        SamplerChoice {
+            requested,
+            actual: None,
+            full: false,
+        },
+    ))
 }
 
 impl Engine for LiteRt {
@@ -590,6 +701,10 @@ impl Engine for LiteRt {
 
     fn load_report(&self) -> &LoadReport {
         &self.report
+    }
+
+    fn sampler_choice(&self) -> Option<&SamplerChoice> {
+        Some(&self.sampler)
     }
 
     fn generate(
@@ -876,12 +991,14 @@ mod tests {
     }
 
     #[test]
-    fn a_runtime_without_the_sampler_api_says_so_instead_of_pretending() {
-        // An empty table is a runtime with none of the optional symbols. The
-        // error has to name the symbol: "temperature did nothing" is
-        // indistinguishable from a slider that is not wired to anything.
+    fn a_runtime_without_the_sampler_api_gets_the_engine_default_instead_of_an_error() {
+        // An empty table is a runtime with none of the optional symbols. This used
+        // to be an `Err(NotImplemented)`, and the four device runs before this one
+        // all ended in that shape: a turn that produced nothing because a slider
+        // had a value. The engine's default is a working sampler, so the honest
+        // answer is "nothing was applied", reported — not a failed turn.
         let ext = ffi::ApiExt::load(Lib::open("libc.so.6").as_ref().unwrap());
-        let e = sampler_params(
+        let (params, choice) = sampler_params(
             &ext,
             Sampler {
                 temperature: Some(0.7),
@@ -890,35 +1007,92 @@ mod tests {
                 greedy: false,
             },
         )
-        .unwrap_err();
+        .expect("a missing sampler API must not fail the turn");
+        assert!(params.is_none());
+        assert_eq!(choice.requested, "top_k");
+        assert_eq!(choice.actual, None);
         assert!(
-            matches!(
-                e,
-                EngineError::NotImplemented("litert_lm_sampler_params_create")
-            ),
-            "{e}"
-        );
-        assert!(
-            e.to_string().contains("litert_lm_sampler_params_create"),
-            "{e}"
+            !choice.full,
+            "nothing was applied, so nothing is fully honoured"
         );
     }
 
     #[test]
-    fn greedy_and_topk_are_different_enum_values() {
-        // engine.h:127-138 -- TopK 1, TopP 2, Greedy 3. Sending the wrong one is
-        // not an error; it is silently a different sampler, so the boundary
-        // between the two is worth pinning in one place.
-        fn kind(greedy: bool) -> c_int {
-            if greedy {
-                3
-            } else {
-                1
-            }
-        }
-        assert_ne!(kind(true), kind(false));
-        assert!(matches!(kind(true), 3));
-        assert!(matches!(kind(false), 1));
+    fn the_requested_type_is_tried_first_and_there_is_a_next_one() {
+        // The device failure was `Sampler type: 1 not implemented yet`, and 1 is
+        // top_k — the type the app asks for on every turn. If top_k were not
+        // followed by a second attempt, probing would be pointless: it would find
+        // the same refusal every time and have nothing to fall back to.
+        let order = sampler_attempts(false);
+        assert_eq!(
+            order.first(),
+            Some(&SAMPLER_TOP_K),
+            "the app's own type has to be the one asked for first"
+        );
+        assert!(
+            order.len() > 1,
+            "a refusal of the first type must leave somewhere to go: {order:?}"
+        );
+    }
+
+    #[test]
+    fn greedy_does_not_fall_back_to_a_sampling_type() {
+        // Substituting top-k for greedy would not honour the request more
+        // precisely, it would change it: argmax and constrained sampling are
+        // different answers to the same question. So greedy tries greedy and
+        // stops, and the engine's own default applies if that is refused too.
+        assert_eq!(sampler_attempts(true), vec![SAMPLER_GREEDY]);
+    }
+
+    #[test]
+    fn sampler_names_match_the_header() {
+        // engine.h:127-138 -- TopK 1, TopP 2, Greedy 3. These names go in a log a
+        // person reads, and a name that does not match the header sends them to
+        // the wrong line of it.
+        assert_eq!(sampler_name(SAMPLER_TOP_K), "top_k");
+        assert_eq!(sampler_name(SAMPLER_TOP_P), "top_p");
+        assert_eq!(sampler_name(SAMPLER_GREEDY), "greedy");
+        assert_eq!(sampler_name(0), "unknown");
+    }
+
+    #[test]
+    fn a_substituted_sampler_says_which_knobs_it_ignores() {
+        // `greedy` sampling with a temperature of 0.8 and one of 0.2 produce the
+        // same reply, so "sampler: greedy" alone would read as a setting that is
+        // being applied. The note has to name the substitution.
+        let substituted = SamplerChoice {
+            requested: "top_k",
+            actual: Some("greedy"),
+            full: false,
+        };
+        let note = substituted.describe();
+        assert!(note.contains("substituted for top_k"), "{note}");
+        // Not "contains no 'every knob'": the substituted wording reads "not every
+        // knob it set is consulted", which does contain that phrase. What has to be
+        // absent is the claim that every knob is in force.
+        assert!(!note.contains("consults every knob the app set"), "{note}");
+
+        let full = SamplerChoice {
+            requested: "top_k",
+            actual: Some("top_k"),
+            full: true,
+        };
+        assert!(
+            full.describe().contains("consults every knob the app set"),
+            "{}",
+            full.describe()
+        );
+
+        let none = SamplerChoice {
+            requested: "top_k",
+            actual: None,
+            full: false,
+        };
+        assert!(
+            none.describe().contains("engine default"),
+            "{}",
+            none.describe()
+        );
     }
 
     #[test]

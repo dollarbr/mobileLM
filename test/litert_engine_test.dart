@@ -18,6 +18,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilelm/ffi/litert_engine.dart';
+import 'package:mobilelm/ffi/mobilelm_core_bindings.dart';
 
 void main() {
   group('LiteRtMessage', () {
@@ -159,6 +160,46 @@ void main() {
         LiteRtMessage.text('user', 'oi').toJson(),
         '{"role":"user","content":[{"type":"text","text":"oi"}]}',
       );
+    });
+  });
+
+  group('SamplerReport', () {
+    // The device said `UNIMPLEMENTED: Sampler type: 1 not implemented yet`, and
+    // the fix made a substitution possible. Without this the app could not tell
+    // "temperature 0.8 is in force" from "temperature 0.8 is ignored", which are
+    // the same reply on a greedy sampler. `full` is the field that carries the
+    // difference, so it is the field a decode bug would quietly zero.
+    test('a substituted type is not full, a matched one is', () {
+      final substituted = SamplerReport.fromJson(const {
+        'requested': 'top_k',
+        'actual': 'greedy',
+        'full': false,
+        'note': 'sampler: greedy, substituted for top_k',
+      });
+      expect(substituted.actual, 'greedy');
+      expect(substituted.full, isFalse,
+          reason: 'on greedy, temperature and top_k are not consulted');
+
+      final matched = SamplerReport.fromJson(const {
+        'requested': 'top_k',
+        'actual': 'top_k',
+        'full': true,
+        'note': 'sampler: top_k',
+      });
+      expect(matched.full, isTrue);
+    });
+
+    test('the engine default decodes as null actual, not as a missing field', () {
+      // `actual` is nullable in Dart and JSON `null` in Rust. A decode that turned
+      // it into a throw would take down the turn that was only asking a question.
+      final report = SamplerReport.fromJson(const {
+        'requested': 'top_k',
+        'actual': null,
+        'full': false,
+        'note': 'sampler: the engine default is in use',
+      });
+      expect(report.actual, isNull);
+      expect(report.full, isFalse);
     });
   });
 

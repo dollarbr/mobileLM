@@ -17,7 +17,7 @@ done in it, is [`docs/APK.md`](docs/APK.md).
 
 Where that stands, on `core/rust-hybrid`:
 
-- **The cdylib exists** — `crates/mobilelm-ffi`, `libmobilelm_core.so`, 14 `extern
+- **The cdylib exists** — `crates/mobilelm-ffi`, `libmobilelm_core.so`, 15 `extern
   "C"` entry points, cross-compiled in CI in ~1m11s.
 - **The bindings the app was calling past are all there** — vision and audio
   encoder backends, sampler, token counting, conversation history, and the
@@ -115,7 +115,7 @@ are easy to undo by accident:
   a job that does not need them.
 
 The arm64 build asserts the engine stayed a runtime dependency
-(`readelf -d`, no `liblitert` in `DT_NEEDED`) and that all 14 ABI entry points are
+(`readelf -d`, no `liblitert` in `DT_NEEDED`) and that all 15 ABI entry points are
 exported. It does **not** run the engine — qemu-user cannot execute an Android
 binary at all, and the reasoning is in [`docs/ARTIFACT.md`](docs/ARTIFACT.md).
 
@@ -198,6 +198,17 @@ in this build — pin it then.
   which is indistinguishable from "this device reports nothing".
 - **The probe never `dlclose`s.** Unloading a 39 MB runtime while a model handle
   is alive is a use-after-free.
+- **A sampler type is a capability, not a preference.** The C API takes a
+  `LiteRtLmSamplerType` and the runtime is free not to implement it — v0.16.0
+  answers `UNIMPLEMENTED: Sampler type: 1 not implemented yet.` for
+  `kLiteRtLmSamplerTypeTopK`, which is the type the app's own plugin requests. It
+  surfaces **on the first turn**, after the model is built, so a hardcoded enum
+  reads as "generation is broken" and costs a device run to find out. `sampler_params`
+  probes and cannot fail a turn; greedy deliberately does not fall back, because
+  substituting top-k for argmax changes the request instead of honouring it.
+  `mobilelm_sampler_report` says what is in force, and the Dart side prints it
+  only when it changes — on a `greedy` sampler the temperature is not consulted,
+  which is invisible from the chat.
 - **A stream chunk is not a token.** `litert_lm_stream_chunk_get_text` is
   documented as returning the chunk's text; the runtime we ship returns the
   *serialised message*, one JSON envelope per token. `mobilelm_core::json::extract_content_text`

@@ -131,6 +131,41 @@ pub extern "C" fn mobilelm_abi_version() -> *const c_char {
     c"0.4.0-ffi.1".as_ptr()
 }
 
+/// Which sampler type the open conversation is actually sampling with, as JSON.
+///
+/// Diagnostic, and the answer to the question the device asked on its own:
+/// `runtime: UNIMPLEMENTED: Sampler type: 1 not implemented yet.` The C API
+/// takes a sampler *type*, and a runtime is free not to implement all three —
+/// the vendored v0.16.0 refuses `kLiteRtLmSamplerTypeTopK`, which is the type the
+/// app's own plugin requests. A caller that has no way to ask what it got has no
+/// way to tell "the temperature is being honoured" from "the temperature is
+/// being ignored", and those look identical from the chat.
+///
+/// Returns `null` for a null handle, and for an engine that is not a LiteRT one.
+///
+/// # Safety
+/// `h` must be an engine handle from `mobilelm_engine_create` that has not been
+/// freed, or null. The returned string is owned by the caller and must be
+/// released with `mobilelm_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn mobilelm_sampler_report(h: *mut c_void) -> *mut c_char {
+    guard(ptr_null(), || {
+        let handle = unsafe { handle_mut(h) }?;
+        let Some(choice) = handle.engine.sampler_choice() else {
+            return Err("this engine has no sampler to report on".to_string());
+        };
+        CString::new(format!(
+            "{{\"requested\":{},\"actual\":{},\"full\":{},\"note\":{}}}",
+            json::escape(choice.requested),
+            choice.actual.map_or("null".into(), json::escape),
+            choice.full,
+            json::escape(&choice.describe()),
+        ))
+        .map(|c| c.into_raw())
+        .map_err(|_| "sampler report contains a NUL byte".to_string())
+    })
+}
+
 /// The optional C API symbols the given runtime does not have, as a JSON array.
 ///
 /// Diagnostic, and the answer to "why is temperature not doing anything" on a
