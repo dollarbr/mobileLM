@@ -1501,7 +1501,13 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
 // and {document} substituted if it has one, otherwise the vocab's SEP token as
 // the boundary. Joining them with a space instead would tokenize into one
 // undifferentiated run and return a confident number about nothing.
-extern "C" JNIEXPORT jfloatArray JNICALL
+//
+// Returns doubles rather than floats even though the model computes in float:
+// the widening is free here, it is what every embedding API on the other side
+// speaks, and it keeps the conversion out of the Kotlin — where a `FloatArray`
+// would have to be walked by hand, because there is no `toDoubleArray()` on the
+// primitive array in the stdlib.
+extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode(
     JNIEnv* env, jobject /* thiz */, jstring text, jstring query) {
     if (!g_model || !g_ctx || !g_vocab) {
@@ -1597,7 +1603,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
 
     const int32_t out_len = pooled_output_len(g_model, pooling);
 
-    jfloatArray result = nullptr;
+    jdoubleArray result = nullptr;
     {
         // Same lock nativeGenerate takes, for the same reason: this blocks in
         // llama_decode, and teardown frees the context from another thread.
@@ -1622,9 +1628,12 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
             return nullptr;
         }
 
-        result = env->NewFloatArray(out_len);
+        std::vector<double> widened((size_t) out_len);
+        for (int32_t i = 0; i < out_len; i++) widened[(size_t) i] = pooled[i];
+
+        result = env->NewDoubleArray(out_len);
         if (result) {
-            env->SetFloatArrayRegion(result, 0, out_len, pooled);
+            env->SetDoubleArrayRegion(result, 0, out_len, widened.data());
         }
     }
 
