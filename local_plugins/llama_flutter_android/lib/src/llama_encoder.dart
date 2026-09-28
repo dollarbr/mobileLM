@@ -53,6 +53,12 @@ class LlamaEncoder {
         outputLength: (json['output_len'] as num?)?.toInt() ?? 0,
         inferredPooling: json['inferred_pooling'] == true,
         archIsEncoder: json['arch_is_encoder'] == true,
+        ggufName: (json['gguf_name'] as String?) ?? '',
+        ggufTags: _splitCsv(json['gguf_tags'] as String?),
+        ggufLabels: _splitCsv(json['gguf_labels'] as String?),
+        ggufPooling: (json['gguf_pooling'] as String?) ?? '',
+        hasClassificationHead:
+            json['has_classification_head'] == true,
         maxInputTokens: (json['max_input_tokens'] as num?)?.toInt() ?? 0,
         labels:
             (json['labels'] as List?)?.map((e) => '$e').toList() ??
@@ -62,6 +68,19 @@ class LlamaEncoder {
       return const EncoderInfo();
     } on MissingPluginException {
       return const EncoderInfo();
+    } on FormatException {
+      // The native side builds this JSON with `snprintf` into a fixed buffer, and
+      // four of its fields are strings read out of a file: `general.name`,
+      // `general.tags`, the arch-scoped `classifier.output_labels`. A long enough
+      // name truncates the buffer, a truncated string makes the whole payload
+      // invalid JSON, and `jsonDecode` throws `FormatException` — which nothing
+      // above catches. The symptom without this line is a crash in the console
+      // rather than a model that reports less than it could.
+      //
+      // 'not an encoder' is the safe direction: it hides the console, which is
+      // the same answer a missing channel gives, and it does not claim a
+      // capability that could not be read.
+      return EncoderInfo();
     }
   }
 
@@ -110,6 +129,11 @@ class EncoderInfo {
     this.outputLength = 0,
     this.inferredPooling = false,
     this.archIsEncoder = false,
+    this.ggufName = '',
+    this.ggufTags = const <String>[],
+    this.ggufLabels = const <String>[],
+    this.ggufPooling = '',
+    this.hasClassificationHead = false,
     this.maxInputTokens = 0,
     this.labels = const <String>[],
   });
@@ -153,6 +177,61 @@ class EncoderInfo {
   /// because the only thing the native side can say is that it is not an
   /// encoder. It is.
   final bool archIsEncoder;
+
+  /// An encoder architecture that can produce no output at all.
+  ///
+  /// [archIsEncoder] and not [isEncoder] together: the architecture says encoder
+  /// and the pooling stayed `NONE`, which means llama.cpp has neither a logit to
+  /// return nor a vector to pool. The file is a body with the ends cut off.
+  ///
+  /// This exists to be *said*. The alternative — reporting `is_encoder: false`
+  /// and letting the chat fall back to the conversation — is what the device did
+  /// with `jina-reranker-v1-tiny-en`, and it produced no symptom at all: a model
+  /// that loads, occupies the screen, and silently is not a chat model either.
+  /// A caller that knows the model is a shell can say so; it cannot invent the
+  /// reason from `is_encoder: false`.
+  bool get isHeadless => archIsEncoder && !isEncoder;
+
+  /// What the file's own metadata claims it is, from `general.tags`.
+  ///
+  /// Measured across the five files tested on the Edge 60, this key is present on
+  /// one of four — `jina-reranker-v1-tiny-en` carries
+  /// `[reranker, cross-encoder, transformers.js, text-classification]`, the GTE
+  /// and `bge-small` carry none — so it can never decide a role. It is reported
+  /// because it is the only place a conversion states its *intent*, and the gap
+  /// between intent and delivery is exactly what a person needs spelled out:
+  /// that file says it is a reranker, and it is not one.
+  final List<String> ggufTags;
+
+  /// `general.name` as the file wrote it. Often useless and occasionally
+  /// misleading: the GTE's is `Gte Reranker Modernbert Base` and the jina's is
+  /// `Jina Bert Implementation`, which is the *base* model the reranker was
+  /// built from rather than the reranker.
+  final String ggufName;
+
+  /// `<arch>.classifier.output_labels`, straight from the file.
+  ///
+  /// Separate from [labels] — the same values, in principle, read two ways.
+  /// `bge-small-en-v1.5` carries `[LABEL_0]` and is not a classifier: it is the
+  /// residue of a size-1 head on a model that embeds, which is why [isClassifier]
+  /// requires `pooling == 'rank'` and not just a label being present.
+  final List<String> ggufLabels;
+
+  /// `<arch>.pooling_type` exactly as the file wrote it, or '' when undeclared.
+  ///
+  /// Absent on both the GTE and the jina and present on `bge-small`
+  /// (`2`, CLS), so the converters disagree about whether to write it. That
+  /// inconsistency is why the native side infers pooling for a reranker rather
+  /// than trusting this, and why it must never be read as the answer.
+  final String ggufPooling;
+
+  /// Whether the file carries `cls.output.weight`.
+  ///
+  /// The one hard requirement for a score. A file without it can still be an
+  /// embedding model, but there is no logit in it — llama.cpp would hand back a
+  /// single float of a pooled hidden state, a number that ranks plausibly and
+  /// means nothing.
+  final bool hasClassificationHead;
 
   /// Most tokens one `(query, document)` pair may carry, 0 when unknown.
   ///
@@ -216,4 +295,20 @@ class EncoderUnavailable implements Exception {
 
   @override
   String toString() => 'EncoderUnavailable: $message';
+}
+
+/// Splits a comma-joined list the native side flattened, dropping empty entries.
+///
+/// The native reader hands arrays back as one string because it is a `jstring`
+/// across JNI and a `jobjectArray` would be a second thing to build for a value
+/// read once per console query. An absent key arrives as `''`, which must come
+/// back as an empty list and not as `['']` — a one-element list of nothing is
+/// the kind of thing that then reads as "the file declared one thing".
+List<String> _splitCsv(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const <String>[];
+  return raw
+      .split(',')
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList(growable: false);
 }

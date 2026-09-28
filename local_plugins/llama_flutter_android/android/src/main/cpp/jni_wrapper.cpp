@@ -33,6 +33,14 @@ static const llama_vocab* g_vocab = nullptr;
 // answer. Exposed in `encoderInfo` so a client can find out before it builds a
 // request too large to serve.
 static uint32_t g_encoder_max_tokens = 0;
+
+// The file the loaded model came from, kept so `nativeEncoderInfo` can re-read
+// its header. `llama_model` does not expose the path it was loaded from, and
+// the metadata worth reporting — `general.tags`, `general.name`, the arch-scoped
+// `classifier.output_labels` and `pooling_type` — is only in the file. Cleared
+// with the model, so a query after a free finds nothing to read rather than the
+// previous model's file.
+static std::string g_model_path;
 static llama_sampler* g_sampler = nullptr;
 static std::atomic<bool> g_stop_flag{false};
 // Serialises generation against teardown.
@@ -273,8 +281,104 @@ static bool gguf_has_tensor(const char* path, const char* name) {
     return found;
 }
 
-static bool model_has_classification_head(const char* model_path) {
-    return gguf_has_tensor(model_path, "cls.output.weight");
+// What the GGUF's own metadata says about itself, read in one pass.
+//
+// Measured across every file tested on the Edge 60, this is what the converters
+// actually write — and it is not consistent enough to decide anything with:
+//
+//   model                          general.tags   <arch>.pooling_type   head
+//   bge-small-en-v1.5              (none)         bert = 2 (CLS)        (none)
+//   gte-reranker-modernbert-base   (none)         (none)                cls.output.* + pooler
+//   jina-reranker-v1-tiny-en       reranker,      (none)                cls.weight (renamed,
+//                                   cross-encoder,                                          no pooler)
+//                                   text-classification
+//   laya_english_q8_0              (none)         (none)                (none, arch is ggmlc)
+//
+// So `general.tags` is the only place a conversion states its intent and it is
+// present on one file in four; `<arch>.pooling_type` is present on one in four
+// as well. Neither can gate anything. The role is still decided from the
+// tensors — a declared `pooling_type` is not consulted when a head is missing,
+// and `general.tags` saying `reranker` does not make a file one. These are
+// reported so a console can say "the file calls itself a reranker and is not
+// one", which is the sentence a person actually needs.
+struct gguf_facts {
+    bool has_classification_head = false;
+    std::string name;
+    std::string tags;    // comma-joined, empty when the file carries none
+    std::string labels;  // comma-joined, empty when the file carries none
+    std::string pooling; // raw value as written, empty when undeclared
+};
+
+// Reads [gguf_facts] from [path], or returns defaults if the file will not open.
+//
+// One open for everything, deliberately: the tensor check needs the ggml reader
+// and the metadata does too, and `no_alloc` means the tensor *data* is not
+// touched, so this is a few hundred KB of header regardless of model size. Two
+// opens would also be two chances to answer differently.
+static gguf_facts gguf_read_facts(const char* path) {
+    gguf_facts out;
+    if (!path || !*path) return out;
+    gguf_init_params params = {};
+    params.no_alloc = true;
+    gguf_context* ctx = gguf_init_from_file(path, params);
+    if (!ctx) {
+        LOGE("Could not reopen %s to read its metadata; reporting none",
+             path);
+        return out;
+    }
+
+    out.has_classification_head = gguf_find_tensor(ctx, "cls.output.weight") >= 0;
+
+    // A string array, flattened. `llama.h` has no public reader for array
+    // elements, which is why this goes through the gguf reader rather than
+    // `llama_model_meta_val_str` — the same reason the tensor check above does.
+    auto read_list = [&](const char* key, std::string& dst) {
+        const int64_t id = gguf_find_key(ctx, key);
+        if (id < 0 || gguf_get_kv_type(ctx, id) != GGUF_TYPE_ARRAY) return false;
+        if (gguf_get_arr_type(ctx, id) != GGUF_TYPE_STRING) return false;
+        const size_t n = gguf_get_arr_n(ctx, id);
+        if (n == 0) return false;
+        std::string acc;
+        for (size_t i = 0; i < n; i++) {
+            const char* item = gguf_get_arr_str(ctx, id, i);
+            if (!item || !*item) return false;
+            if (!acc.empty()) acc += ", ";
+            acc += item;
+        }
+        dst = acc;
+        return true;
+    };
+
+    auto read_str = [&](const char* key, std::string& dst) {
+        const int64_t id = gguf_find_key(ctx, key);
+        if (id < 0 || gguf_get_kv_type(ctx, id) != GGUF_TYPE_STRING) return false;
+        const char* v = gguf_get_val_str(ctx, id);
+        if (!v || !*v) return false;
+        dst = v;
+        return true;
+    };
+
+    read_str("general.name", out.name);
+    read_list("general.tags", out.tags);
+
+    // Both are arch-scoped, so the arch has to be read first and used to build
+    // the key. `jina-bert-v2` and `modern-bert` each published their own.
+    std::string arch;
+    if (read_str("general.architecture", arch)) {
+        char key[128];
+        snprintf(key, sizeof(key), "%s.classifier.output_labels", arch.c_str());
+        read_list(key, out.labels);
+        snprintf(key, sizeof(key), "%s.pooling_type", arch.c_str());
+        const int64_t id = gguf_find_key(ctx, key);
+        if (id >= 0 && gguf_get_kv_type(ctx, id) == GGUF_TYPE_UINT32) {
+            char num[32];
+            snprintf(num, sizeof(num), "%u", gguf_get_val_u32(ctx, id));
+            out.pooling = num;
+        }
+    }
+
+    gguf_free(ctx);
+    return out;
 }
 
 // Whether a pooling type can be *inferred* for a model that declares none.
@@ -291,14 +395,19 @@ static bool model_has_classification_head(const char* model_path) {
 // Returning false leaves the model as a generation model, which is the safe
 // direction: it stays usable for chat, and `/v1/embeddings` refuses with a
 // message instead of returning a wrong vector.
-static bool infer_pooling(const llama_model* model, const char* model_path,
+static bool infer_pooling(const llama_model* model, const gguf_facts& facts,
                           enum llama_pooling_type& out) {
     out = LLAMA_POOLING_TYPE_NONE;
     if (!arch_is_encoder(model)) return false;
 
     // The gate, and the only hard requirement. A head means llama.cpp can reach a
-    // logit; without one it cannot, whatever the architecture claims to be.
-    if (!model_has_classification_head(model_path)) {
+    // logit; without one it cannot, whatever the architecture claims to be — and
+    // whatever `general.tags` says. The jina file's tags are
+    // `[reranker, cross-encoder, text-classification]`, which is the intent
+    // stated correctly by a conversion that did not deliver it: the head is
+    // there as `cls.weight`, where llama.cpp looks for `cls.output`, and the
+    // `pooler.dense` it was trained against is absent entirely.
+    if (!facts.has_classification_head) {
         LOGE("Encoder architecture with no cls.output.weight in the GGUF: this "
              "conversion has no classification head, so there is no logit to "
              "return. llama.cpp would hand back one float of a pooled hidden "
@@ -749,14 +858,19 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     
     // Load model
     g_model = llama_model_load_from_file(model_path, model_params);
+    // Kept before the `ReleaseStringUTFChars`, from the same buffer the load
+    // used, so what gets reported later is the file that actually loaded rather
+    // than a name reconstructed from somewhere else. Cleared on failure below.
+    g_model_path = model_path;
     env->ReleaseStringUTFChars(path, model_path);
-    
+
     if (!g_model) {
         const std::string detail = consumeLoadError();
         const std::string message = detail.empty()
             ? "Failed to load GGUF model; check model compatibility and available RAM"
             : "Failed to load GGUF model: " + detail;
         throwLoadError(env, message);
+        g_model_path.clear();
         return;
     }
     consumeLoadError();
@@ -801,12 +915,13 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     //   count rather than letting the assert do it.
     enum llama_pooling_type pooling = LLAMA_POOLING_TYPE_NONE;
     bool is_encoder = model_declared_pooling(g_model, pooling);
+    const gguf_facts facts = gguf_read_facts(model_path_str.c_str());
     if (!is_encoder) {
         // The GGUF says nothing. For an encoder architecture that is a gap in
         // the file, not an absence of the capability — see infer_pooling. The
         // declared path stays first, so a model that knows what it is is never
         // second-guessed.
-        is_encoder = infer_pooling(g_model, model_path_str.c_str(), pooling);
+        is_encoder = infer_pooling(g_model, facts, pooling);
     }
     if (is_encoder) {
         ctx_params.embeddings   = true;
@@ -1628,6 +1743,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeFreeMo
     }
     g_vocab = nullptr;
     g_n_past = 0;  // Reset position counter
+    g_model_path.clear();
     
     LOGI("Model freed");
 }
@@ -1719,11 +1835,41 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
         labels += "\"" + sanitizeUTF8(label, strlen(label)) + "\"";
     }
 
-    char out[1024] = {0};
+    // The file's own account of itself, re-read here rather than stashed at load
+    // time. It is a `no_alloc` header read of a file already open on disk, and
+    // this runs once per query from a console, not per token — the alternative,
+    // caching it in a global, means a file that is replaced under a running app
+    // keeps answering with the previous one's metadata.
+    const gguf_facts facts = gguf_read_facts(g_model_path.c_str());
+
+    // Everything from a file is untrusted text on its way to a JSON string, and
+    // `sanitizeUTF8` is what keeps a raw byte from aborting a debuggable build
+    // under CheckJNI — the same reason the labels above go through it. A quote or
+    // a backslash has to go too, or the JSON is malformed rather than invalid.
+    auto json_escape = [](const std::string& s) {
+        std::string acc;
+        for (char c : s) {
+            if (c == '"' || c == '\\') { acc += '\\'; acc += c; }
+            else if (c == '\n' || c == '\r' || c == '\t') { acc += ' '; }
+            else acc += c;
+        }
+        return "\"" + sanitizeUTF8(acc.c_str(), acc.size()) + "\"";
+    };
+
+    // 4 KB for a fixed part of about 250 bytes plus four untrusted strings. A
+    // `snprintf` that runs out truncates rather than overflows, and a truncated
+    // JSON string is a parse error on the other side — the Dart side treats that
+    // as "not an encoder", so the failure mode is a hidden console rather than a
+    // crash, but the honest fix is not to run out. `general.tags` on the files
+    // measured here is 58 bytes; the largest `general.name` is 30.
+    char out[4096] = {0};
     snprintf(out, sizeof(out),
              "{\"is_encoder\":%s,\"pooling\":\"%s\",\"n_cls_out\":%u,"
              "\"n_embd_out\":%d,\"output_len\":%d,\"inferred_pooling\":%s,"
-             "\"arch_is_encoder\":%s,\"max_input_tokens\":%u,\"labels\":[%s]}",
+             "\"arch_is_encoder\":%s,\"max_input_tokens\":%u,\"labels\":[%s],"
+             "\"gguf_name\":%s,\"gguf_tags\":%s,"
+             "\"gguf_labels\":%s,\"gguf_pooling\":%s,"
+             "\"has_classification_head\":%s}",
              (pooling != LLAMA_POOLING_TYPE_NONE) ? "true" : "false",
              pooling_name(pooling),
              (unsigned) n_cls,
@@ -1742,7 +1888,17 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
              // discovering the limit by being refused is one round trip too late
              // for a caller that batches a hundred documents.
              (unsigned) g_encoder_max_tokens,
-             labels.c_str());
+             labels.c_str(),
+             // What the file says it is. `general.tags` on the jina is
+             // `[reranker, cross-encoder, text-classification]` — the intent,
+             // stated correctly, by a conversion that dropped the head. Shown
+             // next to the actual role it is the sentence a person needs: the
+             // file calls itself a reranker, and it is not one.
+             json_escape(facts.name).c_str(),
+             json_escape(facts.tags).c_str(),
+             json_escape(facts.labels).c_str(),
+             json_escape(facts.pooling).c_str(),
+             facts.has_classification_head ? "true" : "false");
 
     return env->NewStringUTF(sanitizeUTF8(out, strlen(out)).c_str());
 }
