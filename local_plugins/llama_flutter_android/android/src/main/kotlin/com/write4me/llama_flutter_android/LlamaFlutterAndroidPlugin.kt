@@ -139,14 +139,8 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
                         if (out == null) {
                             result.error("ENCODE_FAILED", "The encoder returned nothing", null)
                         } else {
-                            // Widened to Double here rather than sending the
-                            // FloatArray as-is. The standard codec does accept
-                            // Float, but a Float crossing the channel and
-                            // arriving as a double is a detail worth not
-                            // depending on, and the cost is one conversion of
-                            // a few hundred values.
                             result.success(mapOf(
-                                "values" to out.toDoubleArray().toList(),
+                                "values" to out.toList(),
                                 "elapsedMs" to elapsedMs,
                             ))
                         }
@@ -657,8 +651,11 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
     private external fun nativeProbeGgufFile(path: String): String
     // Encoder surface. nativeEncoderInfo returns a JSON string describing the
     // loaded model's pooling type and class labels; nativeEncode pools one
-    // sequence and returns the resulting floats, blocking in llama_decode.
+    // sequence and returns the resulting values, blocking in llama_decode.
+    // DoubleArray and not FloatArray: the model computes in float, but every
+    // API on the other end of this speaks double and the stdlib has no
+    // FloatArray.toDoubleArray() to convert with.
     private external fun nativeEncoderInfo(): String
-    private external fun nativeEncode(text: String, query: String): FloatArray?
+    private external fun nativeEncode(text: String, query: String): DoubleArray?
     // outStats[0] = vulkanApiVersion, outStats[1] = deviceLocalMemoryBytes
 }
