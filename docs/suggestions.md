@@ -36,6 +36,53 @@
 
 ---
 
+## ✅ Features completadas na versão 0.3.5
+
+| Feature | Status | Arquivo principal |
+|---|---|---|
+| Botão de ir para o final acima do de enviar | ✅ Feito | `chat_view.dart` — `Positioned` num `Stack` com a altura da barra medida por `GlobalKey`, em vez do `floatingActionButton` do `Scaffold`, que ancora no fim do corpo |
+| Tok/s medido de ponta a ponta | ✅ Feito | `lib/utils/token_rate.dart` + `inference_service.dart` + `chat_controller.dart` — o denominador começava no primeiro token, que é onde a rajada final começa |
+| Núcleo híbrido Rust removido do APK | ✅ Feito | −37,2 MB; a decisão, as medições e a rota para retomar estão em [`HYBRID_CORE.md`](HYBRID_CORE.md) |
+
+---
+
+## 🟠 O que a 0.4.0 vai ser
+
+Embeddings, rerank e classificação — modelos BERT/ModernBERT, servidos pelo
+`openai_server_service`. É a primeira feature desde 0.3.1 que muda o que o usuário
+consegue rodar, e a frase "isto faz X, que antes não existia" sai verdadeira.
+
+O llama.cpp vendorizado já tem o caminho inteiro, declarado e compilado:
+`llama_encode` (`llama-context.cpp:4315`), `llama_model_n_cls_out`,
+`llama_model_cls_label` e `LLAMA_POOLING_TYPE_RANK`. E **sete** famílias de encoder
+além do ModernBERT: `bert`, `jina-bert-v2`, `jina-bert-v3`, `nomic-bert`,
+`neo-bert`, `eurobert`, mais `llama-embed`, `gemma-embedding` e `pangu-embed`.
+
+Endpoints a adicionar no servidor local (porta 8080), que hoje só tem `/v1/models`,
+`/v1/server/capabilities`, `/v1/chat/completions` e `/v1/completions`:
+
+- `/v1/embeddings` — é um endpoint OpenAI de verdade, e falta
+- `/v1/rerank` — formato Cohere/Jina
+- `/v1/classify` — para o caso Laya
+
+Laya e OpenJev são `text-classification` (`ggmlc` / `modernbert`,
+`non-autoregressive`, 322M): são classificadores de decisão, não modelos de chat, e
+não vão ser. São a prova de que o caminho funciona, não o destino dele.
+
+Tamanhos verificados por `content-length` em 2026-09-28:
+
+| arquivo | bytes |
+|---|---|
+| `laya_english_ud_q4_k_m.gguf` | 419.907.712 |
+| `laya_english_q8_0.gguf` | 451.505.440 |
+| `laya_english_f16.gguf` | 846.137.888 |
+
+O teste mais barato no aparelho **não é o Laya**: é
+`unsloth/bge-small-en-v1.5-GGUF`, 33M em vez de 322M, e a saída é um vetor que se
+confere — dimensão e não-zero. Um classificador não se confere sem rótulo.
+
+---
+
 ## 🟢 Baixo esforço, alto impacto
 
 ### 1. Exportar conversa

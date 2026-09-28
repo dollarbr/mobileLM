@@ -64,7 +64,6 @@ class AppConstants {
   /// Off is also the safe state on a device whose runtime the core cannot use: the
   /// Rust attempt fails at load and the load falls through to the plugin, so a bad
   /// runtime costs a few seconds of load time rather than an unusable model.
-  static const String keyHybridCoreEnabled = 'hybrid_core_enabled';
   /// Per-model Auto Fast benchmark verdicts. Key = prefix + 'name:bytes',
   /// value = 'cpu' | 'gpu'. Measured once, reused on every later load.
   static const String autoFastBenchKeyPrefix = 'auto_fast_bench_';

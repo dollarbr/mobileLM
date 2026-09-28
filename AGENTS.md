@@ -86,14 +86,22 @@ flutter build apk --release --split-per-abi --target-platform android-arm64
 
 ## Branch e commit
 
-Branch **`core/rust-hybrid`** é onde se testa; merge na `main` só depois de análise e testes
-(com `--no-ff`), via PR para o `ci.yml` rodar. **Não existe branch `dev`** — este guia
-dizia que existe desde que o fork foi importado, e não existe. `main` é o que trackeia
+Trabalho e commits vão para a **`main`**. **Não existe branch `dev`** — este guia dizia
+que existe desde que o fork foi importado, e não existe. `main` é o que trackeia
 `origin/main`; sobraram só umas `pdf-markdown-*` locais.
 
+A branch **`core/rust-hybrid` continua no remoto e não deve ser apagada** — é onde o
+núcleo híbrido Rust está, em ~20 commits. Ele saiu do APK em 0.3.5, não do git; ver
+[`docs/HYBRID_CORE.md`](docs/HYBRID_CORE.md) antes de mexer em qualquer coisa que
+dependa dela.
+
 **Minor = feature, patch = conteúdo.** Um catálogo maior não é feature. Antes de subir um
-minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é patch. `0.4.0`
-está reservado para o núcleo RustHybrid chegando ao APK.
+minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é patch.
+
+`0.4.0` está reservado para o **suporte a embeddings, rerank e classificação**
+(BERT/ModernBERT, servidos pelo `openai_server_service`): modelos que hoje não rodam
+nada no app. A frase é "isto faz X, que antes não existia" de verdade — Laya e OpenJev
+são `text-classification`, e o servidor local não tem como executá-los.
 
 Todo commit em mobileLM-app deve ser **documentado** (pedido explícito do usuário) —
 diferente do resto do workspace, onde commit só ocorre se pedido.
@@ -103,14 +111,17 @@ diferente do resto do workspace, onde commit só ocorre se pedido.
 Três workflows ativos: `ci.yml`, `debug-apk.yml` (APK debug arm64 por push, ~22 min) e
 `release.yml` (dispara na tag).
 
-O `ci.yml` tem três jobs: `analyze` (analyze + test, ~2 min), `rust-core` (fmt, clippy e
-testes do núcleo Rust em `local_plugins/mobilelm_core`) e `rust-core-android` (cross-compila
-o binário arm64 e confere que o engine continua sendo dependência de runtime via `readelf -d`).
-Os dois últimos são jobs separados do `analyze` porque são toolchains diferentes — um erro de
-lint Dart e um `std` aarch64 faltando não têm relação entre si, e juntar os dois esconde qual
-quebrou. O job arm64 **não roda o engine**: qemu-user não executa binário Android (emula a
-CPU, não a libc, e o binário fixa `/system/bin/linker64` como interpretador). O CI garante o
-build; o aparelho garante o motor. Ver [`local_plugins/mobilelm_core/AGENTS.md`](local_plugins/mobilelm_core/AGENTS.md).
+O `ci.yml` tem **um** job, `analyze` (analyze + test, ~2 min). Havia outros dois —
+`rust-core` (fmt, clippy e testes do crate Rust) e `rust-core-android` (cross-compile
+arm64 + `readelf -d`) — e saíram junto com o núcleo, em 0.3.5. Tinham de ser jobs
+separados porque são toolchains diferentes: um erro de lint Dart e um `std` aarch64
+faltando não têm relação entre si, e juntar os dois esconde qual quebrou. Vale
+lembrar se algum dia houver outro toolchain aqui.
+
+Nenhum workflow compila Rust hoje, e nenhum baixa artefato nativo. `debug-apk.yml` e
+`release.yml` imprimem as `.so` arm64 que realmente entram no APK, o que é o jeito
+barato de notar uma exclusão de `packagingOptions` ou um filtro de ABI — foi assim
+que os 37,2 MB do `liblitert-lm.so` ficaram visíveis por semanas.
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
 `+build`: `0.3.5+2005` → tag `0.3.5`. O workflow falha de propósito se divergirem.
@@ -118,7 +129,7 @@ Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupada
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.3.5` (botão de ir para o final acima do de enviar, em vez de sobre ele; núcleo híbrido Rust estacionado com o teto registrado).
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.3.5` (botão de ir para o final acima do de enviar, em vez de sobre ele; núcleo híbrido Rust removido do APK, −37,2 MB; tok/s medido de ponta a ponta em vez de contar a rajada final).
 
 **0.3.4 é a primeira release assinada com a chave do projeto** (`CN=dollarbr`, SHA-256
 `1cd43cb7…`). Quem instalou uma das anteriores precisa **desinstalar** antes — o Android
@@ -158,96 +169,31 @@ maior de todos. Daqui em diante: bump de release ⇒ build number tal que
 `build + 2000` fique acima do publicado anterior, senão o update falha com
 `INSTALL_FAILED_VERSION_DOWNGRADE`.
 
-**Minor = feature, patch = conteúdo.** Um catálogo maior não é uma feature, é uma
-lista maior — o bump de minor teria prometido algo que o APK não traz. `0.4.0` fica
-reservado para o núcleo híbrido (`local_plugins/mobilelm_core`) *dentro do app*, que
-é a primeira vez que o número muda o que o usuário recebe. Antes de subir um minor,
-escreva uma frase do tipo "isto faz X, que antes não existia" — se a frase não sai,
-é patch.
+**O núcleo híbrido Rust saiu do APK em 0.3.5.** O código continua na branch
+`core/rust-hybrid` (não a apague); a decisão, as medições e a rota para retomar
+estão em [`docs/HYBRID_CORE.md`](docs/HYBRID_CORE.md). **Leia a tabela de tags
+desse documento antes de gastar um build de 22 minutos** — a pergunta deixou de ser
+"dá para fazer o envio funcionar" e passou a ser "vale a pena", e a resposta tem
+que enfrentar 37,2 MB e o fato de o caminho mais rápido do app já existir.
 
-**O trabalho do 0.4.0 está na branch `core/rust-hybrid`, não em `main`.** O que já
-existe lá, e o que **não** existe:
+Os três motivos, em uma linha cada, porque são eles que decidem:
 
-| | |
-|---|---|
-| `crates/mobilelm-ffi` | `libmobilelm_core.so`, 15 entry points `extern "C"`, cross-compila em ~1m11s |
-| As seis ligações que faltavam | vision e audio backend, sampler, contagem de tokens, histórico, família de benchmark |
-| `lib/ffi/mobilelm_core_bindings.dart` + `litert_engine.dart` | 12 testes que não precisam de aparelho |
-| `mobilelm_core::plan` | dono único da escada; `planLiteRtTier` em Dart agora pergunta |
-| `.github/workflows/rust-core.yml` | `workflow_call` que `ci.yml`, `debug-apk.yml` e `release.yml` chamam |
+1. **A C API do LiteRT-LM mais nova que existe tem quatro tags.** `litert_lm_c_api`
+   só existe na `v0.16.0`; a `v0.17.1` **é** a última versão e publica só
+   `xcframework` da Apple. Consequência já vista, não hipotética: a rota C API não
+   alcança um sampler, e `litert_lm_sampler_params_create(1)` devolve ponteiro
+   não-nulo num runtime que não implementa o tipo 1 — a recusa chega 3 s depois, na
+   geração. "O `create()` devolveu ponteiro?" não responde "este tipo existe?".
+2. **A amarra não compra velocidade.** O engine é C++ e continua C++; 21,2 tok/s de
+   prefill contra 3,4 no Vulkan é o engine, não o transporte.
+3. **37,2 MB, e a flag desligada não era de graça.** `liblitert-lm.so` é a segunda
+   maior lib do APK, e o `main.dart` fazia `dlopen` dela a cada cold start só para
+   imprimir uma linha de log.
 
-**`inference_android.dart` está intocado.** O app não chama nada disso, e o
-`liblitertlm_jni.so` do AAR continua no APK. Não descreva o núcleo como entregue.
-Falta o run no aparelho comparando os dois caminhos, e só depois de comparar é que
-se apaga o plugin Kotlin — apagá-lo antes é como se embarca uma regressão e se
-deleta a coisa que funcionava. O plano inteiro, com os bloqueios e o que já foi
-resolvido, está em `local_plugins/mobilelm_core/docs/APK.md`.
-
-**Um workflow de tag não buildava nada.** O cross-compile morava no `ci.yml`, que
-dispara só em `push: branches: [main]`, então um push de tag chegava ao
-`release.yml` sem artefato Rust nenhum — e a falha era invisível, porque o job
-ficava verde no ci.yml e ninguém roda ci.yml ao cortar tag. Por isso o
-`rust-core.yml` é um workflow `workflow_call` e não um job. O job `native`
-**não** declara `environment: release`: ele compila uma cdylib e não precisa de
-segredo de assinatura, e um job que pode lê-los não deveria ser um job que não
-precisa deles.
-
-**O APK cresce ~17 MB, e o número é medido.** De um `unzip -l` real: o
-`liblitertlm_jni.so` do AAR são 21,8 MB e saem com o plugin, o `liblitert-lm.so`
-da C API são 39,0 MB e a cdylib nova são **436 KB** — não os 2–4 MB que o plano
-estimava. Saldo +17,6 MB antes de comprimir. Para escala: o mesmo APK tem
-`libsd_jni_vulkan.so` com 55 MB, `libsd_jni_opencl.so` com 25 MB e `libsd_jni.so`
-com 24 MB, ou seja 104 MB de engines de stable diffusion. Se tamanho de APK
-importar, é aí — está fora do escopo deste plano e nada aqui toca nisso.
-
-**O C API vendorizado é v0.16.0, não 0.17.1 — e 0.17.1 é a última.** Todas as
-tags foram conferidas na API do GitHub em 2026-09-28, não de memória: `v0.17.1`
-(2026-09-16), `v0.17.0` e `v0.16.1` publicam **só** `CLiteRTLM.xcframework` /
-`CLiteRTLM_mac.xcframework` e um binário macOS. `litert_lm_c_api-0.1.0.zip`
-(154,1 MB) existe apenas na `v0.16.0`, e `v0.17.1` é a ponta — não há `main` mais
-novo para compilar. Ou seja: a última versão é justamente a que não pode ser
-usada, e a C API mais nova que existe em qualquer lugar está quatro tags e cinco
-semanas atrás.
-
-**Consequência já demonstrada, não hipotética:** o sampler.
-`litert_lm_sampler_params_create(1)` devolve ponteiro **não-nulo** num runtime que
-**não** implementa o tipo 1, e a recusa só chega na geração, ~3 s depois, com
-prefill e decode já construídos. Ou seja "o create() devolveu ponteiro?" **não**
-responde "este tipo existe?", e a sonda construída sobre isso respondeu a pergunta
-errada com um `full: true` confiante. A rota JNI que o app já usa alcança um
-sampler; a rota C API do pin não alcança. **A lista do que a C API de 0.16.0 não
-faz é maior que o único item que foi encontrado**, e cada item novo custa um ciclo
-de build.
-
-Por isso o núcleo híbrido está **estacionado** (decisão de 2026-09-28) e o `0.4.0`
-não sai dele. O caminho de *load* está provado e fica provado (`actual: cpu`, sem
-recuo, 1,75 GiB); o que falta é o de envio, e contra ele: o engine é C++ e
-continua C++ (a amarra não dá velocidade nenhuma), o APK cresce 17,6 MB, e o app
-**já tem** uma rota funcional para esse engine. A frase de minor — "isto faz X,
-que antes não existia" — saiu como: um slider de temperatura que não faz nada,
-17,6 MB a mais e o mesmo tok/s. Pela regra *Minor = feature* isso é patch, no
-máximo. O Kotlin plugin fica.
-
-O que **não** se joga fora: `mobilelm_core::plan` já está no app de produção
-(`planLiteRtTier` pergunta a escada ao Rust), 74 testes de host, clippy e fmt
-limpos, zero dependências, e as medições do `BENCH.md`. A rota para retomar está
-escrita no fim de `local_plugins/mobilelm_core/docs/APK.md` — **leia a tabela de
-tags antes de gastar um build**: a pergunta não é mais "dá pra fazer o envio
-funcionar", é se vale compilar a C API atual do fonte, e a resposta tem que
-enfrentar os três bullets antes. O AAR do app é 0.17.1, então o downgrade é real — mas a
-única mudança do 0.17.1 é `f300c4fdc28b`, "keep integers as integers in tool call
-arguments", e todos os arquivos que ele toca são o parser de function-calling
-nativo do engine. O app nunca entra nesse caminho: as tool calls saem como texto e
-são parseadas por regex em `lib/services/tools/tool_call_parser.dart`. Cosmético
-hoje; volta a importar no dia em que function-calling nativo for ligado, que é
-uma chamada de distância (`LiteLmTool` já existe na API do plugin). A razão está
-escrita ao lado do pin em `fetch-litert-capi.sh`.
-
-**A coluna de prefill do `BENCH.md` estava errada.** A C API *reporta* tempo de
-prompt, atrás de `litert_lm_engine_settings_enable_benchmark`, que ninguém ligava.
-`load_with` liga agora. Duas coisas sobre o número quando ele cair: é o do engine,
-não o do harness (o 2.716 s de TTFT veio de um `Instant` em volta de um canal que
-também carrega o unwrap do JSON), e o índice 0 é o primeiro turno da conversa.
+O que a remoção custou: `mobilelm_core::plan` era o dono da escada de aceleração, e
+`planLiteRtTier` em Dart perguntava a ele. O corpo Dart puro voltou a ser o caminho
+(é o mesmo código, sem a delegação) e continua coberto por
+`test/acceleration_test.dart`. Nada se perdeu funcionalmente.
 
 ## ABI: arm64 e só
 
@@ -402,35 +348,16 @@ precisam instalar por cima de qualquer build.
   `totalMs`. Exibidas permanentemente após geração no `ChatBubble`. Cores:
   Volt `#B9F53E` (escuro) / verde escuro `#1B5E20` (claro).
 - **Cloud TPS:** `cloudTokensPerSecond` observable no chat controller.
+- **Tok/s é medido de ponta a ponta**, de quando a requisição foi feita até o
+  último token — `endToEndTokensPerSecond` em `lib/utils/token_rate.dart`. Era
+  pré-existente e **errado nas duas rotas**: o denominador começava no primeiro
+  token, que é onde a *rajada final* começa, então o número subia conforme a
+  resposta acabava. Num turno real do LiteRT-LM (106 tokens nos 21 ms depois de
+  uma chamada bloqueante) o bubble dizia **5047,6 tok/s** num aparelho cujo modelo
+  mais rápido faz 3,1. `test/token_rate_test.dart` fixa o caso.
 
 ## Sugestões de próximas features
 
 Ver [`docs/suggestions.md`](docs/suggestions.md) para lista completa organizada
 por esforço/impacto. Top 3: exportar conversa, chips de sugestão rápida,
 sumarização automática de contexto.
-
-## Cloud features (0.3.0)
-## Tradução (PT-BR)
-
-- **Cobertura:** ~394 `.tr` calls no código, 278+ keys em `app_translation.dart`
-- **Arquivos:** `lib/l10n/app_translation.dart` (GetX), `lib/l10n/app_en.arb`, `lib/l10n/app_pt_BR.arb`
-- **Templates traduzidos:**
-  - Sugestões de chat (16 prompts em PT-BR)
-  - Views: chat, model, settings, log, task, workspace, HF search
-  - Controllers: model, chat, settings
-  - Widgets: image_viewer
-- **Regra:** strings UI nunca em `const` — `.tr` é método runtime
-- **Device locale:** `pt_BR` (confirmado via `adb shell getprop persist.sys.locale`)
-
-
-- **Round-trip ceiling:** cloud = 20 hops fixo; local = `agentMaxHops` (setting).
-  Setting "Tool round-trips" inclui `∞` (valor 0 = infinito) e entrada manual
-  (toque no valor → dialog com TextField, valida 0–8).
-- **Context window auto-detect:** `_parseContextWindows()` em
-  `cloud_model_controller.dart` — OpenRouter, DeepSeek, NVIDIA, Google, OpenAI.
-  Safe maxTokens = 25% do contexto, min 256 (`effectiveMaxTokens()`).
-- **Capability auto-detect:** vision/tools tags por provider na lista de modelos.
-- **Métricas persistentes:** `ChatMessage` armazena `ttftMillis`, `totalTokens`,
-  `totalMs`. Exibidas permanentemente após geração no `ChatBubble`. Cores:
-  Volt `#B9F53E` (escuro) / verde escuro `#1B5E20` (claro).
-- **Cloud TPS:** `cloudTokensPerSecond` observable no chat controller.

@@ -12,6 +12,16 @@
 .swiftpm/
 migrate_working_dir/
 
+# Cargo build tree. The Rust core that owned this was removed in 0.3.5 and it
+# carried its own .gitignore, so nothing at the root covered `target/` — and a
+# leftover worktree from `core/rust-hybrid` still has 223 MB in it. Anchored to
+# `local_plugins/` because a `target/` in git is only ever Rust build output here.
+local_plugins/**/target/
+# …and the LiteRT-LM C API headers it fetched into vendor/prebuilt/, same reason:
+# they are downloaded by a script, not committed. Left ignored so a worktree that
+# still has them cannot commit them by accident.
+local_plugins/mobilelm_core/vendor/prebuilt/
+
 # IntelliJ related
 *.iml
 *.ipr
@@ -103,13 +113,15 @@ docs/*
 !docs/SHIZUKU.md
 !docs/superpowers/
 
-# The Rust core's cdylib and the LiteRT-LM C API runtime, copied into jniLibs by
-# CI from the `mobilelm-native-arm64` artifact. Together ~42 MB, and the core's own
-# rule is that no binary lives in git.
+# Stale entries from the parked Rust core (`mobilelm_core`, removed in 0.3.5 — see
+# docs/HYBRID_CORE.md). Nothing produces these two files any more; CI no longer
+# copies them into jniLibs, and `release.yml` warns if `liblitert-lm.so` reappears
+# in an APK.
 #
-# Ignored **by name, not by directory**: `libomp.so` sits in that same
-# `jniLibs/arm64-v8a/` and is committed on purpose, so ignoring the directory
-# would silently untrack it. Naming the two files also means a future .so dropped
-# in there still reaches review instead of being swept up.
+# They stay listed anyway, as a net: the cdylib is 436 KB and the C API runtime
+# 37,2 MB, a developer with an old worktree still has them on disk, and
+# `jniLibs/arm64-v8a/` is exactly where a stray `flutter build` would pick them up.
+# Ignoring by name is deliberate — `libomp.so` sits in that same directory and is
+# committed on purpose, so ignoring the directory would silently untrack it.
 /android/app/src/main/jniLibs/arm64-v8a/libmobilelm_core.so
 /android/app/src/main/jniLibs/arm64-v8a/liblitert-lm.so

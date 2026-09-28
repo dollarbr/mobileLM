@@ -35,6 +35,7 @@ import '../services/tools/builtin_tools.dart';
 import '../services/tools/tool_call_parser.dart';
 import '../services/tools/tool_registry.dart';
 import '../utils/thought_parser.dart';
+import '../utils/token_rate.dart';
 import '../services/workspace_service.dart';
 import '../services/privileged_service.dart';
 import '../widgets/project_picker_dialog.dart';
@@ -1158,11 +1159,15 @@ class ChatController extends GetxController {
 
       // Stop streaming UI
       final isCloud = inferenceMode != 'local';
-      final tps = isCloud && _cloudTokenCount.value > 0
-          ? (_cloudTokenCount.value /
-                  (DateTime.now().difference(_cloudFirstTokenAt!).inMilliseconds /
-                      1000.0))
-              .toDouble()
+      // From `_cloudGenStart`, not from the first token — same reason as the local
+      // path, see `utils/token_rate.dart`. This one was the same bug in the same
+      // shape, which is how a 1600× error survives a codebase-wide review.
+      final tps = isCloud && _cloudGenStart != null
+          ? endToEndTokensPerSecond(
+              tokens: _cloudTokenCount.value,
+              start: _cloudGenStart!,
+              now: DateTime.now(),
+            )
           : (isCloud ? 0.0 : Get.find<InferenceService>().tokensPerSecond.value);
       if (isCloud) {
         cloudTokensPerSecond.value = tps;
