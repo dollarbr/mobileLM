@@ -563,6 +563,18 @@ pub unsafe extern "C" fn mobilelm_send_stream(
                 Ok(0)
             }
             Err(e) => {
+                // The engine's own message goes out on the stream *and* into the
+                // thread-local last error, because the two reach different
+                // readers and only one of them survives a failure.
+                //
+                // The Dart side throws when the return code is non-zero, building
+                // its message from `lastError`. Returning `Ok(-1)` — which is what
+                // this did — leaves the last error unset, so the throw produced
+                // the generic "send_stream failed" and *preempted* the `_StreamEnd`
+                // the callback had already queued with the real text in it. The
+                // device said only "send_stream failed"; the reason was in a
+                // message nobody read.
+                set_error(e.to_string());
                 let c = CString::new(e.to_string()).unwrap_or_default();
                 cb(ctx, std::ptr::null(), 1, c.as_ptr());
                 Ok(-1)

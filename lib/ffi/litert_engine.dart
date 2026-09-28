@@ -398,16 +398,27 @@ class LiteRtEngine {
     });
 
     Object? reply;
+    Object? thrown;
     try {
       reply = await _ask('send', <String, dynamic>{
         'messageJson': message.toJson(),
         'maxTokens': maxTokens,
         'port': stream.sendPort,
       });
+    } catch (e) {
+      // The native call reports failure twice, on purpose: once as a thrown
+      // exception and once as a `_StreamEnd` carrying the engine's own words. The
+      // stream is the better of the two, so the exception is held and the stream
+      // is still read below.
+      thrown = e;
+    }
+    try {
       // The native call is the blocking one, so its reply arrives with the last
       // chunk. Waiting for the stream as well means a stream that ends without a
       // final marker is a visible failure rather than a silent short answer.
       await done.future;
+    } catch (e) {
+      thrown ??= e;
     } finally {
       stream.close();
     }
@@ -418,6 +429,7 @@ class LiteRtEngine {
         retryable: failure.contains('Status Code: 13'),
       );
     }
+    if (thrown != null) throw '$thrown';
     _open?.markSpoken();
     final map = reply is Map ? reply.cast<String, dynamic>() : const {};
     return TurnResult(
@@ -598,22 +610,33 @@ class LiteRtEngine {
       maxTokens: args['maxTokens'] as int,
       messageBytes: messageJson.length,
     );
-    final result = core.sendStream(
-      handle,
-      messageJson,
-      args['maxTokens'] as int,
-      bridge.callable,
-      // The context is an id, and the native side only passes it back. Nothing
-      // is allocated for it and nothing can dangle.
-      0,
-    );
-    // No `finally`, and no `close()` here. The callback outlives this call by
-    // design: a `listener` trampoline returns as soon as it has queued the Dart
-    // invocation, so the last `isFinal` message is still in the queue at the
-    // moment `sendStream` returns. Closing the callable here dropped it, and the
-    // turn then waited forever for a `_StreamEnd` that had already been
-    // discarded. See [_StreamBridge].
-    bridge.endTurn(nativeStatus: result);
+    Object? thrown;
+    int nativeStatus = -999;
+    try {
+      nativeStatus = core.sendStream(
+        handle,
+        messageJson,
+        args['maxTokens'] as int,
+        bridge.callable,
+        // The context is an id, and the native side only passes it back. Nothing
+        // is allocated for it and nothing can dangle.
+        0,
+      );
+    } catch (e) {
+      // Kept rather than rethrown here: the engine's own reason is already
+      // queued on the stream port as a `_StreamEnd`, and the caller reads that
+      // first. Rethrowing from here would preempt it and report the plumbing
+      // instead of the cause — which is exactly what the device run did.
+      thrown = e;
+    } finally {
+      // In a `finally`, so the instrument also covers the failing path. It used to
+      // run only on success, which meant the one run that most needed it printed
+      // nothing.
+      bridge.endTurn(nativeStatus: nativeStatus);
+    }
+    if (thrown != null) {
+      throw '$thrown';
+    }
     final b = core.benchmark(handle);
     return {'benchmark': b == null ? null : _benchmarkToJson(b)};
   }

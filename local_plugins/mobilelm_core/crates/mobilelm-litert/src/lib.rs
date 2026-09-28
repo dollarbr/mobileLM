@@ -241,14 +241,32 @@ impl LiteRt {
             }
         }
 
-        // Turn the runtime's own measurement on. It costs a little per turn and
-        // it is the only source of a real prefill number — the alternative
-        // recorded in BENCH.md was leaving the field at 0 and calling that
-        // "not measured".
+        // The runtime's own measurement is OFF, and that is a measured decision
+        // rather than a missing feature.
+        //
+        // Turning it on (`litert_lm_engine_settings_enable_benchmark`) was, until
+        // the device run, in this load. It broke generation on the Edge 60:
+        //
+        //   [LiteRt] beginTurn turn=1 messageBytes=94 maxTokens=2048
+        //   W native: tasks.cc:490] Failed to get prefill profile summary:
+        //   INVALID_ARGUMENT [litert_profiler.h:91]
+        //   ERROR: ... Error: mobilelm_core: send_stream failed
+        //
+        // The load succeeded, the conversation opened, the message was accepted
+        // (41 tokens in the context counter), and then the send failed ~3 s in with
+        // no token ever produced — while the profiler complained about exactly the
+        // profile the flag asked for. The Kotlin plugin never enables it, and the
+        // Kotlin path generates fine on the same runtime and the same model.
+        //
+        // So the instrumentation was killing the thing it was instrumenting. The
+        // prefill number is worth having and this flag is the only source of it,
+        // but it is not worth a turn that does not complete, and it is not worth
+        // being on by default in a shipped path where nobody would connect the two.
+        // `benchmark()` returns `None` with the flag off, which is the honest
+        // answer rather than a zero pretending to be a measurement.
         if let Some(f) = ext.litert_lm_engine_settings_enable_benchmark {
-            unsafe { f(settings, true) };
-        } else {
-            notes.push("benchmarking unavailable: enable_benchmark symbol absent".into());
+            let _ = f;
+            notes.push("benchmarking off: it breaks generation on this runtime".into());
         }
 
         let engine = unsafe { (api.litert_lm_engine_create)(settings) };

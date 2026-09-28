@@ -1006,6 +1006,11 @@ class InferenceEngine {
             '${result.chunks} chunks, ${result.wallMs}ms wall$measured');
         return result.text;
       } catch (e) {
+        // From the *main* isolate on purpose. The generation isolate's own
+        // `[LiteRt]` lines go to logcat, because `print` from a spawned isolate
+        // does not reach the app's log file — which is where the docs and the next
+        // person will look. This one does.
+        print('[Inference] Rust turn failed: $e');
         // The same shape the plugin path returns, because everything upstream — the
         // chat controller, the UI, the log — already knows how to display one.
         return 'ERROR: LiteRT-LM generation failed via the Rust core. Error: $e';
