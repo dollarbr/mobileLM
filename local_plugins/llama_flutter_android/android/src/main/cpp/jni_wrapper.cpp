@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <algorithm>
 #include <ctime>
 #include <cstring>
 #include <cstdarg>
@@ -141,6 +142,73 @@ static void throwLoadError(JNIEnv* env, const std::string& message) {
     LOGE("%s", message.c_str());
     jclass exception = env->FindClass("java/lang/RuntimeException");
     env->ThrowNew(exception, message.c_str());
+}
+
+// ---------------------------------------------------------------------------
+// Encoder models: BERT, ModernBERT, JinaBERT, NomicBERT, NeoBERT, EuroBERT
+// and the embedding families. These do not generate, so nothing above this
+// point applies to them — they pool a sequence into one vector.
+// ---------------------------------------------------------------------------
+
+// The pooling type is declared by the model, in `<arch>.pooling_type`
+// (llama-model.cpp reads the very same key while loading). Iterating the
+// metadata rather than assembling the key from an architecture name is what
+// makes this work for every encoder family without a list to keep in sync —
+// and a list is exactly what goes stale when llama.cpp adds an architecture.
+//
+// It is also the property that makes detection trustworthy here. A classifier
+// that says what it is *in the file* cannot lie the way a runtime can: the
+// LiteRT sampler reported a non-NULL pointer for a type its runtime does not
+// implement, and the refusal only arrived at generation time. A GGUF's
+// pooling_type is read before anything is allocated.
+static bool model_declared_pooling(const llama_model* model, llama_pooling_type& out) {
+    out = LLAMA_POOLING_TYPE_NONE;
+    static const char kSuffix[] = ".pooling_type";
+    const size_t kSuffixLen = sizeof(kSuffix) - 1;
+
+    const int32_t n_keys = llama_model_meta_count(model);
+    char key[256] = {0};
+    char val[64]  = {0};
+    for (int32_t i = 0; i < n_keys; i++) {
+        if (llama_model_meta_key_by_index(model, i, key, sizeof(key) - 1) <= 0) continue;
+        const std::string k(key);
+        if (k.size() <= kSuffixLen) continue;
+        if (k.compare(k.size() - kSuffixLen, kSuffixLen, kSuffix) != 0) continue;
+        if (llama_model_meta_val_str_by_index(model, i, val, sizeof(val) - 1) <= 0) {
+            return false;
+        }
+        out = static_cast<llama_pooling_type>(std::atoi(val));
+        return true;
+    }
+    return false;
+}
+
+static const char* pooling_name(llama_pooling_type p) {
+    switch (p) {
+        case LLAMA_POOLING_TYPE_NONE: return "none";
+        case LLAMA_POOLING_TYPE_MEAN: return "mean";
+        case LLAMA_POOLING_TYPE_CLS:  return "cls";
+        case LLAMA_POOLING_TYPE_LAST: return "last";
+        case LLAMA_POOLING_TYPE_RANK: return "rank";
+        default:                      return "unspecified";
+    }
+}
+
+// How many floats llama_get_embeddings_seq hands back for the loaded model.
+//
+// The header says RANK returns float[n_cls_out] and everything else
+// float[n_embd]; examples/embedding/embedding.cpp instead reads n_embd and
+// keeps min(n_embd, n_cls_out). Both agree for a reranker, where n_cls_out is
+// 1, and disagree for a multi-class classifier — where the header is the one
+// that describes the buffer, so the header wins. n_embd is used as a ceiling
+// either way, since reading past what was written is not a thing to do.
+static int32_t pooled_output_len(const llama_model* model, llama_pooling_type pooling) {
+    const int32_t n_embd = llama_model_n_embd_out(model);
+    if (pooling == LLAMA_POOLING_TYPE_RANK) {
+        const int32_t n_cls = static_cast<int32_t>(llama_model_n_cls_out(model));
+        return n_cls > 0 ? std::min(n_embd, n_cls) : n_embd;
+    }
+    return n_embd;
 }
 
 // Helper function to validate UTF-8 strings
@@ -516,6 +584,30 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     
     // Memory optimization: reduce memory usage by limiting batch processing
     ctx_params.n_batch = 512;  // Process smaller batches to reduce memory spikes
+
+    // An encoder model declares a pooling type in its own metadata. When it
+    // does, this context is for pooling a sequence into one vector rather than
+    // for generating, and two settings have to follow from that:
+    //
+    // - `embeddings` has to be on, or llama_get_embeddings_seq returns NULL and
+    //   every read below comes back empty for a reason that looks like a bug.
+    // - `n_batch` has to hold the whole sequence. Pooling happens once, over
+    //   the batch as given; a sequence split across ubatches is pooled
+    //   differently, and unlike generation there is no chunking path to fall
+    //   back on for an encoder-only model. 2048 covers any cross-encoder input
+    //   worth sending, and an encoder uses no KV cache, so a large ubatch costs
+    //   activation memory and not a growing cache.
+    llama_pooling_type pooling = LLAMA_POOLING_TYPE_NONE;
+    const bool is_encoder = model_declared_pooling(g_model, pooling);
+    if (is_encoder) {
+        ctx_params.embeddings   = true;
+        ctx_params.pooling_type = pooling;
+        ctx_params.n_batch      = std::max(ctx_params.n_batch, 2048);
+        LOGI("Encoder model: pooling=%s, n_cls_out=%u, n_embd_out=%d",
+             pooling_name(pooling),
+             (unsigned) llama_model_n_cls_out(g_model),
+             llama_model_n_embd_out(g_model));
+    }
 
     // With the weights in system RAM, let them be computed there too.
     //
@@ -1342,4 +1434,203 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeSetSys
     JNIEnv* env, jobject thiz, jint length) {
     // Currently not used but available for future smart context management
     LOGI("System prompt length set to: %d tokens (currently unused)", length);
+}
+
+// ---------------------------------------------------------------------------
+// Encoder surface
+//
+// A GGUF that declares a `<arch>.pooling_type` does not generate; it pools a
+// sequence. That covers embeddings (MEAN / CLS / LAST), rerankers and
+// classifiers (RANK, with labels). Two calls, deliberately: one to describe
+// what the loaded model can do, one to actually run it.
+//
+// This is `llama_decode`, not `llama_encode`. `llama_encode` feeds the encoder
+// half of an *encode-decoder* to a decoder's cross-attention — the header says
+// so, and speculative.cpp uses it exactly that way. An encoder-only model has
+// no decoder to feed, and examples/embedding/embedding.cpp runs one through
+// `llama_decode` like this.
+// ---------------------------------------------------------------------------
+
+// What the loaded model can do as an encoder, as JSON. Labels are a list and
+// this is read once per load, so a string beats a jobjectArray here.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncoderInfo(
+    JNIEnv* env, jobject /* thiz */) {
+    if (!g_model || !g_ctx) return env->NewStringUTF("{}");
+
+    // The same lock nativeEncode takes. Reading g_ctx from the platform thread
+    // while a generation holds it is the use-after-free this mutex exists for,
+    // and llama_pooling_type is a field read — the lock is free here.
+    llama_pooling_type pooling;
+    uint32_t n_cls;
+    {
+        std::lock_guard<std::mutex> ctx_lock(g_ctx_mutex);
+        pooling = llama_pooling_type(g_ctx);
+        n_cls = llama_model_n_cls_out(g_model);
+    }
+
+    std::string labels;
+    for (uint32_t i = 0; i < n_cls; i++) {
+        const char* label = llama_model_cls_label(g_model, i);
+        if (!label) continue;
+        if (!labels.empty()) labels += ",";
+        // Labels come from the file and can carry anything a text key holds,
+        // so they go through the same filter as a log line before they reach
+        // NewStringUTF — a raw one aborts a debuggable build under CheckJNI.
+        labels += "\"" + sanitizeUTF8(label, strlen(label)) + "\"";
+    }
+
+    char out[1024] = {0};
+    snprintf(out, sizeof(out),
+             "{\"is_encoder\":%s,\"pooling\":\"%s\",\"n_cls_out\":%u,"
+             "\"n_embd_out\":%d,\"output_len\":%d,\"labels\":[%s]}",
+             (pooling != LLAMA_POOLING_TYPE_NONE) ? "true" : "false",
+             pooling_name(pooling),
+             (unsigned) n_cls,
+             llama_model_n_embd_out(g_model),
+             pooled_output_len(g_model, pooling),
+             labels.c_str());
+
+    return env->NewStringUTF(sanitizeUTF8(out, strlen(out)).c_str());
+}
+
+// Pool one sequence.
+//
+// [text] alone, or [text] and [query] joined the way a cross-encoder expects
+// when there is a query: the model's own `rerank` chat template with {query}
+// and {document} substituted if it has one, otherwise the vocab's SEP token as
+// the boundary. Joining them with a space instead would tokenize into one
+// undifferentiated run and return a confident number about nothing.
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode(
+    JNIEnv* env, jobject /* thiz */, jstring text, jstring query) {
+    if (!g_model || !g_ctx || !g_vocab) {
+        throwLoadError(env, "No model loaded");
+        return nullptr;
+    }
+
+    const llama_pooling_type pooling = llama_pooling_type(g_ctx);
+    if (pooling == LLAMA_POOLING_TYPE_NONE) {
+        throwLoadError(env,
+            "This model does not declare a pooling type, so it is a generation "
+            "model. Embeddings, rerank and classify need a BERT/ModernBERT-style "
+            "GGUF whose metadata carries <arch>.pooling_type.");
+        return nullptr;
+    }
+
+    const char* t_raw = text ? env->GetStringUTFChars(text, nullptr) : nullptr;
+    const char* q_raw = query ? env->GetStringUTFChars(query, nullptr) : nullptr;
+    const std::string t = t_raw ? t_raw : "";
+    const std::string q = q_raw ? q_raw : "";
+    if (t_raw) env->ReleaseStringUTFChars(text, t_raw);
+    if (q_raw) env->ReleaseStringUTFChars(query, q_raw);
+
+    std::string input;
+    if (!q.empty()) {
+        const char* rerank_tpl = llama_model_chat_template(g_model, "rerank");
+        if (rerank_tpl) {
+            input = rerank_tpl;
+            const std::string q_ph = "{query}";
+            const std::string d_ph = "{document}";
+            for (size_t at = input.find(q_ph); at != std::string::npos;
+                 at = input.find(q_ph, at + q.size())) {
+                input.replace(at, q_ph.size(), q);
+            }
+            for (size_t at = input.find(d_ph); at != std::string::npos;
+                 at = input.find(d_ph, at + t.size())) {
+                input.replace(at, d_ph.size(), t);
+            }
+        } else {
+            // No template: the boundary is the SEP token itself, which is what
+            // the vocab was built with. Asking for the token's *piece* is what
+            // makes this a real boundary rather than the literal "[SEP]" text
+            // that would then be tokenized as ordinary words.
+            const llama_token sep = llama_vocab_sep(g_vocab);
+            std::string sep_text = "\t";
+            if (sep != LLAMA_TOKEN_NULL) {
+                char buf[64] = {0};
+                const int32_t n = llama_token_to_piece(g_vocab, sep, buf, sizeof(buf), 0, true);
+                if (n > 0) sep_text.assign(sanitizeUTF8(buf, (size_t) n));
+            }
+            input = q + sep_text + t;
+        }
+    } else {
+        input = t;
+    }
+
+    // add_special = true: a BERT-family vocab is meaningless without its [CLS]
+    // and [SEP]. A SentencePiece causal vocab ignores the flag, so this is
+    // safe for both kinds of model that can reach here.
+    std::vector<llama_token> tokens(input.size() + 8);
+    int32_t n = llama_tokenize(g_vocab, input.c_str(), (int32_t) input.size(),
+                                tokens.data(), (int32_t) tokens.size(), true, false);
+    if (n < 0) {
+        tokens.resize(-n);
+        n = llama_tokenize(g_vocab, input.c_str(), (int32_t) input.size(),
+                           tokens.data(), (int32_t) tokens.size(), true, false);
+    }
+    if (n <= 0) {
+        throwLoadError(env, "Could not tokenize the input for this encoder");
+        return nullptr;
+    }
+    tokens.resize(n);
+
+    // One batch, one sequence, and **every** token flagged for output. Pooling
+    // aggregates over the tokens marked in `logits`; leave them false and the
+    // model returns a plausible vector built from nothing but [CLS]. That is
+    // the failure mode that does not look like a failure, which is why it gets
+    // its own comment instead of a loop that happens to fill the array.
+    llama_batch batch = llama_batch_init(n, 0, 1);
+    if (!batch.token || !batch.logits) {
+        llama_batch_free(batch);
+        throwLoadError(env, "Could not allocate the encoder batch");
+        return nullptr;
+    }
+    for (int32_t i = 0; i < n; i++) {
+        batch.token[i]    = tokens[i];
+        batch.pos[i]      = i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i]   = 1;
+    }
+    batch.n_tokens = n;
+
+    const int32_t out_len = pooled_output_len(g_model, pooling);
+
+    jfloatArray result = nullptr;
+    {
+        // Same lock nativeGenerate takes, for the same reason: this blocks in
+        // llama_decode, and teardown frees the context from another thread.
+        std::lock_guard<std::mutex> ctx_lock(g_ctx_mutex);
+        llama_memory_clear(llama_get_memory(g_ctx), true);
+
+        const int32_t rc = llama_decode(g_ctx, batch);
+        if (rc != 0) {
+            llama_batch_free(batch);
+            throwLoadError(env, "llama_decode failed on the encoder batch (rc=" +
+                                std::to_string(rc) + ", tokens=" + std::to_string(n) + ")");
+            return nullptr;
+        }
+
+        const float* pooled = llama_get_embeddings_seq(g_ctx, 0);
+        if (!pooled) {
+            llama_batch_free(batch);
+            throwLoadError(env,
+                "The model pooled nothing. That means the context was not created "
+                "with embeddings enabled, which is a build problem rather than a "
+                "model problem.");
+            return nullptr;
+        }
+
+        result = env->NewFloatArray(out_len);
+        if (result) {
+            env->SetFloatArrayRegion(result, 0, out_len, pooled);
+        }
+    }
+
+    llama_batch_free(batch);
+    if (result) {
+        LOGI("Encoded %d tokens -> %d floats (pooling=%s)", n, out_len, pooling_name(pooling));
+    }
+    return result;
 }

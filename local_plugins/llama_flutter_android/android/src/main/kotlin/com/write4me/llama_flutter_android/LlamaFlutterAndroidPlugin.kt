@@ -94,6 +94,66 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
                 result.success(nativeMediaMarker())
             }
 
+            // What the loaded GGUF can do as an encoder, as a JSON string.
+            // Cheap and safe before any model is loaded: the native side
+            // answers "{}" rather than throwing, so asking is how you find out.
+            "encoderInfo" -> {
+                ensureNativeLoaded()?.let {
+                    result.error("NATIVE_LOAD", it.message, null); return
+                }
+                result.success(nativeEncoderInfo())
+            }
+
+            // Pool one sequence. `query` is optional and only meaningful for a
+            // cross-encoder: with one, the pair is joined at the SEP boundary
+            // the model was trained on; without it, the text is embedded alone.
+            //
+            // Launched off the platform thread because nativeEncode blocks in
+            // llama_decode for as long as the sequence takes — a few hundred ms
+            // for a cross-encoder, but a document on a phone is seconds, and the
+            // platform thread is where a MethodChannel result has to land.
+            "encode" -> {
+                ensureNativeLoaded()?.let {
+                    result.error("NATIVE_LOAD", it.message, null); return
+                }
+                if (!isModelLoaded.get()) {
+                    result.error("NO_MODEL", "No model loaded", null); return
+                }
+                val text = call.argument<String>("text")
+                if (text.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "text is required", null); return
+                }
+                val query = call.argument<String>("query") ?: ""
+                scope.launch {
+                    val started = System.nanoTime()
+                    val out = try {
+                        nativeEncode(text, query)
+                    } catch (e: Throwable) {
+                        withContext(Dispatchers.Main) {
+                            result.error("ENCODE_FAILED", e.message ?: e.toString(), null)
+                        }
+                        return@launch
+                    }
+                    val elapsedMs = (System.nanoTime() - started) / 1_000_000
+                    withContext(Dispatchers.Main) {
+                        if (out == null) {
+                            result.error("ENCODE_FAILED", "The encoder returned nothing", null)
+                        } else {
+                            // Widened to Double here rather than sending the
+                            // FloatArray as-is. The standard codec does accept
+                            // Float, but a Float crossing the channel and
+                            // arriving as a double is a detail worth not
+                            // depending on, and the cost is one conversion of
+                            // a few hundred values.
+                            result.success(mapOf(
+                                "values" to out.toDoubleArray().toList(),
+                                "elapsedMs" to elapsedMs,
+                            ))
+                        }
+                    }
+                }
+            }
+
             // Hand over whatever ggml/llama.cpp has logged since the last
             // call. Empty before the library is loaded, which is not an
             // error: the poller starts before the first model does.
@@ -595,5 +655,10 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
     private external fun nativeGetMeta(key: String): String
     // Header-only GGUF read (no model load) for the model-card spec line.
     private external fun nativeProbeGgufFile(path: String): String
+    // Encoder surface. nativeEncoderInfo returns a JSON string describing the
+    // loaded model's pooling type and class labels; nativeEncode pools one
+    // sequence and returns the resulting floats, blocking in llama_decode.
+    private external fun nativeEncoderInfo(): String
+    private external fun nativeEncode(text: String, query: String): FloatArray?
     // outStats[0] = vulkanApiVersion, outStats[1] = deviceLocalMemoryBytes
 }
