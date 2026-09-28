@@ -515,8 +515,15 @@ class MobilelmCore {
   ) {
     final msg = messageJson.toNativeUtf8();
     try {
-      final rc =
-          _sendStream(handle, msg, maxTokens, callback.nativeFunction, ctx);
+      // Logged because "did the callback pointer arrive null?" has been the one
+      // thing every failed device run had in common, and `-999` cannot tell it
+      // apart from any other throw. A pointer prints as an address or `nullptr`,
+      // so this settles the question instead of leaving it to be reasoned about.
+      final fn = callback.nativeFunction;
+      print('[LiteRt] sendStream fn=$fn maxTokens=$maxTokens '
+          'jsonBytes=${messageJson.length}');
+      final rc = _sendStream(handle, msg, maxTokens, fn, ctx);
+      print('[LiteRt] sendStream rc=$rc');
       if (rc != 0) {
         throw MobilelmException(
           lastError ?? 'send_stream failed',

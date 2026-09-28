@@ -413,21 +413,22 @@ class LiteRtEngine {
       thrown = e;
     }
     try {
-      // The native call is the blocking one, so its reply arrives with the last
-      // chunk. Waiting for the stream as well means a stream that ends without a
-      // final marker is a visible failure rather than a silent short answer.
+      // The native call is the blocking one, so by the time `_ask('send')` returns
+      // the engine is finished and the only thing outstanding is the *Dart side*
+      // of the last few callbacks, which the event loop runs in microseconds once
+      // the isolate is free. A few seconds is generous for that.
       //
-      // Bounded, and generously: this is not a budget for a slow model — a 0.6B on
-      // this phone takes 56 s, and a multimodal prefill is minutes — it is a
-      // backstop against a native failure that never produces a terminal event.
-      // Unbounded, that combination is a hang with the reason trapped in
-      // `thrown`, which is exactly what the device did: the typing indicator
-      // spun forever and the error never reached anyone.
+      // A previous version waited 20 minutes here, on the reasoning that a slow
+      // model might need it. That is wrong twice over: the wait begins only after
+      // the native call returned, so model speed is not in the question, and a
+      // failure that never produces a terminal event then cost 20 minutes of a
+      // stuck screen instead of an error message. Long enough to drain a queue,
+      // short enough that a fault is reported rather than endured.
       await done.future.timeout(
-        const Duration(minutes: 20),
+        const Duration(seconds: 10),
         onTimeout: () => throw TimeoutException(
-          'the engine never ended the stream',
-          const Duration(minutes: 20),
+          'the engine returned but the stream never ended',
+          const Duration(seconds: 10),
         ),
       );
     } catch (e) {
