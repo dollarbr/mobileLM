@@ -16,6 +16,7 @@ import '../ffi/sd_ffi_bindings.dart';
 import '../utils/thought_parser.dart';
 import '../widgets/attachment_preview.dart';
 import '../widgets/chat_bubble.dart';
+import 'encoder_console.dart';
 import '../widgets/thought_disclosure.dart';
 
 // ── Apple-style color helpers ──
@@ -46,6 +47,151 @@ class ChatView extends GetView<ChatController> {
   static const double _minInputBarHeight = 64;
 
   @override
+  /// The message list, extracted so the encoder branch can reuse it verbatim
+  /// when the console sits below the conversation instead of replacing it.
+  Widget _messageList(BuildContext context, bool isDark) {
+    if (controller.currentSessionId.value.isEmpty ||
+        controller.messages.isEmpty) {
+      return _emptyState(context, isDark);
+    }
+    final streaming = controller.isStreaming.value;
+    final text = controller.streamingResponse.value;
+    final n = controller.messages.length;
+    return NotificationListener<ScrollUpdateNotification>(
+      onNotification: (note) {
+        if (note.dragDetails != null && streaming) {
+          if ((note.scrollDelta ?? 0) < 0) {
+            controller.pauseStreamingFollow();
+          } else {
+            controller.resumeStreamingFollowIfNearBottom();
+          }
+        }
+        return false;
+      },
+      child: ListView.builder(
+        controller: controller.scrollController,
+        padding: const EdgeInsets.only(top: 8, bottom: 8),
+        itemCount: n + (streaming ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i == n && streaming) {
+            return _streamBubble(context, text, isDark);
+          }
+          return ChatBubble(message: controller.messages[i]);
+        },
+      ),
+    );
+  }
+
+  bool get _isEncoder => controller.encoderRole.value.isNotEmpty;
+  InferenceService get _inference => Get.find<InferenceService>();
+
+  /// The encoder console over the conversation, maximized, with a draggable
+  /// split to hand the room back.
+  ///
+  /// Maximized is the default because an encoder cannot be talked to — there is
+  /// no LM head, so the conversation is not a second view of this model, it is
+  /// a view of a model that is not loaded. It is kept for the transcript, not
+  /// for use.
+  ///
+  /// The split is a real drag rather than two fixed halves because the two
+  /// panels want opposite amounts of room depending on what you are doing: the
+  /// console when filling a query and reading scores, the conversation when you
+  /// want to confirm the transcript is intact. Whichever you are not using, you
+  /// want smaller. Fixed halves make the loser of that trade permanently cramped.
+  Widget _encoderArea(BuildContext context, bool isDark,
+      {required int consoleFlex}) {
+    const total = ChatController.encoderTotalFlex;
+    // Both ends are real states, not clamped away: `0` is the conversation with
+    // no console, `total` is the console with no conversation. An `Expanded` of
+    // flex 0 is legal but leaves a live `ListView` attached to nothing, which
+    // keeps the scroll controller and its listener alive for a panel nobody can
+    // see — so each side is genuinely removed at its own end.
+    final showConsole = consoleFlex > 0;
+    final showChat = consoleFlex < total;
+    return LayoutBuilder(builder: (context, box) {
+      return Column(children: [
+        if (showConsole)
+          Expanded(
+            flex: consoleFlex,
+            child: EncoderConsole(
+              inference: _inference,
+              onClose: () => controller.setEncoderConsoleFlex(0),
+            ),
+          ),
+        _splitHandle(isDark, box.maxHeight, consoleFlex: consoleFlex),
+        if (showChat)
+          Expanded(
+            flex: total - consoleFlex,
+            child: _messageList(context, isDark),
+          ),
+      ]);
+    });
+  }
+
+  Widget _splitHandle(bool isDark, double height, {required int consoleFlex}) {
+    final maximized = consoleFlex >= ChatController.encoderTotalFlex;
+    final collapsed = consoleFlex <= 0;
+    return GestureDetector(
+      // Vertical drags only. A horizontal one here would fight the message
+      // list's own gesture, which sits directly below.
+      onVerticalDragUpdate: (d) {
+        // `height` includes the handle, which neither flex owns, so the ratio
+        // is slightly conservative — which is the safe direction here: the
+        // split reaches its ends just short of the fingers, not past them.
+        // Guarded because a zero height would divide by it.
+        if (height <= 0) return;
+        const total = ChatController.encoderTotalFlex;
+        final flex = consoleFlex - (d.primaryDelta ?? 0) / height * total;
+        controller.setEncoderConsoleFlex(flex.round());
+      },
+      onTap: controller.toggleEncoderMaximized,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeRow,
+        child: Container(
+          height: 16,
+          alignment: Alignment.center,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            GestureDetector(
+              onTap: controller.toggleEncoderMaximized,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(
+                    // The pill names the state it switches *to*, not the one it
+                    // is in. A chevron pointing down while maximized says
+                    // "collapse this", and what you want is "show the
+                    // conversation" — which is a label, so it is written out.
+                    collapsed
+                        ? Icons.memory_rounded
+                        : maximized
+                            ? Icons.forum_outlined
+                            : Icons.close_fullscreen_rounded,
+                    size: 12,
+                    color: isDark ? Colors.white38 : Colors.black45,
+                  ),
+                  if (collapsed || maximized) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      collapsed ? 'encoder console' : 'show conversation',
+                      style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: isDark ? Colors.white38 : Colors.black45),
+                    ),
+                  ],
+                ]),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
@@ -59,41 +205,45 @@ class ChatView extends GetView<ChatController> {
               _contextBar(context, isDark),
               Expanded(
                 child: Obx(() {
-                  if (controller.currentSessionId.value.isEmpty ||
-                      controller.messages.isEmpty)
-                    return _emptyState(context, isDark);
-                  final streaming = controller.isStreaming.value;
-                  final text = controller.streamingResponse.value;
-                  final n = controller.messages.length;
-                  return NotificationListener<ScrollUpdateNotification>(
-                    onNotification: (note) {
-                      if (note.dragDetails != null && streaming) {
-                        if ((note.scrollDelta ?? 0) < 0)
-                          controller.pauseStreamingFollow();
-                        else
-                          controller.resumeStreamingFollowIfNearBottom();
-                      }
-                      return false;
-                    },
-                    child: ListView.builder(
-                      controller: controller.scrollController,
-                      padding: const EdgeInsets.only(top: 8, bottom: 8),
-                      itemCount: n + (streaming ? 1 : 0),
-                      itemBuilder: (_, i) {
-                        if (i == n && streaming) {
-                          return _streamBubble(context, text, isDark);
-                        }
-                        return ChatBubble(message: controller.messages[i]);
-                      },
-                    ),
-                  );
+                  // Reading the name here is what registers the dependency, so
+                  // the swap happens on a model swap rather than only on the
+                  // first build. `ensureEncoderRoleFor` is a no-op when the
+                  // name has not changed, which keeps this to one JNI round
+                  // trip per load.
+                  _inference.loadedModelName.value;
+                  controller.ensureEncoderRoleFor(
+                      _inference.loadedModelName.value);
+                  // An encoder cannot chat. A BERT has no LM head, so the
+                  // message list would fill with whatever its output layer
+                  // produces and render it as a reply — measured on the Edge
+                  // 60, that is a number in (-1, 1) or a 384-float vector, and
+                  // either one in a bubble reads as a working model that is
+                  // broken. The console is what there is to run instead.
+                  //
+                  // It goes *above* the conversation rather than replacing it:
+                  // the chat stays whole, which is what makes the swap
+                  // reversible by eye — you can see that the transcript is
+                  // still there underneath and the model is the only thing that
+                  // changed. Replacing it would be a cleaner screenshot and a
+                  // worse instrument.
+                  if (_isEncoder) {
+                    // Read here, not inside `_encoderArea`: a LayoutBuilder's
+                    // builder runs during layout, after the `Obx` builder has
+                    // returned, so an observable read down there registers no
+                    // dependency and dragging the handle would move nothing.
+                    return _encoderArea(
+                      context,
+                      isDark,
+                      consoleFlex: controller.encoderConsoleFlex.value,
+                    );
+                  }
+                  return _messageList(context, isDark);
                 }),
               ),
               _inputBar(context, isDark),
             ],
           ),
           // The scroll-to-bottom control, above the input bar rather than on it.
-          //
           // This was the Scaffold's `floatingActionButton`, which anchors to the
           // bottom of the *body* — and the input bar is a child of the body, not
           // the Scaffold's `bottom:`, so the two landed on top of each other. It

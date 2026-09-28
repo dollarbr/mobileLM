@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart' show compute, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
+import 'package:llama_flutter_android/llama_flutter_android.dart'
+    show LlamaEncoder;
+
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -133,12 +136,174 @@ class ChatController extends GetxController {
   int _generationSerial = 0;
 
   @override
+  /// What the loaded local model is, as far as the chat is concerned:
+  /// 'embedding', 'reranker', 'classifier', or '' for a generation model.
+  ///
+  /// The chat cannot use an encoder — a BERT has no LM head, so a turn would
+  /// render whatever the output layer produces as if it were a reply. The view
+  /// reads this to swap in the console instead. It lives here rather than in the
+  /// view because the view is a `GetView` and cannot hold state, and because
+  /// the question is about the model, not about how the screen is arranged.
+  final encoderRole = ''.obs;
+
+  @override
   void onInit() {
     super.onInit();
     scrollController.addListener(_handleUserScroll);
     _scrollListenerAttached = true;
     loadSessions();
     _initSpeech();
+    // One round trip per model load, not per rebuild: reading the encoder
+    // surface inside the view's Obx would ask the JNI again on every frame the
+    // message list changes.
+    ever(Get.find<InferenceService>().loadedModelName,
+        (_) => refreshEncoderRole());
+    refreshEncoderRole();
+  }
+
+  /// How much of the message area the console takes when an encoder is loaded.
+  ///
+  /// One number for the whole arrangement, from `0` (conversation only) to
+  /// `encoderTotalFlex` (console only, maximized). One rather than a flex plus
+  /// a separate "open" flag, because the two were describing the same thing —
+  /// how much of the screen the console gets — in two places, and the flag had
+  /// to be kept in step with the flex by hand at every call site.
+  ///
+  /// It lives in the controller rather than the view because `ChatView` is a
+  /// `GetView`: its `build` is const and there is no `setState` to be called.
+  /// Measured in flex, not pixels, so the split survives rotation and the
+  /// keyboard; the drag handle converts a pixel delta with the real height, so
+  /// the ratio tracks the finger instead of jumping a notch per event.
+  ///
+  /// **Default is maximized**, and that is the measured choice rather than the
+  /// tidy one. An encoder has no LM head, so there is nothing to type at: the
+  /// conversation cannot be used with this model loaded at all, and every unit
+  /// it keeps is a unit the query field and the scores do not get. The
+  /// conversation is still one drag away, which is the part that matters — it
+  /// stays there, and you can see it is intact.
+  static const int encoderTotalFlex = 9;
+  final encoderConsoleFlex = encoderTotalFlex.obs;
+
+  /// The split restored when the console is maximized and then brought back.
+  ///
+  /// Remembered rather than a constant so that maximizing and restoring is a
+  /// round trip: the console goes full screen, you run something, you want the
+  /// transcript again, and it returns to the size you had set instead of a
+  /// fixed half that happens to be nothing like it.
+  final encoderSplitFlex = 5.obs;
+
+  /// Flips between maximized and the last split.
+  void toggleEncoderMaximized() {
+    final f = encoderConsoleFlex.value;
+    if (f >= encoderTotalFlex) {
+      encoderConsoleFlex.value = encoderSplitFlex.value;
+    } else {
+      // Only a real split is worth remembering; 0 means "conversation only"
+      // and saving that would restore a panel the user had just dismissed.
+      if (f > 0) encoderSplitFlex.value = f;
+      encoderConsoleFlex.value = encoderTotalFlex;
+    }
+  }
+
+  /// Sets the split, keeping the remembered value in step.
+  void setEncoderConsoleFlex(int flex) {
+    final f = flex.clamp(0, encoderTotalFlex);
+    if (f > 0 && f < encoderTotalFlex) encoderSplitFlex.value = f;
+    encoderConsoleFlex.value = f;
+  }
+
+  /// Re-reads the encoder surface of the loaded model.
+  ///
+  /// Any failure means the same thing to the chat — there is no encoder, so show
+  /// the conversation — so it is swallowed rather than surfaced. A generation
+  /// model, a LiteRT runtime and a model that is not loaded all throw here, and
+  /// none of them is an error worth interrupting the user over.
+  /// The model name the role was last asked about.
+  ///
+  /// The view calls [`ensureEncoderRoleFor`] from inside its `Obx`, which is
+  /// what makes the console appear on a model swap regardless of when this
+  /// controller was instantiated — and it is instantiated lazily, on the first
+  /// visit to the chat route, which can be long after or long before a model is
+  /// loaded. Relying on `onInit` alone meant the swap depended on that timing.
+  /// The memo keeps it to one round trip per load rather than one per rebuild.
+  String? _askedAbout;
+
+  /// Asks for the role, but only when the loaded model has actually changed.
+  ///
+  /// Deferred to a microtask, and that is not a style choice. This is called
+  /// from inside the view's `Obx` builder, and [refreshEncoderRole] writes
+  /// `encoderRole` before its first `await` on the "not a llama path" branch —
+  /// the observable that same `Obx` is tracking. Writing it there raised
+  /// `setState() or markNeedsBuild() called during build` on a real device load
+  /// and then a second `Build scheduled during frame` from the knock-on. A
+  /// microtask runs once the build phase has finished, which is early enough to
+  /// still be imperceptible and late enough to be legal.
+  void ensureEncoderRoleFor(String loadedName) {
+    if (_askedAbout == loadedName) return;
+    _askedAbout = loadedName;
+    scheduleMicrotask(refreshEncoderRole);
+  }
+
+  Future<void> refreshEncoderRole() async {
+    // `inference` is a local `Get.find` in the other methods here, not a field,
+    // so this does its own lookup rather than assuming one.
+    final inference = Get.find<InferenceService>();
+    if (!inference.isModelLoaded.value) {
+      encoderRole.value = '';
+      Get.find<AppLogService>().info('chat: no model loaded');
+      return;
+    }
+    // A load publishes `isModelLoaded` before `loadedModelRuntime` — measured on
+    // the Edge 60 as `loaded=true runtime=` 300 ms apart, twice in one session.
+    // Treating that window as "not a llama model" is wrong twice over: it names
+    // the wrong reason, and because the memo has already recorded this model
+    // name, no later call would ever retry. The name is forgotten so the next
+    // trigger asks again.
+    if (inference.loadedModelRuntime.value != 'llama') {
+      if (inference.loadedModelRuntime.value.isEmpty) {
+        _askedAbout = null;
+        return;
+      }
+      encoderRole.value = '';
+      Get.find<AppLogService>().info('chat: runtime is '
+          '${inference.loadedModelRuntime.value}, not llama');
+      return;
+    }
+    try {
+      // `LlamaEncoder.info()` engole `PlatformException` e `MissingPluginException`
+      // e devolve um `EncoderInfo` vazio em vez de lançar, então o `catch` logo
+      // abaixo quase nunca é o caminho do erro real: um canal ausente e um modelo
+      // de geração chegam aqui com a mesma cara. Por isso o log vem antes de
+      // qualquer decisão.
+      final info = await LlamaEncoder.info();
+      Get.find<AppLogService>().info('chat: encoder info is_encoder=${info.isEncoder} '
+          'pooling=${info.pooling} isReranker=${info.isReranker} '
+          'isEmbedding=${info.isEmbedding} arch=${info.archIsEncoder} '
+          'headless=${info.isHeadless}');
+      if (info.isHeadless) {
+        // Reported rather than swallowed. An encoder architecture whose
+        // conversion carries neither a classification head nor a pooling type
+        // has no output at all, and used to be reported as `is_encoder: false`
+        // — the chat fell back to the conversation and there was nothing
+        // anywhere on screen to say why. The file is a bare body; a name for it
+        // is worth more than silence.
+        encoderRole.value = 'headless';
+      } else if (!info.isEncoder) {
+        encoderRole.value = '';
+      } else if (info.isClassifier) {
+        encoderRole.value = 'classifier';
+      } else if (info.isReranker) {
+        encoderRole.value = 'reranker';
+      } else if (info.isEmbedding) {
+        encoderRole.value = 'embedding';
+      } else {
+        encoderRole.value = 'encoder';
+      }
+    } on Object catch (e) {
+      Get.find<AppLogService>().error('chat: encoder info failed',
+          details: '$e');
+      encoderRole.value = '';
+    }
   }
 
   Future<void> _initSpeech() async {
