@@ -242,8 +242,26 @@ class OpenAiServerService {
       // pooled hidden state — a value in (-1, 1) that orders plausibly and is
       // not a score. Refusing it here, by name, is the whole point.
       if (info.archIsEncoder) {
+        // `$wanted` is the endpoint name — 'embeddings', 'rerank', 'classify' —
+        // and interpolating it produced "cannot produce a embeddings score" and
+        // "a classify score", which is the kind of near-English that reads as a
+        // typo and makes the caller doubt the rest of the message. The message
+        // is the only thing this endpoint has to say on this path, so it has to
+        // be right.
+        //
+        // The article is part of the data, not a prefix. Fixing only the noun
+        // turned "a embeddings" into "a embedding", which is the same mistake
+        // one word later: `embedding` takes "an". Only `relevance` and
+        // `classification` are singular enough to need no article at all, so all
+        // three are written out whole.
+        const phrase = {
+          'embeddings': 'an embedding',
+          'rerank': 'a relevance',
+          'classify': 'a classification',
+        };
         return 'The loaded model is an encoder whose GGUF has no classification '
-            'head, so it cannot produce a $wanted score: the conversion kept no '
+            'head, so it cannot produce '
+            '${phrase[wanted] ?? 'a $wanted'} score: the conversion kept no '
             'cls.output.* tensor, which is where the logit would come from. '
             'llama.cpp would return one float of a pooled hidden state instead '
             '— a number in (-1, 1) that ranks plausibly and means nothing. Load '
