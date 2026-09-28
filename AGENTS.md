@@ -6,10 +6,53 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.3.5+2005**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.4.0+2006**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
-servidor OpenAI compatível + cloud models com auto-detect de contexto/capabilidades.
+servidor OpenAI compatível + **encoders (embeddings/rerank/classify, BERT e
+ModernBERT)** + cloud models com auto-detect de contexto/capabilidades.
+
+## Encoders — o que a 0.4.0 trouxe (leia antes de mexer)
+
+Dez encoders no catálogo (7 rerankers, 3 embedders), served por
+`/v1/embeddings`, `/v1/rerank` e `/v1/classify`. As regras que custaram tempo
+para achar, todas medidas:
+
+- **O papel vem do campo `role` da entrada do catálogo, nunca do nome do
+  arquivo.** Um nome não carrega arquitetura — `bge-small-en-v1.5` já foi
+  identificado como classificador uma vez porque algo leu o nome e adivinhou.
+- **Arch válida E cabeça de classificação é o que carrega**, nunca um dos dois
+  sozinhos. `gte-multilingual-reranker-base` tem a cabeça `[768]` perfeita e
+  arch `new`, que não despacha em `llama-graph.cpp:3722-3757`. A lista de archs
+  é **veto**, não condição: deixar um bom modelo de fora é seguro.
+- **`relevance_score` é o logit cru e não muda.** É o contrato medido (spread
+  2,0698, NDCG@10 0,9981) e o console lê o campo. A probabilidade entrou como
+  `relevance_score_probability` ao lado.
+- **`is_encoder` continua sendo `pooling != NONE` e não deve ser mexido.** Era
+  exatamente esse o motivo pelo qual o jina sumia: arch válida, pooling `NONE`,
+  `is_encoder: false`, nenhuma palavra na tela. Mudá-lo faria o servidor mentir
+  que um modelo que embeda perfeitamente é encoder. O novo `isHeadless` (arch é
+  encoder **e** pooling é NONE) é só para relatar.
+- **`config.json` no HF é pre-flight, não reparo:** descreve forma e intenção,
+  nunca peso. `general.tags` apareceu em 1 de 4 arquivos medidos.
+- **`Column` com `mainAxisSize: max` como filho direto de `ListView`** lança em
+  layout e leva a lista inteira, não só a linha. Já foi paid for em três
+  lugares.
+- **`ListTile` com `onTap` dentro de um `Container` decorado** levanta um
+  `debugAssert` que **leva a lista inteira da tela**, sem exceção legível no log
+  e com a app bar de cima funcionando. Use `Material`. Isso custou 8 builds e
+  está fixado em `test/material_scaffold_test.dart` — leia o teste antes de
+  criar um tile novo.
+- **O catálogo de encoders é lido uma vez no boot** (`ModelController.onInit`) e
+  as listas por papel guardam as **mesmas instâncias** que vão para
+  `availableModels`. Filtrar o catálogo dentro do `build` aloca 10 objetos por
+  frame.
+- **Laya e OpenJev estão fora, com dados** — ver a seção 0.4.0 em
+  [`docs/suggestions.md`](docs/suggestions.md). A 0.4.1 é TFLite do
+  `litert-community`, e o APK **não** tem interpretador TFLite hoje.
+
+Medido no Edge 60 com `gte-reranker-modernbert-base` (Q8_0): **111 ms por par**,
+NDCG@10 **0,9981**, logits −0,1463 a +1,9235, sigmoid 0,4635–0,8725.
 
 ## Regras herdadas (aprendidas nas sessões anteriores)
 
@@ -77,7 +120,7 @@ Dark-first, accent Volt `#B9F53E`, Pulse `#8B7CFF` com parcimônia.
 ```bash
 cd mobileLM-app
 flutter pub get
-flutter analyze --no-fatal-infos --no-fatal-warnings   # 88 issues pre-existentes, 0 erros
+flutter analyze --no-fatal-infos --no-fatal-warnings   # 92 issues pre-existentes, 0 erros
 flutter test                                           # único arquivo: flutter test test/x_test.dart
 ./tool/jni-syntax.sh                                   # sintaxe do JNI, ~8 s
 flutter run --debug
@@ -113,10 +156,19 @@ dependa dela.
 **Minor = feature, patch = conteúdo.** Um catálogo maior não é feature. Antes de subir um
 minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é patch.
 
-`0.4.0` está reservado para o **suporte a embeddings, rerank e classificação**
-(BERT/ModernBERT, servidos pelo `openai_server_service`): modelos que hoje não rodam
-nada no app. A frase é "isto faz X, que antes não existia" de verdade — Laya e OpenJev
-são `text-classification`, e o servidor local não tem como executá-los.
+`0.4.0` foi o **suporte a embeddings, rerank e classificação** (BERT/ModernBERT,
+servidos pelo `openai_server_service`): modelos que até 0.3.5 não rodavam nada no
+app. A frase "isto faz X, que antes não existia" saiu verdadeira — os três
+endpoints não existiam, e `/v1/classify` continua sem nenhum modelo do catálogo
+usando, porque os classificadores queexists não são GGUF carregável (ver a seção
+Encoders acima e a 0.4.0 em [`docs/suggestions.md`](docs/suggestions.md)).
+
+**A `0.4.1` é o classificador de verdade, e a rota é TFLite.** Laya
+(`litert-community/Laya-English-LiteRT`) vem como `.tflite`, não como GGUF, e o
+APK **não tem interpretador TFLite** — `liblitertlm_jni.so` é LiteRT-LM
+generativo e não serve. Isso é a primeira coisa a resolver, e é por isso que
+`/v1/classify` foi landado agora sem modelo atrás: o endpoint é o contrato, o
+modelo vem na 0.4.1.
 
 Todo commit em mobileLM-app deve ser **documentado** (pedido explícito do usuário) —
 diferente do resto do workspace, onde commit só ocorre se pedido.
@@ -139,12 +191,26 @@ barato de notar uma exclusão de `packagingOptions` ou um filtro de ABI — foi 
 que os 37,2 MB do `liblitert-lm.so` ficaram visíveis por semanas.
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.3.5+2005` → tag `0.3.5`. O workflow falha de propósito se divergirem.
+`+build`: `0.4.0+2006` → tag `0.4.0`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.3.5` (botão de ir para o final acima do de enviar, em vez de sobre ele; núcleo híbrido Rust removido do APK, −37,2 MB; tok/s medido de ponta a ponta em vez de contar a rajada final).
+Release tags publicadas: `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.4.0` (encoders: `/v1/embeddings`, `/v1/rerank` e `/v1/classify`; 10 encoders no catálogo; console de encoder; parâmetros por papel; `config.json` como pre-flight no HF).
+
+**A `0.3.5` foi preparada e nunca publicada.** O commit existe
+(`ffd30471b`), o pubspec chegou a `0.3.5+2005` e este guia dizia que ela estava
+publicada — mas a tag nunca foi para o remoto e não há release. O último APK
+publicado é o da `0.3.4`, medido com `aapt2 dump badging`:
+`versionCode='4004'`. O conteúdo da 0.3.5 (botão de ir para o final, núcleo
+híbrido Rust removido do APK, tok/s de ponta a ponta) **entra na `0.4.0`**, e é
+por isso que o número pulou de `+2004` para `+2006`: 4005 foi reservado e nunca
+usado, e um build number pulado é inofensivo desde que o publicado só cresça.
+
+Isso está escrito aqui porque é exatamente o modo de falha que este guia descreve
+em cima: uma versão repetida em três lugares em prosa, uma delas errada, e nada
+no repositório que reclame. Confirme sempre com `gh release list` antes de
+descrever uma release como publicada.
 
 **0.3.4 é a primeira release assinada com a chave do projeto** (`CN=dollarbr`, SHA-256
 `1cd43cb7…`). Quem instalou uma das anteriores precisa **desinstalar** antes — o Android
@@ -166,11 +232,11 @@ sobrescreve o versionCode por ABI (`FlutterPlugin.kt`,
 APKs de ABIs diferentes possam coexistir. Os índices estão em
 `FlutterPluginConstants.ABI_VERSION`:
 
-| ABI | índice | `0.3.5+2005` sai como |
+| ABI | índice | `0.4.0+2006` sai como |
 |---|---|---|
-| `armeabi-v7a` | 1 | 3005 |
-| `arm64-v8a` | **2** | **4005** |
-| `x86_64` | 4 (o 3 foi reservado e removido) | 6005 |
+| `armeabi-v7a` | 1 | 3006 |
+| `arm64-v8a` | **2** | **4006** |
+| `x86_64` | 4 (o 3 foi reservado e removido) | 6006 |
 
 O APK arm64 da 0.3.5 tem `versionCode='4005'`, medido com `aapt2 dump badging` —
 `2 * 1000 + 2005`. Sem `--split-per-abi` o override não se aplica e o versionCode é
@@ -179,9 +245,10 @@ build number e a 0.3.4 não bate. **Não compare pubspec com `dumpsys` sem essa 
 
 Regra prática: o que precisa crescer é o **publicado**. Os publicados até 0.3.3
 foram 2002, 2003, 2001, 2001, 2001, 2001, 2001 — ad-hoc, e 0.2.1 (2001) é *menor*
-que 0.2.0 (2003), uma regressão. A 0.3.5 usa `+2005` e publica 4005, bem acima do
-maior de todos. Daqui em diante: bump de release ⇒ build number tal que
-`build + 2000` fique acima do publicado anterior, senão o update falha com
+que 0.2.0 (2003), uma regressão. O maior publicado é **4004** (0.3.4, medido), e
+a 0.4.0 usa `+2006` e publica 4006 — pulando o 4005 da 0.3.5 que nunca saiu. Daqui
+em diante: bump de release ⇒ build number tal que `build + 2000` fique acima do
+publicado anterior, senão o update falha com
 `INSTALL_FAILED_VERSION_DOWNGRADE`.
 
 **O núcleo híbrido Rust saiu do APK em 0.3.5.** O código continua na branch

@@ -1,7 +1,7 @@
 # Sugestões de Funcionalidades — mobileLM-app
 
-**Data:** 2026-09-23  
-**Versão atual:** 0.3.5+2005  
+**Data:** 2026-09-28  
+**Versão atual:** 0.4.0+2006  
 **Engine:** GGUF + LiteRT-LM 0.17.1 · Cloud + Agente multi-passo
 
 ---
@@ -36,7 +36,10 @@
 
 ---
 
-## ✅ Features completadas na versão 0.3.5
+## ✅ Features completadas na versão 0.3.5 — **preparadas, nunca publicadas**
+
+A 0.3.5 chegou a ter commit (`ffd30471b`) e `pubspec` em `0.3.5+2005`, mas a tag
+não foi para o remoto e não existe release. **Estes três itens entram na 0.4.0.**
 
 | Feature | Status | Arquivo principal |
 |---|---|---|
@@ -46,40 +49,45 @@
 
 ---
 
-## 🟠 O que a 0.4.0 vai ser
+## ✅ Features completadas na versão 0.4.0
 
-Embeddings, rerank e classificação — modelos BERT/ModernBERT, servidos pelo
-`openai_server_service`. É a primeira feature desde 0.3.1 que muda o que o usuário
-consegue rodar, e a frase "isto faz X, que antes não existia" sai verdadeira.
+| Feature | Status | Arquivo principal |
+|---|---|---|
+| `/v1/embeddings` no servidor local | ✅ Feito | `openai_server_service_io.dart` — endpoint OpenAI de verdade, com `max_input_tokens` publicado em `capabilities` |
+| `/v1/rerank` (formato Cohere/Jina) | ✅ Feito | `openai_server_service_io.dart` — `relevance_score` cru + `relevance_score_probability` ao lado |
+| `/v1/classify` | ✅ Feito | `openai_server_service_io.dart` — caminho pronto; nenhum modelo do catálogo o usa ainda |
+| Caminho de encoder no JNI | ✅ Feito | `jni_wrapper.cpp` — `nativeEncoderInfo`, `nativeEncode`, `arch_is_encoder`, cabeça de classificação, pooling inferido, `gguf_read_facts` |
+| Submenu de encoders em Modelos | ✅ Feito | `model_view.dart` + `model_controller.dart` — 10 encoders, 7 rerankers, papel vindo do catálogo |
+| Console de encoder no chat | ✅ Feito | `encoder_console.dart` — 5 templates, barra de relevância relativa, painel `headless`, maximizável |
+| Parâmetros por papel em Configurações | ✅ Feito | `encoder_parameters_panel.dart` + `encoder_settings_service.dart` — colunas detectado/override, `auto`/`on`/`off`, teto só pode baixar |
+| Triagem de GGUF reproduzível | ✅ Feito | `tool/gguf-screen.py` — range request de 24 MB, sem decodificar arrays, lista de archs lida do llama.cpp vendorizado |
+| `config.json` como pre-flight no HF | ✅ Feito | `hf_search_service.dart` (`HfConfig`) + `hf_search_sheet.dart` — veredito de três vias, nunca garante peso |
+| Texto e parâmetros de texto em grupos separados | ✅ Feito | `settings_view.dart` — antes era um card colapsável dentro de outro |
+| Servidor cai junto com o modelo | ✅ Feito | `model_controller.dart` — `capabilities` não responde mais `running: true` sem modelo |
 
-O llama.cpp vendorizado já tem o caminho inteiro, declarado e compilado:
-`llama_encode` (`llama-context.cpp:4315`), `llama_model_n_cls_out`,
-`llama_model_cls_label` e `LLAMA_POOLING_TYPE_RANK`. E **sete** famílias de encoder
-além do ModernBERT: `bert`, `jina-bert-v2`, `jina-bert-v3`, `nomic-bert`,
-`neo-bert`, `eurobert`, mais `llama-embed`, `gemma-embedding` e `pangu-embed`.
+Medido no Edge 60 com `gte-reranker-modernbert-base` (Q8_0): **111 ms por par**,
+NDCG@10 **0,9981**, logits de −0,1463 a +1,9235 (spread 2,0698), sigmoid
+0,4635–0,8725.
 
-Endpoints a adicionar no servidor local (porta 8080), que hoje só tem `/v1/models`,
-`/v1/server/capabilities`, `/v1/chat/completions` e `/v1/completions`:
+**O que a triagem deixou de fora, e por quê.** Isto foi medido e é a parte que
+evita a 0.4.1 de repetir o trabalho:
 
-- `/v1/embeddings` — é um endpoint OpenAI de verdade, e falta
-- `/v1/rerank` — formato Cohere/Jina
-- `/v1/classify` — para o caso Laya
+- **Laya** — `general.architecture = "ggmlc"`, que não está nos 152 nomes do
+  llama.cpp vendorizado, e zero tensores `cls.*` em 153. A cabeça existe mas está
+  em `ggmlc.graph_spec` com 5 inputs e 64 tensores (`act_head.0 [256, 1028]`,
+  `act_head.2 [2, 256]`, `scorer.3 [1, 1024]`) — estruturalmente incompatível com
+  o `mul_mat` de um vetor que `llama-graph.cpp:3722-3757` faz. Não é um bug de
+  conversão, é outro modelo.
+- **OpenJev** — Q8_0 tem 28,6 GB. Não é catalogue entry num telefone.
+- **`gte-multilingual-reranker-base`** — tem a cabeça `[768]` perfeita e arch `new`,
+  que não despacha. Arch válida **e** cabeça é o que carrega, nunca um dos dois.
+- **Jina v1-tiny / v1-turbo, `lb-reranker-0.5B` (arch `qwen2`)** — pooling `NONE`
+  sem cabeça de ranking; embeddam, não rerankeam.
 
-Laya e OpenJev são `text-classification` (`ggmlc` / `modernbert`,
-`non-autoregressive`, 322M): são classificadores de decisão, não modelos de chat, e
-não vão ser. São a prova de que o caminho funciona, não o destino dele.
-
-Tamanhos verificados por `content-length` em 2026-09-28:
-
-| arquivo | bytes |
-|---|---|
-| `laya_english_ud_q4_k_m.gguf` | 419.907.712 |
-| `laya_english_q8_0.gguf` | 451.505.440 |
-| `laya_english_f16.gguf` | 846.137.888 |
-
-O teste mais barato no aparelho **não é o Laya**: é
-`unsloth/bge-small-en-v1.5-GGUF`, 33M em vez de 322M, e a saída é um vetor que se
-confere — dimensão e não-zero. Um classificador não se confere sem rótulo.
+`litert-community/Laya-English-LiteRT` traz TFLite pronto
+(`laya_en_act_head_fp32.tflite`, `HOST_CONTRACT.md`) e é a rota da 0.4.1 — o APK
+**não** tem interpretador TFLite hoje, só `liblitertlm_jni.so`, que é LiteRT-LM
+generativo.
 
 ---
 
