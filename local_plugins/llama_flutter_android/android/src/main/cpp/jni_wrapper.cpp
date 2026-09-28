@@ -183,6 +183,83 @@ static bool model_declared_pooling(const llama_model* model, enum llama_pooling_
     return false;
 }
 
+// Encoder architectures, for the case where the GGUF does not say what it is.
+//
+// `jina-bert-v2`, `bert`, `modern-bert`, `nomic-bert`, `neo-bert` and
+// `eurobert` are all encoder-only: they cannot generate, and they exist to be
+// pooled. `jina-reranker-v1-tiny-en`, measured on the Edge 60, declares
+// **no** `<arch>.pooling_type` at all — llama.cpp then falls back to
+// `LLAMA_POOLING_TYPE_NONE` (llama-context.cpp:216) and an embedding model with
+// no declared pooling would silently stop working.
+//
+// The architectures are listed here rather than guessed, because this is the one
+// place a wrong guess is invisible: ask a causal model to pool and it returns
+// something plausible. The list is the set of encoder-only architectures in
+// `llama-arch.cpp`, so it is a maintenance obligation — a new encoder family
+// needs a line here — and that is why the log says which branch decided.
+static bool arch_is_encoder(const llama_model* model) {
+    // `general.architecture` straight out of the metadata, which is the
+    // canonical spelling (`llama-arch.cpp:166`). Not `llama_model_desc`: that
+    // returns a human sentence built for a model card, and matching a prefix of
+    // an English phrase is a way to be wrong in two languages.
+    char arch[128] = {0};
+    const int32_t n =
+        llama_model_meta_val_str(model, "general.architecture", arch, sizeof(arch) - 1);
+    if (n <= 0) return false;
+    const std::string a(arch);
+
+    static const char* kEncoders[] = {
+        "bert", "modernbert", "jina-bert-v2", "jina-bert-v3",
+        "nomic-bert", "neo-bert", "eurobert",
+    };
+    for (const char* e : kEncoders) {
+        if (a == e) return true;
+    }
+    return false;
+}
+
+// Whether a pooling type can be *inferred* for a model that declares none.
+//
+// A reranker is the one case worth inferring, and it is inferred as RANK because
+// that is what the architecture is for. llama.cpp's own `--rerank` flag does the
+// same thing (common/arg.cpp:3484: `params.embedding = true; params.pooling_type
+// = LLAMA_POOLING_TYPE_RANK`), and the guard below is theirs, not mine — the
+// same three things common.cpp:1483 requires before it will rerank: a BOS, and
+// then either an EOS, a SEP, or a `rerank` chat template. A vocab with none of
+// those has no way to express a document/query boundary, so a score over it
+// would be a number about nothing.
+//
+// Returning false leaves the model as a generation model, which is the safe
+// direction: it stays usable for chat, and `/v1/embeddings` refuses with a
+// message instead of returning a wrong vector.
+static bool infer_pooling(const llama_model* model, enum llama_pooling_type& out) {
+    out = LLAMA_POOLING_TYPE_NONE;
+    if (!arch_is_encoder(model)) return false;
+
+    const llama_vocab* vocab = llama_model_get_vocab(model);
+    if (!vocab) return false;
+
+    const bool has_bos = llama_vocab_bos(vocab) != LLAMA_TOKEN_NULL;
+    const bool has_eos = llama_vocab_eos(vocab) != LLAMA_TOKEN_NULL;
+    const bool has_sep = llama_vocab_sep(vocab) != LLAMA_TOKEN_NULL;
+    const bool has_rerank_prompt = llama_model_chat_template(model, "rerank") != nullptr;
+    if (!has_bos || (!has_eos && !has_sep && !has_rerank_prompt)) {
+        LOGE("Encoder architecture with no pooling_type and no usable boundary "
+             "(bos=%d eos=%d sep=%d rerank_prompt=%d); leaving it as a generation model",
+             (int) has_bos, (int) has_eos, (int) has_sep, (int) has_rerank_prompt);
+        return false;
+    }
+
+    // A declared class count is the file saying "I have a classification head".
+    // jina-reranker-tiny reports 0, and it *is* a reranker, so that is not the
+    // signal; architecture plus a boundary is. n_cls_out is read afterwards by
+    // pooled_output_len, which is where it actually belongs.
+    out = LLAMA_POOLING_TYPE_RANK;
+    LOGI("No <arch>.pooling_type in the GGUF, but the architecture is an encoder "
+         "with a usable boundary; treating it as a reranker (RANK)");
+    return true;
+}
+
 static const char* pooling_name(enum llama_pooling_type p) {
     switch (p) {
         case LLAMA_POOLING_TYPE_NONE: return "none";
@@ -598,7 +675,14 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     //   worth sending, and an encoder uses no KV cache, so a large ubatch costs
     //   activation memory and not a growing cache.
     enum llama_pooling_type pooling = LLAMA_POOLING_TYPE_NONE;
-    const bool is_encoder = model_declared_pooling(g_model, pooling);
+    bool is_encoder = model_declared_pooling(g_model, pooling);
+    if (!is_encoder) {
+        // The GGUF says nothing. For an encoder architecture that is a gap in
+        // the file, not an absence of the capability — see infer_pooling. The
+        // declared path stays first, so a model that knows what it is is never
+        // second-guessed.
+        is_encoder = infer_pooling(g_model, pooling);
+    }
     if (is_encoder) {
         ctx_params.embeddings   = true;
         ctx_params.pooling_type = pooling;
@@ -1463,11 +1547,17 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
     // and llama_pooling_type is a field read — the lock is free here.
     enum llama_pooling_type pooling;
     uint32_t n_cls;
+    bool inferred = false;
     {
         std::lock_guard<std::mutex> ctx_lock(g_ctx_mutex);
         pooling = llama_pooling_type(g_ctx);
         n_cls = llama_model_n_cls_out(g_model);
     }
+    // Reported, because "this model was inferred to be a reranker" is a claim a
+    // caller may want to distrust, and `pooling: rank` on its own does not say
+    // whether the file said so or we concluded it.
+    enum llama_pooling_type declared = LLAMA_POOLING_TYPE_NONE;
+    inferred = !model_declared_pooling(g_model, declared) && pooling != LLAMA_POOLING_TYPE_NONE;
 
     std::string labels;
     for (uint32_t i = 0; i < n_cls; i++) {
@@ -1483,12 +1573,13 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
     char out[1024] = {0};
     snprintf(out, sizeof(out),
              "{\"is_encoder\":%s,\"pooling\":\"%s\",\"n_cls_out\":%u,"
-             "\"n_embd_out\":%d,\"output_len\":%d,\"labels\":[%s]}",
+             "\"n_embd_out\":%d,\"output_len\":%d,\"inferred_pooling\":%s,\"labels\":[%s]}",
              (pooling != LLAMA_POOLING_TYPE_NONE) ? "true" : "false",
              pooling_name(pooling),
              (unsigned) n_cls,
              llama_model_n_embd_out(g_model),
              pooled_output_len(g_model, pooling),
+             inferred ? "true" : "false",
              labels.c_str());
 
     return env->NewStringUTF(sanitizeUTF8(out, strlen(out)).c_str());

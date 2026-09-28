@@ -51,6 +51,7 @@ class LlamaEncoder {
         nClsOut: (json['n_cls_out'] as num?)?.toInt() ?? 0,
         nEmbdOut: (json['n_embd_out'] as num?)?.toInt() ?? 0,
         outputLength: (json['output_len'] as num?)?.toInt() ?? 0,
+        inferredPooling: json['inferred_pooling'] == true,
         labels:
             (json['labels'] as List?)?.map((e) => '$e').toList() ??
                 const <String>[],
@@ -105,6 +106,7 @@ class EncoderInfo {
     this.nClsOut = 0,
     this.nEmbdOut = 0,
     this.outputLength = 0,
+    this.inferredPooling = false,
     this.labels = const <String>[],
   });
 
@@ -126,6 +128,16 @@ class EncoderInfo {
 
   /// Class labels, when the GGUF carries them. Empty for a reranker.
   final List<String> labels;
+
+  /// True when [pooling] was concluded rather than read.
+  ///
+  /// A `jina-reranker-v1-tiny-en` declares no `<arch>.pooling_type` at all, and
+  /// llama.cpp then falls back to `NONE` — the model loads, answers `/v1/chat`,
+  /// and never pools anything. The native side infers `RANK` for encoder
+  /// architectures with a usable document/query boundary, which is what
+  /// llama.cpp's own `--rerank` does. This flag is how a caller learns that
+  /// happened, so `pooling: rank` is not read as the file having said so.
+  final bool inferredPooling;
 
   /// A model that emits one score per class.
   ///

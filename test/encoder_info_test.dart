@@ -9,6 +9,31 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 /// reports: `n_cls_out` is 0 for an embedding model, 1 for a reranker (a
 /// relevance score, no labels) and >1 for a classifier with a label per class.
 void main() {
+  group('inferred pooling', () {
+    test('defaults to false, so "the file said so" is the default reading', () {
+      const info = EncoderInfo(isEncoder: true, pooling: 'rank', nClsOut: 1);
+      expect(info.inferredPooling, isFalse);
+      expect(info.isReranker, isTrue);
+    });
+
+    test('an inferred reranker is still a reranker, and says so', () {
+      // What jina-reranker-v1-tiny-en produces on the device: no pooling_type in
+      // the GGUF, llama.cpp falls back to NONE, and the native side infers RANK
+      // from the architecture plus a usable boundary. The classification is
+      // unaffected; what the flag adds is that a caller can tell the difference.
+      const info = EncoderInfo(
+        isEncoder: true,
+        pooling: 'rank',
+        nClsOut: 1,
+        nEmbdOut: 384,
+        outputLength: 1,
+        inferredPooling: true,
+      );
+      expect(info.isReranker, isTrue);
+      expect(info.inferredPooling, isTrue);
+    });
+  });
+
   group('EncoderInfo classification', () {
     test('a generation model is not an encoder', () {
       const info = EncoderInfo();
