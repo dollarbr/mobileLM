@@ -15,6 +15,7 @@ import '../services/app_log_service.dart';
 import '../services/device_info_service.dart';
 import '../models/ai_model.dart';
 import '../core/constants.dart';
+import 'server_controller.dart';
 import 'settings_controller.dart';
 
 enum _ModelLoadAction { cancel, unload, continueLoad }
@@ -707,6 +708,7 @@ class ModelController extends GetxController {
       // asking for embeddings would get a model that is no longer on disk.
       // Routed through `unloadModel` rather than repeating the order — the
       // local image model is a different file and is left alone either way.
+      await _stopServerForMissingModel();
       await _inference.unloadModel();
     }
   }
@@ -2036,8 +2038,37 @@ class ModelController extends GetxController {
   final curatedEmbedders = <AiModel>[].obs;
 
   Future<void> unloadModel() async {
+    await _stopServerForMissingModel();
     await _inference.unloadModel();
     await _localImage.unloadModel();
+  }
+
+  /// Takes the API server down when the model it serves is going away.
+  ///
+  /// The server is a view of one loaded model, not of the app: every handler
+  /// does `Get.find<InferenceService>()` per request, so the moment the engine
+  /// is disposed the endpoints stop being a degraded service and start
+  /// answering 200 with nothing behind them. `capabilities` in particular still
+  /// reported `running: true` with an empty model, which reads as a server
+  /// that is fine.
+  ///
+  /// This is here and not in `InferenceService.unloadModel` because that
+  /// method also runs as the first step of every *load* — it disposes the old
+  /// engine to make room for the new one. Stopping the server there would kill
+  /// it on every model load, including reloading the same one, and the user
+  /// would have to start it again each time. The distinction is the caller's
+  /// intent: an explicit unload leaves no model, a swap never does.
+  Future<void> _stopServerForMissingModel() async {
+    if (!Get.isRegistered<ServerController>()) return;
+    final server = Get.find<ServerController>();
+    if (!server.isRunning.value) return;
+    await server.stopServer();
+    Get.snackbar(
+      'API server stopped',
+      'It serves the model that was just unloaded.',
+      snackPosition: SnackPosition.BOTTOM,
+      duration: const Duration(seconds: 3),
+    );
   }
 
   Future<void> importModelFromStorage() async {
