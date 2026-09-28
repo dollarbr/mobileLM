@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 /// One repository as it comes back from a Hugging Face search.
@@ -159,6 +161,109 @@ bool isQuantizationAware(String text) {
 /// nothing but merge suffixes and model names, so they stay out — a filter
 /// that returns noise is worse than one that misses.
 const _quantAwareMarkers = {'qat', 'qad', 'qaft'};
+
+/// What a repo's upstream checkpoint says it is, from its `config.json`.
+///
+/// The point of this is to be read *before* a GGUF is downloaded, which is the
+/// only moment advice is worth anything. Everything here is a claim about the
+/// checkpoint; whether a particular conversion delivered it is a separate
+/// question, answered by reading the GGUF's own header — and the two disagree
+/// often enough that neither can stand in for the other.
+class HfConfig {
+  const HfConfig({
+    required this.repoId,
+    required this.architectures,
+    required this.modelType,
+    required this.embPooler,
+    required this.labels,
+  });
+
+  final String repoId;
+  final List<String> architectures;
+  final String modelType;
+  final String embPooler;
+  final List<String> labels;
+
+  /// Whether the checkpoint declares a classification head.
+  ///
+  /// Keyed on the `...ForSequenceClassification` suffix, which is how
+  /// transformers names every classifier head — measured across the four repos
+  /// that matter here: `gte-reranker-modernbert-base` declares
+  /// `ModernBertForSequenceClassification` and does work; `bge-small-en-v1.5`
+  /// declares `BertModel` and embeds; `jina-reranker-v1-tiny-en` declares
+  /// `JinaBertModel` and is the headless case. Note the caveat that has to
+  /// travel with this: `bge-small` carries `id2label: {"0": "LABEL_0"}` and is
+  /// emphatically not a classifier, so a label set alone decides nothing — which
+  /// is the same trap `EncoderInfo.isClassifier` has to avoid in Dart.
+  bool get declaresClassificationHead => architectures.any(
+      (a) => a.endsWith('ForSequenceClassification') || a.endsWith('ForTokenClassification'));
+
+  /// Whether the checkpoint declares a language-modelling head.
+  bool get declaresLmHead => architectures.any((a) =>
+      a.endsWith('ForCausalLM') ||
+      a.endsWith('ForConditionalGeneration') ||
+      a.endsWith('ForMaskedLM') ||
+      a.endsWith('ForSeq2SeqLM'));
+
+  /// Pooling as a llama.cpp value, or null when the file says nothing usable.
+  ///
+  /// `mean` is the one the jina and its base both declare, and it is trained
+  /// metadata rather than a guess. Null when absent, because a BERT's default is
+  /// CLS and inferring `mean` from a missing key would be exactly the kind of
+  /// confident wrong answer this whole path is trying to avoid.
+  int? get poolingType {
+    switch (embPooler) {
+      case 'mean':
+        return 1; // LLAMA_POOLING_TYPE_MEAN
+      case 'cls':
+        return 2; // LLAMA_POOLING_TYPE_CLS
+      case 'last':
+        return 3; // LLAMA_POOLING_TYPE_LAST
+      default:
+        return null;
+    }
+  }
+
+  /// The caveat that has to travel with [poolingType].
+  ///
+  /// `emb_pooler` describes pooling a *sequence* into a vector, which is what an
+  /// embedding model does. A cross-encoder does not pool — it scores a pair —
+  /// and the field is inherited from the base checkpoint, so on a reranker it
+  /// describes the model it was built from and not the scoring. Read alone it
+  /// would turn the headless jina into an embedder. Gated on the head for that
+  /// reason, and the GTE gets the benefit: its own GGUF declares no
+  /// `<arch>.pooling_type` at all, so trained metadata from the checkpoint is
+  /// the only pooling that file ever states.
+  String get ggufPoolingNote =>
+      declaresClassificationHead
+          ? 'A GGUF that kept the head can use it.'
+          : 'Not usable for this checkpoint: a cross-encoder does not pool, and '
+              'without a head there is no score either, so this file would '
+              'produce nothing.';
+
+  /// One sentence for a person deciding whether to spend the download.
+  String get verdict {
+    if (architectures.isEmpty) {
+      return 'The checkpoint does not declare an architecture, so this file '
+          'cannot be judged before it is downloaded.';
+    }
+    if (declaresClassificationHead) {
+      return 'The checkpoint declares a classification head '
+          '(${architectures.join(', ')}), so a conversion of it can score a '
+          'query against a document. Whether this particular GGUF kept the head '
+          'is only knowable from the file itself.';
+    }
+    if (declaresLmHead) {
+      return 'The checkpoint declares a language-modelling head '
+          '(${architectures.join(', ')}). It can chat; it has no reranker head, '
+          'so a conversion of it will only embed.';
+    }
+    return 'The checkpoint is a base model '
+        '(${architectures.join(', ')}) — no classification head and no LM '
+        'head. A GGUF converted from it will load and produce nothing, which is '
+        'exactly what jina-reranker-v1-tiny-en does.';
+  }
+}
 
 /// The Hugging Face facets this app can act on, as one value.
 ///
@@ -376,6 +481,56 @@ class HfSearchService {
   /// one file per model and cannot reassemble a set. So are LiteRT builds
   /// compiled for another vendor's accelerator, which would download fine and
   /// then fail to load.
+  /// The upstream checkpoint's `config.json`, as far as this app can use it.
+  ///
+  /// Fetches the checkpoint's own description so a GGUF can be judged *before*
+  /// it is downloaded. The measured case is `jina-reranker-v1-tiny-en`: its GGUF
+  /// is 36 MB, loads in half a second, and cannot do anything — the conversion
+  /// put the head at `cls.weight` where llama.cpp looks for `cls.output` and
+  /// dropped the `pooler.dense` it was trained against. Its `config.json` says
+  /// `architectures: ["JinaBertModel"]`, which is the same fact in one field:
+  /// a base model, not a `...ForSequenceClassification`. Reading that costs
+  /// 1 kB instead of 36 MB and a download.
+  ///
+  /// What it cannot do is add a tensor. `config.json` carries shapes and intent,
+  /// never weights: it says one logit should exist, which says what to *allocate*
+  /// and not what to *put in it*. The `tool/gguf-inject-head.py` experiment is
+  /// the proof — it allocated `[768]` from the shape and produced 40+ measurements
+  /// stuck in (-1, 1). This is a pre-flight, not a repair.
+  Future<HfConfig?> fetchConfig(String repoId) async {
+    try {
+      final response = await _dio.get<String>(
+        '$_base/models/$repoId/resolve/main/config.json',
+        options: Options(
+          receiveTimeout: _timeout,
+          sendTimeout: _timeout,
+          responseType: ResponseType.plain,
+        ),
+      );
+      final raw = response.data;
+      if (raw == null || raw.isEmpty) return null;
+      final json = jsonDecode(raw);
+      if (json is! Map) return null;
+      return HfConfig(
+        repoId: repoId,
+        architectures: (json['architectures'] as List?)
+                ?.map((e) => '$e')
+                .toList(growable: false) ??
+            const <String>[],
+        modelType: (json['model_type'] as String?) ?? '',
+        embPooler: (json['emb_pooler'] as String?) ?? '',
+        labels: ((json['id2label'] as Map?) ?? const {})
+            .entries
+            .map((e) => '${e.key}: ${e.value}')
+            .toList(growable: false),
+      );
+    } on Object {
+      // A missing or unreadable config is normal — plenty of repos are GGUFs
+      // only. The caller treats null as "no opinion", never as "no head".
+      return null;
+    }
+  }
+
   Future<List<HfFile>> listModelFiles(String repoId) async {
     final response = await _dio.get<List<dynamic>>(
       '$_base/models/$repoId/tree/main',

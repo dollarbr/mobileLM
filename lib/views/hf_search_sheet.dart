@@ -47,6 +47,9 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
   HfRepo? _openRepo;
   List<HfFile> _files = [];
   HfFile? _pickingProjectorFor;
+
+  /// The opened repo's upstream `config.json`, or null when it has none.
+  HfConfig? _config;
   bool _busy = false;
   String _error = '';
 
@@ -152,6 +155,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
       _openRepo = repo;
       _files = [];
       _pickingProjectorFor = null;
+      _config = null;
     });
     try {
       final files = await _search.listModelFiles(repo.id);
@@ -164,6 +168,14 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
               'LiteRT builds for other vendors\' accelerators are skipped.';
         }
       });
+      // Asked for separately and after the files are on screen, deliberately.
+      // It is 1 kB against a file list, but it is still a network call on a
+      // phone, and the file list is what the user came for — showing it late
+      // costs a fraction of a second of nothing and means the advice is on
+      // screen before anyone taps a 450 MB download.
+      final config = await _search.fetchConfig(repo.id);
+      if (!mounted || config == null) return;
+      setState(() => _config = config);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -407,9 +419,11 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
     final hidden = _files.length - visible.length;
     return ListView.builder(
       shrinkWrap: true,
-      itemCount: visible.length + (hidden > 0 ? 1 : 0),
+      itemCount: visible.length + (hidden > 0 ? 1 : 0) + (_config == null ? 0 : 1),
       itemBuilder: (_, i) {
-        if (i >= visible.length) {
+        if (_config != null && i == 0) return _configBanner(theme);
+        final j = i - (_config == null ? 0 : 1);
+        if (j >= visible.length) {
           return Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
@@ -421,7 +435,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
             ),
           );
         }
-        final file = visible[i];
+        final file = visible[j];
         return ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
@@ -442,6 +456,66 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
               : _add(file),
         );
       },
+    );
+  }
+
+  /// What the repo's own `config.json` says, above the file list.
+  ///
+  /// The only moment this is worth anything is *before* the download, so it sits
+  /// on top of the files rather than behind a tap. The wording is the measured
+  /// one: `jina-reranker-v1-tiny-en` is 36 MB, loads in half a second, and
+  /// cannot do anything, and its config says `JinaBertModel` — a base model, in
+  /// one field, for 1 kB instead of 36 MB and a wait.
+  ///
+  /// Deliberately not a warning about *any* file that lacks a head: most repos
+  /// legitimately are embedding or chat models. It names what the checkpoint
+  /// declares and says whether a conversion of it could score — and says plainly
+  /// that the file itself is the only authority on what survived.
+  Widget _configBanner(ThemeData theme) {
+    final c = _config!;
+    final isEncoderRepo =
+        c.modelType.contains('bert') || c.embPooler.isNotEmpty;
+    // Only speak up where it changes a decision. For a 7B chat repo the banner
+    // is noise between the user and the file they came for.
+    if (!isEncoderRepo) return const SizedBox.shrink();
+    final color = c.declaresClassificationHead
+        ? Colors.green
+        : (theme.brightness == Brightness.dark ? Colors.orange : Colors.deepOrange);
+    final pooling = c.poolingType;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(
+            c.declaresClassificationHead
+                ? Icons.verified_rounded
+                : Icons.report_problem_rounded,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text('the checkpoint says: ${c.architectures.join(', ')}',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(fontWeight: FontWeight.w600, color: color)),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Text(c.verdict, style: theme.textTheme.bodySmall),
+        if (pooling != null) ...[
+          const SizedBox(height: 4),
+          Text('emb_pooler: ${c.embPooler} (llama.cpp pooling $pooling). '
+              '${c.ggufPoolingNote}',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.hintColor)),
+        ],
+      ]),
     );
   }
 
