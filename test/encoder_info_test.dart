@@ -9,6 +9,42 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 /// reports: `n_cls_out` is 0 for an embedding model, 1 for a reranker (a
 /// relevance score, no labels) and >1 for a classifier with a label per class.
 void main() {
+  group('archIsEncoder', () {
+    test('defaults to false, so a chat model is a chat model', () {
+      const info = EncoderInfo();
+      expect(info.archIsEncoder, isFalse);
+      expect(info.isEncoder, isFalse);
+    });
+
+    test('an encoder with no head is not a chat model', () {
+      // jina-reranker-v1-tiny-en on the Edge 60: general.architecture is
+      // jina-bert-v2, the GGUF has no cls.output.*, so there is no logit and
+      // pooling stays NONE. Without this flag it is byte-identical to a
+      // generation model as far as the caller can tell, and the only available
+      // message is "load an embedding model" — advice for a file that is
+      // already a perfectly good reranker with the wrong conversion.
+      const info = EncoderInfo(archIsEncoder: true);
+      expect(info.archIsEncoder, isTrue);
+      expect(info.isEncoder, isFalse);
+      expect(info.isReranker, isFalse);
+      expect(info.isEmbedding, isFalse);
+    });
+
+    test('a real encoder reports both flags', () {
+      const info = EncoderInfo(
+        isEncoder: true,
+        archIsEncoder: true,
+        pooling: 'rank',
+        nClsOut: 1,
+        outputLength: 1,
+        inferredPooling: true,
+      );
+      expect(info.isEncoder, isTrue);
+      expect(info.archIsEncoder, isTrue);
+      expect(info.isReranker, isTrue);
+    });
+  });
+
   group('inferred pooling', () {
     test('defaults to false, so "the file said so" is the default reading', () {
       const info = EncoderInfo(isEncoder: true, pooling: 'rank', nClsOut: 1);

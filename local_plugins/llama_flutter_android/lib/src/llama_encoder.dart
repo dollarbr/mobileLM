@@ -52,6 +52,7 @@ class LlamaEncoder {
         nEmbdOut: (json['n_embd_out'] as num?)?.toInt() ?? 0,
         outputLength: (json['output_len'] as num?)?.toInt() ?? 0,
         inferredPooling: json['inferred_pooling'] == true,
+        archIsEncoder: json['arch_is_encoder'] == true,
         labels:
             (json['labels'] as List?)?.map((e) => '$e').toList() ??
                 const <String>[],
@@ -107,6 +108,7 @@ class EncoderInfo {
     this.nEmbdOut = 0,
     this.outputLength = 0,
     this.inferredPooling = false,
+    this.archIsEncoder = false,
     this.labels = const <String>[],
   });
 
@@ -138,6 +140,17 @@ class EncoderInfo {
   /// llama.cpp's own `--rerank` does. This flag is how a caller learns that
   /// happened, so `pooling: rank` is not read as the file having said so.
   final bool inferredPooling;
+
+  /// True when the architecture is encoder-only, whatever [pooling] ended up as.
+  ///
+  /// The case this exists for is `jina-reranker-v1-tiny-en`: a real
+  /// cross-encoder whose GGUF has no `cls.output.*`, so there is no logit for
+  /// llama.cpp to return and the pooling stays `NONE`. Without this flag that
+  /// model is indistinguishable from a chat model, and the honest refusal —
+  /// "this conversion has no classification head" — is impossible to give,
+  /// because the only thing the native side can say is that it is not an
+  /// encoder. It is.
+  final bool archIsEncoder;
 
   /// A model that emits one score per class.
   ///
