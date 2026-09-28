@@ -34,64 +34,107 @@ Color _sep(BuildContext c) => Theme.of(c).brightness == Brightness.dark
 class ChatView extends GetView<ChatController> {
   const ChatView({super.key});
 
+  /// Measures the input bar so the scroll-to-bottom button can sit above it
+  /// instead of on it. The bar is taller than one row whenever an attachment, a
+  /// dictation indicator or the image-generation controls are showing, so its
+  /// height is read rather than assumed.
+  static final GlobalKey _inputBarKey = GlobalKey();
+
+  /// Used for the one frame before the bar has been laid out. Roughly one row of
+  /// the bar's own padding plus the text field; close enough that the button does
+  /// not flash over the send button on the first build.
+  static const double _minInputBarHeight = 64;
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
       appBar: _appBar(context, isDark),
-      body: Column(
+      body: Stack(
         children: [
-          _modelLoadingBar(context, isDark),
-          _contextBar(context, isDark),
-          Expanded(child: Obx(() {
-            if (controller.currentSessionId.value.isEmpty ||
-                controller.messages.isEmpty)
-              return _emptyState(context, isDark);
-            final streaming = controller.isStreaming.value;
-            final text = controller.streamingResponse.value;
-            final n = controller.messages.length;
-            return NotificationListener<ScrollUpdateNotification>(
-              onNotification: (note) {
-                if (note.dragDetails != null && streaming) {
-                  if ((note.scrollDelta ?? 0) < 0)
-                    controller.pauseStreamingFollow();
-                  else
-                    controller.resumeStreamingFollowIfNearBottom();
-                }
-                return false;
-              },
-              child: ListView.builder(
-                controller: controller.scrollController,
-                padding: const EdgeInsets.only(top: 8, bottom: 8),
-                itemCount: n + (streaming ? 1 : 0),
-                itemBuilder: (_, i) {
-                  if (i == n && streaming) {
-                    return _streamBubble(context, text, isDark);
-                  }
-                  return ChatBubble(message: controller.messages[i]);
-                },
+          Column(
+            children: [
+              _modelLoadingBar(context, isDark),
+              _contextBar(context, isDark),
+              Expanded(
+                child: Obx(() {
+                  if (controller.currentSessionId.value.isEmpty ||
+                      controller.messages.isEmpty)
+                    return _emptyState(context, isDark);
+                  final streaming = controller.isStreaming.value;
+                  final text = controller.streamingResponse.value;
+                  final n = controller.messages.length;
+                  return NotificationListener<ScrollUpdateNotification>(
+                    onNotification: (note) {
+                      if (note.dragDetails != null && streaming) {
+                        if ((note.scrollDelta ?? 0) < 0)
+                          controller.pauseStreamingFollow();
+                        else
+                          controller.resumeStreamingFollowIfNearBottom();
+                      }
+                      return false;
+                    },
+                    child: ListView.builder(
+                      controller: controller.scrollController,
+                      padding: const EdgeInsets.only(top: 8, bottom: 8),
+                      itemCount: n + (streaming ? 1 : 0),
+                      itemBuilder: (_, i) {
+                        if (i == n && streaming) {
+                          return _streamBubble(context, text, isDark);
+                        }
+                        return ChatBubble(message: controller.messages[i]);
+                      },
+                    ),
+                  );
+                }),
               ),
+              _inputBar(context, isDark),
+            ],
+          ),
+          // The scroll-to-bottom control, above the input bar rather than on it.
+          //
+          // This was the Scaffold's `floatingActionButton`, which anchors to the
+          // bottom of the *body* — and the input bar is a child of the body, not
+          // the Scaffold's `bottom:`, so the two landed on top of each other. It
+          // was invisible until there was text to send: the send button appears
+          // where the mic button was, in the same bottom-right corner, and covered
+          // the scroll button. The other control in the same corner, on the same
+          // screen, both reachable by thumb.
+          //
+          // The offset is the input bar's measured height, not a constant. The bar
+          // is not one row: it grows an attachment preview, a dictation indicator
+          // and the image-generation controls, so any fixed number put this back on
+          // top of the send button as soon as any of those appeared.
+          Obx(() {
+            if (controller.isNearBottom.value ||
+                controller.messages.isEmpty ||
+                controller.isStreaming.value) {
+              return const SizedBox.shrink();
+            }
+            final barHeight =
+                _inputBarKey.currentContext?.size?.height ?? _minInputBarHeight;
+            return Positioned(
+              right: 14,
+              bottom: barHeight + 12,
+              child: _scrollToBottomButton(isDark),
             );
-          })),
-          _inputBar(context, isDark),
+          }),
         ],
       ),
-      // Scroll to bottom button — shows when user scrolled up
-      floatingActionButton: Obx(() {
-        if (controller.isNearBottom.value ||
-            controller.messages.isEmpty ||
-            controller.isStreaming.value) {
-          return const SizedBox.shrink();
-        }
-        return FloatingActionButton(
-          onPressed: () => controller.scrollToBottom(force: true),
-          backgroundColor: const Color(0xFFB9F53E), // Volt accent
-          foregroundColor: isDark ? Colors.black : Colors.black,
-          elevation: 8,
-                    child: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
-        );
-      }),
+    );
+  }
+
+  /// Shown when the user has scrolled up. Above the input bar, so it never covers
+  /// the send button — see the note where it is placed.
+  Widget _scrollToBottomButton(bool isDark) {
+    return FloatingActionButton(
+      onPressed: () => controller.scrollToBottom(force: true),
+      backgroundColor: const Color(0xFFB9F53E), // Volt accent
+      foregroundColor: Colors.black,
+      elevation: 8,
+      mini: true,
+      child: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
     );
   }
 
@@ -576,6 +619,7 @@ class ChatView extends GetView<ChatController> {
   // ── Input Bar ──
   Widget _inputBar(BuildContext context, bool isDark) {
     return Container(
+      key: _inputBarKey,
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       decoration: BoxDecoration(
         color: isDark ? Colors.black : Colors.white,
