@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:get/get.dart';
+import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../controllers/settings_controller.dart';
@@ -95,6 +96,18 @@ class OpenAiServerService {
         await _handleCompletions(request);
         return;
       }
+      if (request.method == 'POST' && path == '/v1/embeddings') {
+        await _handleEmbeddings(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/rerank') {
+        await _handleRerank(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/classify') {
+        await _handleClassify(request);
+        return;
+      }
 
       await _json(request, {'error': 'Not found'}, status: HttpStatus.notFound);
     } catch (error) {
@@ -139,6 +152,18 @@ class OpenAiServerService {
     final inference = Get.find<InferenceService>();
     final hasModel = inference.isModelLoaded.value;
     final isLiteRt = hasModel && inference.loadedModelRuntime.value == 'litert';
+    // An encoder answers a different question from a generation model, and
+    // which of the two is loaded decides every other flag below. Reported here
+    // so a client can find out before building a request that will be refused.
+    EncoderInfo encoder = const EncoderInfo();
+    if (hasModel) {
+      try {
+        encoder = await LlamaEncoder.info();
+      } on Object catch (_) {
+        // A generation model, or a runtime without the encoder surface. Either
+        // way "no encoder" is the right answer, not a failed request.
+      }
+    }
     await _json(request, {
       'server': 'mobileLM Local OpenAI API',
       'running': true,
@@ -146,13 +171,320 @@ class OpenAiServerService {
       'runtime': inference.loadedModelRuntime.value,
       'requires_litert': false,
       'capabilities': {
-        'text': hasModel,
+        'text': hasModel && !encoder.isEncoder,
         'image': isLiteRt && inference.isVisionLoaded.value,
         'audio': isLiteRt,
-        'streaming': hasModel,
+        'streaming': hasModel && !encoder.isEncoder,
         'gguf': hasModel && !isLiteRt,
+        'embeddings': encoder.isEmbedding,
+        'rerank': encoder.isReranker,
+        'classify': encoder.isClassifier,
       },
+      'encoder': encoder.isEncoder
+          ? {
+              'pooling': encoder.pooling,
+              'output_length': encoder.outputLength,
+              'n_cls_out': encoder.nClsOut,
+              'labels': encoder.labels,
+            }
+          : null,
+      // One model at a time, and the slot is shared. An encoder in the slot
+      // means nothing can generate until a generation model is loaded back, and
+      // vice versa. Said plainly here because it is the one constraint on this
+      // surface that a client cannot work around.
+      'single_model_slot': true,
     });
+  }
+
+  /// The loaded model, or the reason it cannot serve an encoder call.
+  ///
+  /// A generation model is the common case and the easy mistake: a GGUF loads
+  /// fine, `/v1/embeddings` returns 400, and the reason is that it emits tokens
+  /// rather than pooling them. The message says that instead of "unsupported".
+  Future<String?> _encoderUnavailable(EncoderInfo info, String wanted) async {
+    final inference = Get.find<InferenceService>();
+    if (!inference.isModelLoaded.value) {
+      return 'No model loaded. Load a GGUF that declares a pooling type '
+          '(BERT, ModernBERT, or an embedding/reranker model) first.';
+    }
+    if (!info.isEncoder) {
+      return 'The loaded model is a generation model, not an encoder. '
+          'Embeddings, rerank and classify need a GGUF whose metadata carries '
+          '<arch>.pooling_type — a BERT or ModernBERT architecture, or one of '
+          'the embedding families.';
+    }
+    if (wanted == 'embeddings' && (info.isReranker || info.isClassifier)) {
+      return 'The loaded model is a ${info.isReranker ? 'reranker' : 'classifier'} '
+          '(${info.pooling} pooling, ${info.nClsOut} output(s)), which returns scores '
+          'rather than a vector. Use /v1/rerank or /v1/classify.';
+    }
+    if (wanted == 'rerank' && !info.isReranker) {
+      return 'The loaded model returns ${info.nClsOut} class score(s), not a single '
+          'relevance score. Use /v1/classify for it, or load a model with one class.';
+    }
+    if (wanted == 'classify' && !info.isClassifier) {
+      return 'The loaded model returns ${info.outputLength} value(s) and '
+          '${info.labels.length} label(s), so it is not a multi-class classifier.';
+    }
+    return null;
+  }
+
+  /// The model name the caller asked for must be the loaded one, as elsewhere.
+  Future<String?> _encoderModelMismatch(Map<String, dynamic> body) async {
+    final inference = Get.find<InferenceService>();
+    final model = (body['model'] as String?)?.trim();
+    if (model == null || model.isEmpty) return null;
+    if (model != inference.loadedModelName.value) {
+      return 'Model not found or not loaded';
+    }
+    return null;
+  }
+
+  static List<String> _stringList(Object? raw, {String? field}) {
+    if (raw is! List) {
+      if (field != null) {
+        throw FormatException("'$field' must be an array of strings");
+      }
+      return const [];
+    }
+    return raw.map((e) => '$e').toList();
+  }
+
+  /// `POST /v1/embeddings` — the OpenAI shape, because it is a real one and
+  /// clients already speak it. `input` may be a string or an array of strings.
+  Future<void> _handleEmbeddings(HttpRequest request) async {
+    // _readJson throws on a body that is not a JSON object, and _handle turns
+    // that into a 500 — which is the wrong status for a client that sent
+    // something malformed, but it is the pre-existing behaviour of every other
+    // endpoint here and consistency beats a one-off difference nobody asked for.
+    final body = await _readJson(request);
+    final info = await LlamaEncoder.info();
+    final unavailable = await _encoderUnavailable(info, 'embeddings');
+    if (unavailable != null) {
+      await _json(request, {'error': unavailable},
+          status: HttpStatus.badRequest);
+      return;
+    }
+    final mismatch = await _encoderModelMismatch(body);
+    if (mismatch != null) {
+      await _json(request, {'error': mismatch}, status: HttpStatus.notFound);
+      return;
+    }
+    if (_busy) {
+      await _json(request, {'error': 'Model is busy'}, status: 429);
+      return;
+    }
+
+    final List<String> inputs;
+    try {
+      final raw = body['input'];
+      inputs = raw is String
+          ? [raw]
+          : _stringList(raw, field: 'input');
+    } on FormatException catch (e) {
+      await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
+      return;
+    }
+    if (inputs.isEmpty) {
+      await _json(request, {'error': "'input' is required"},
+          status: HttpStatus.badRequest);
+      return;
+    }
+
+    final inference = Get.find<InferenceService>();
+    final data = <Map<String, dynamic>>[];
+    _busy = true;
+    try {
+      for (var i = 0; i < inputs.length; i++) {
+        final out = await LlamaEncoder.encode(inputs[i]);
+        // Norm is checked, not returned: a pooled vector of the right length
+        // and all zeros is what a model gives when the batch was never marked
+        // for output, and it would sail through every other check here.
+        if (out.norm == 0) {
+          await _json(request, {
+            'error': 'The model returned an empty vector for input '
+                '$i. That is a pooling failure, not an empty document.',
+          }, status: HttpStatus.internalServerError);
+          return;
+        }
+        data.add({
+          'object': 'embedding',
+          'index': i,
+          'embedding': _normalize(out.values),
+        });
+      }
+    } on EncoderUnavailable catch (e) {
+      await _json(request, {'error': e.message},
+          status: HttpStatus.badRequest);
+      return;
+    } finally {
+      _busy = false;
+    }
+
+    // No `usage` block, even though the OpenAI shape has one. The encode path
+    // does not report a token count, and a `prompt_tokens: 0` is not a smaller
+    // lie than the field being absent — it is a number a client will bill
+    // against. Absent means unknown, which is the truth.
+    await _json(request, {
+      'object': 'list',
+      'data': data,
+      'model': inference.loadedModelName.value,
+    });
+  }
+
+  /// `POST /v1/rerank` — the Cohere/Jina shape, because it is the shape every
+  /// reranker client in the wild already sends.
+  Future<void> _handleRerank(HttpRequest request) async {
+    // _readJson throws on a body that is not a JSON object, and _handle turns
+    // that into a 500 — which is the wrong status for a client that sent
+    // something malformed, but it is the pre-existing behaviour of every other
+    // endpoint here and consistency beats a one-off difference nobody asked for.
+    final body = await _readJson(request);
+    final info = await LlamaEncoder.info();
+    final unavailable = await _encoderUnavailable(info, 'rerank');
+    if (unavailable != null) {
+      await _json(request, {'error': unavailable},
+          status: HttpStatus.badRequest);
+      return;
+    }
+    final mismatch = await _encoderModelMismatch(body);
+    if (mismatch != null) {
+      await _json(request, {'error': mismatch}, status: HttpStatus.notFound);
+      return;
+    }
+    if (_busy) {
+      await _json(request, {'error': 'Model is busy'}, status: 429);
+      return;
+    }
+
+    final query = (body['query'] as String?)?.trim();
+    if (query == null || query.isEmpty) {
+      await _json(request, {'error': "'query' is required"},
+          status: HttpStatus.badRequest);
+      return;
+    }
+    final documents = (body['documents'] ?? body['texts']) is List
+        ? _stringList(body['documents'] ?? body['texts'])
+        : const <String>[];
+    if (documents.isEmpty) {
+      await _json(request, {'error': "'documents' is required"},
+          status: HttpStatus.badRequest);
+      return;
+    }
+    final topN = (body['top_n'] as num?)?.toInt();
+
+    _busy = true;
+    final results = <Map<String, dynamic>>[];
+    try {
+      for (var i = 0; i < documents.length; i++) {
+        final out = await LlamaEncoder.encode(documents[i], query: query);
+        results.add({
+          'index': i,
+          'relevance_score': out.values.isEmpty ? 0.0 : out.values.first,
+        });
+      }
+    } on EncoderUnavailable catch (e) {
+      await _json(request, {'error': e.message},
+          status: HttpStatus.badRequest);
+      return;
+    } finally {
+      _busy = false;
+    }
+
+    results.sort((a, b) =>
+        (b['relevance_score'] as num).compareTo(a['relevance_score'] as num));
+    final ranked =
+        topN != null && topN > 0 && topN < results.length ? results.sublist(0, topN) : results;
+    await _json(request, {
+      'id': inferenceModelName(),
+      'results': ranked,
+      'meta': {'billed_units': {'search_units': documents.length}},
+    });
+  }
+
+  /// `POST /v1/classify` — this app's own shape, because there is no standard
+  /// one. Takes a single `input` and returns one score per class, with the
+  /// labels the GGUF carried.
+  Future<void> _handleClassify(HttpRequest request) async {
+    // _readJson throws on a body that is not a JSON object, and _handle turns
+    // that into a 500 — which is the wrong status for a client that sent
+    // something malformed, but it is the pre-existing behaviour of every other
+    // endpoint here and consistency beats a one-off difference nobody asked for.
+    final body = await _readJson(request);
+    final info = await LlamaEncoder.info();
+    final unavailable = await _encoderUnavailable(info, 'classify');
+    if (unavailable != null) {
+      await _json(request, {'error': unavailable},
+          status: HttpStatus.badRequest);
+      return;
+    }
+    final mismatch = await _encoderModelMismatch(body);
+    if (mismatch != null) {
+      await _json(request, {'error': mismatch}, status: HttpStatus.notFound);
+      return;
+    }
+    if (_busy) {
+      await _json(request, {'error': 'Model is busy'}, status: 429);
+      return;
+    }
+
+    final inputs = (body['input'] ?? body['inputs']) is List
+        ? _stringList(body['inputs'] ?? body['input'])
+        : [if (body['input'] is String) body['input'] as String];
+    if (inputs.isEmpty) {
+      await _json(request, {'error': "'input' is required"},
+          status: HttpStatus.badRequest);
+      return;
+    }
+
+    _busy = true;
+    final results = <Map<String, dynamic>>[];
+    try {
+      for (final input in inputs) {
+        final out = await LlamaEncoder.encode(input);
+        if (out.norm == 0) {
+          await _json(request, {
+            'error': 'The model returned an all-zero score vector.',
+          }, status: HttpStatus.internalServerError);
+          return;
+        }
+        results.add({
+          'input': input,
+          'scores': out.values,
+          if (info.labels.isNotEmpty) 'labels': info.labels,
+        });
+      }
+    } on EncoderUnavailable catch (e) {
+      await _json(request, {'error': e.message},
+          status: HttpStatus.badRequest);
+      return;
+    } finally {
+      _busy = false;
+    }
+
+    await _json(request, {
+      'object': 'list',
+      'model': inferenceModelName(),
+      'data': results,
+    });
+  }
+
+  String inferenceModelName() =>
+      Get.find<InferenceService>().loadedModelName.value;
+
+  /// L2-normalise, the way every embedding client expects.
+  ///
+  /// Skipped when the vector is all zeros rather than producing NaN, which is
+  /// what a divide by a zero norm gives and what a client would have to debug
+  /// as a model problem rather than a pooling one.
+  static List<double> _normalize(List<double> values) {
+    var sum = 0.0;
+    for (final v in values) {
+      sum += v * v;
+    }
+    if (sum <= 0) return values;
+    final inv = 1.0 / sqrt(sum);
+    return [for (final v in values) v * inv];
   }
 
   Future<void> _handleChatCompletions(HttpRequest request) async {
