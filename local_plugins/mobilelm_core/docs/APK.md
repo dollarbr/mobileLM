@@ -374,3 +374,54 @@ dependency, the `NpuStatus` import in `settings_view.dart`, and
 - **Do not move the keystore, the models or the build trees.** `.gitignore`
   already covers `vendor/prebuilt/`, `target/` and `*.litertlm`; the cdylib is
   CI output and must not be committed.
+
+## Gap 8 — open: the stop button cannot stop a Rust turn
+
+Found on the device, when a hung turn was asked to be interrupted and could not
+be.
+
+`InferenceEngine.stop()` short-circuits on `_isLiteRt`:
+
+```dart
+if (_isLiteRt) {
+  _liteConversationHasMessages = true;
+  return;
+}
+await _controller?.stop()   // the Kotlin path, the only one that interrupts
+```
+
+That branch exists because the plugin's conversation is the thing a stop has to
+tell. With the Rust path it is the wrong branch for a different reason: the call
+in flight is `mobilelm_send_stream`, a **blocking FFI call**, and the ABI this
+crate exposes has no cancellation hook — the C API's send is non-blocking and
+returns a handle, and the whole `send_stream` design here blocks precisely so
+nothing outlives the call. There is no point in the call where Dart can observe a
+request to stop.
+
+What the user gets is worse than no button at all. `stop()` still calls `_onStop`,
+so the UI leaves its thinking state and the turn looks abandoned — while the
+native call keeps running and the text arrives anyway. A control that appears to
+work and does not is a worse lie than a missing one.
+
+The 20-minute backstop in `litert_engine.dart` is the only thing bounding it
+today, and it is a blunt instrument: it reports, it does not stop.
+
+**This is a real cost of the transport, and it belongs in the 0.4.0 decision
+rather than after it.** "The engine is reached from Dart instead of through a
+Kotlin plugin" is a reach argument, and it is true; "and a turn can no longer be
+cancelled" is the other side of it, and the Kotlin path can. Three things would
+each close it, in ascending order of work:
+
+1. **`_onStop` stops reporting success.** Cheap, honest, and makes the UI's state
+   match reality — the turn really is still running.
+2. **Drop the generation isolate and let the process restart the engine.** The
+   blocked call dies with the isolate; `_rustLoadFailure` already exists to send
+   the next load to the plugin. Coarse, but a stop that works.
+3. **A real cancellation hook in the C API path** — the session-based
+   `litert_lm_session_*` entry points, if they offer one, reached through a
+   handle rather than a blocking wrapper. The `reopen_conversation` binding is
+   already there, so the session object is within reach; this is the only option
+   that does not involve giving something up.
+
+Do (1) before 0.4.0 regardless of which of the others gets done. A shipped
+control that lies is a bug the moment anyone presses it.
