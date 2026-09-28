@@ -535,7 +535,25 @@ pub unsafe extern "C" fn mobilelm_send_stream(
     cb: Option<extern "C" fn(i64, *const c_char, c_int, *const c_char)>,
     ctx: i64,
 ) -> c_int {
-    guard(-1i32, || {
+    // **"Every turn ends the stream" is an invariant of this ABI.** The callback is
+    // taken first, before anything that can fail, because every failure below has
+    // to reach it: a caller waiting for a terminal event otherwise waits forever.
+    // That is not hypothetical. This function used to route its `?`s through
+    // `guard`, which returns the default *without* calling back, so a null handle
+    // or an unreadable message ended the call with no `_StreamEnd` — and the
+    // device hung on the typing indicator with the real reason sitting in a Dart
+    // local that no code path could reach. Two builds were spent finding that out.
+    let Some(cb) = cb else {
+        set_error("mobilelm_send_stream was given a null callback");
+        return -1;
+    };
+    let end_with = |msg: String| -> c_int {
+        set_error(msg.clone());
+        let c = CString::new(msg).unwrap_or_default();
+        cb(ctx, std::ptr::null(), 1, c.as_ptr());
+        -1
+    };
+    let run = move || -> Result<c_int, String> {
         let handle = unsafe { handle_mut(h) }?;
         let msg = as_str(message_json)?;
         let req = GenRequest {
@@ -543,44 +561,31 @@ pub unsafe extern "C" fn mobilelm_send_stream(
             max_tokens: max_tokens.max(0) as usize,
             stream: true,
         };
-        // A callback pointer that is not a function is a caller bug with no way
-        // to recover from; say so rather than dereferencing it.
-        let cb = cb.ok_or("mobilelm_send_stream was given a null callback")?;
-        let (final_sink, final_id) = (std::marker::PhantomData::<*const c_void>, 0);
-        let _ = (final_sink, final_id);
-
         let mut on_token = |piece: &str| {
-            // A NUL inside a chunk would truncate it. Text from a tokenizer
-            // should not contain one, and if it does, a short token beats a
-            // panic inside a foreign callback.
+            // A NUL inside a chunk would truncate it. Text from a tokenizer should
+            // not contain one, and if it does, a short token beats a panic inside
+            // a foreign callback.
             let c = CString::new(piece).unwrap_or_default();
             cb(ctx, c.as_ptr(), 0, std::ptr::null());
         };
-        let outcome = handle.engine.send_message_json(msg, &req, &mut on_token);
-        match outcome {
+        match handle.engine.send_message_json(msg, &req, &mut on_token) {
             Ok(_) => {
                 cb(ctx, std::ptr::null(), 1, std::ptr::null());
                 Ok(0)
             }
-            Err(e) => {
-                // The engine's own message goes out on the stream *and* into the
-                // thread-local last error, because the two reach different
-                // readers and only one of them survives a failure.
-                //
-                // The Dart side throws when the return code is non-zero, building
-                // its message from `lastError`. Returning `Ok(-1)` — which is what
-                // this did — leaves the last error unset, so the throw produced
-                // the generic "send_stream failed" and *preempted* the `_StreamEnd`
-                // the callback had already queued with the real text in it. The
-                // device said only "send_stream failed"; the reason was in a
-                // message nobody read.
-                set_error(e.to_string());
-                let c = CString::new(e.to_string()).unwrap_or_default();
-                cb(ctx, std::ptr::null(), 1, c.as_ptr());
-                Ok(-1)
-            }
+            // The engine's own message goes out on the stream *and* into the
+            // thread-local last error, because the two reach different readers and
+            // on failure the throw is built from `lastError` while the stream is
+            // what unblocks the wait. Setting only one of them is how a turn failed
+            // with the reason discarded.
+            Err(e) => Err(e.to_string()),
         }
-    })
+    };
+    match catch_unwind(AssertUnwindSafe(run)) {
+        Ok(Ok(rc)) => rc,
+        Ok(Err(e)) => end_with(e),
+        Err(_) => end_with("the Rust core panicked; this is a bug, not a model error".into()),
+    }
 }
 
 /// One blocking turn with no streaming, returning the whole reply.

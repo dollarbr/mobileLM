@@ -416,7 +416,20 @@ class LiteRtEngine {
       // The native call is the blocking one, so its reply arrives with the last
       // chunk. Waiting for the stream as well means a stream that ends without a
       // final marker is a visible failure rather than a silent short answer.
-      await done.future;
+      //
+      // Bounded, and generously: this is not a budget for a slow model — a 0.6B on
+      // this phone takes 56 s, and a multimodal prefill is minutes — it is a
+      // backstop against a native failure that never produces a terminal event.
+      // Unbounded, that combination is a hang with the reason trapped in
+      // `thrown`, which is exactly what the device did: the typing indicator
+      // spun forever and the error never reached anyone.
+      await done.future.timeout(
+        const Duration(minutes: 20),
+        onTimeout: () => throw TimeoutException(
+          'the engine never ended the stream',
+          const Duration(minutes: 20),
+        ),
+      );
     } catch (e) {
       thrown ??= e;
     } finally {
