@@ -161,7 +161,7 @@ static void throwLoadError(JNIEnv* env, const std::string& message) {
 // LiteRT sampler reported a non-NULL pointer for a type its runtime does not
 // implement, and the refusal only arrived at generation time. A GGUF's
 // pooling_type is read before anything is allocated.
-static bool model_declared_pooling(const llama_model* model, llama_pooling_type& out) {
+static bool model_declared_pooling(const llama_model* model, enum llama_pooling_type& out) {
     out = LLAMA_POOLING_TYPE_NONE;
     static const char kSuffix[] = ".pooling_type";
     const size_t kSuffixLen = sizeof(kSuffix) - 1;
@@ -177,13 +177,13 @@ static bool model_declared_pooling(const llama_model* model, llama_pooling_type&
         if (llama_model_meta_val_str_by_index(model, i, val, sizeof(val) - 1) <= 0) {
             return false;
         }
-        out = static_cast<llama_pooling_type>(std::atoi(val));
+        out = static_cast<enum llama_pooling_type>(std::atoi(val));
         return true;
     }
     return false;
 }
 
-static const char* pooling_name(llama_pooling_type p) {
+static const char* pooling_name(enum llama_pooling_type p) {
     switch (p) {
         case LLAMA_POOLING_TYPE_NONE: return "none";
         case LLAMA_POOLING_TYPE_MEAN: return "mean";
@@ -202,7 +202,7 @@ static const char* pooling_name(llama_pooling_type p) {
 // 1, and disagree for a multi-class classifier — where the header is the one
 // that describes the buffer, so the header wins. n_embd is used as a ceiling
 // either way, since reading past what was written is not a thing to do.
-static int32_t pooled_output_len(const llama_model* model, llama_pooling_type pooling) {
+static int32_t pooled_output_len(const llama_model* model, enum llama_pooling_type pooling) {
     const int32_t n_embd = llama_model_n_embd_out(model);
     if (pooling == LLAMA_POOLING_TYPE_RANK) {
         const int32_t n_cls = static_cast<int32_t>(llama_model_n_cls_out(model));
@@ -597,12 +597,12 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     //   back on for an encoder-only model. 2048 covers any cross-encoder input
     //   worth sending, and an encoder uses no KV cache, so a large ubatch costs
     //   activation memory and not a growing cache.
-    llama_pooling_type pooling = LLAMA_POOLING_TYPE_NONE;
+    enum llama_pooling_type pooling = LLAMA_POOLING_TYPE_NONE;
     const bool is_encoder = model_declared_pooling(g_model, pooling);
     if (is_encoder) {
         ctx_params.embeddings   = true;
         ctx_params.pooling_type = pooling;
-        ctx_params.n_batch      = std::max(ctx_params.n_batch, 2048);
+        ctx_params.n_batch      = std::max<uint32_t>(ctx_params.n_batch, 2048u);
         LOGI("Encoder model: pooling=%s, n_cls_out=%u, n_embd_out=%d",
              pooling_name(pooling),
              (unsigned) llama_model_n_cls_out(g_model),
@@ -1461,7 +1461,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
     // The same lock nativeEncode takes. Reading g_ctx from the platform thread
     // while a generation holds it is the use-after-free this mutex exists for,
     // and llama_pooling_type is a field read — the lock is free here.
-    llama_pooling_type pooling;
+    enum llama_pooling_type pooling;
     uint32_t n_cls;
     {
         std::lock_guard<std::mutex> ctx_lock(g_ctx_mutex);
@@ -1515,7 +1515,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
         return nullptr;
     }
 
-    const llama_pooling_type pooling = llama_pooling_type(g_ctx);
+    const enum llama_pooling_type pooling = llama_pooling_type(g_ctx);
     if (pooling == LLAMA_POOLING_TYPE_NONE) {
         throwLoadError(env,
             "This model does not declare a pooling type, so it is a generation "
