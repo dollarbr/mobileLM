@@ -22,6 +22,17 @@
 static llama_model* g_model = nullptr;
 static llama_context* g_ctx = nullptr;
 static const llama_vocab* g_vocab = nullptr;
+
+// The most tokens one encoder sequence may carry, and 0 when a generation model
+// is loaded.
+//
+// It is the `n_ubatch` the load applied, kept so the refusal in `nativeEncode`
+// and the setting in `nativeLoadModel` cannot disagree: if the load raised the
+// ceiling and this did not, `llama-context.cpp:1495`'s GGML_ASSERT is the only
+// thing left enforcing it, and a GGML_ASSERT is a process kill rather than an
+// answer. Exposed in `encoderInfo` so a client can find out before it builds a
+// request too large to serve.
+static uint32_t g_encoder_max_tokens = 0;
 static llama_sampler* g_sampler = nullptr;
 static std::atomic<bool> g_stop_flag{false};
 // Serialises generation against teardown.
@@ -322,7 +333,7 @@ static bool infer_pooling(const llama_model* model, const char* model_path,
     return true;
 }
 
-// Why an aborted encode needs its own line in the log.
+// Why an aborted encode needs its own line in the logcat.
 //
 // `ggml_abort` (ggml/src/ggml.c) does print the reason — to stderr, with a
 // backtrace — and then calls abort(). On Android that print goes nowhere: the
@@ -333,17 +344,21 @@ static bool infer_pooling(const llama_model* model, const char* model_path,
 // `/data/tombstones/tombstone_10` by hand: `nativeEncode` → `llama_decode` →
 // `llama_context::encode` (llama-context.cpp:1495) → abort.
 //
-// The app's own log ring buffer is readable (`adb exec-out run-as ... cat
-// app_flutter/logs/app.log`), so writing the reason there is the difference
-// between knowing and not. Returning does not prevent the abort — ggml calls
-// `abort()` unconditionally after the callback returns, and the typedef is
-// `void` — so this adds observability and changes no behaviour.
+// It does **not** use LOGE, which is the obvious thing to reach for and is
+// exactly wrong here. LOGE goes into the in-memory ring buffer that a Dart poller
+// drains on an interval; a process killed by `abort()` is never drained, so the
+// reason dies with the process. That is not a theory — the first version of this
+// function used LOGE and the reason was still missing after the next abort, for
+// the same reason the crash log itself was empty. `__android_log_print` is
+// synchronous inside the process, so the line is in logcat before `abort()` runs.
 //
 // Not to be confused with `llama_context_params.abort_callback`, which is
 // `bool (*)(void * data)` and means "the caller asked to cancel", a different
 // thing on a different path.
 static void log_abort_reason(const char* message) {
-    LOGE("llama.cpp aborted: %s", message ? message : "(no message)");
+    const char* m = message ? message : "(no message)";
+    LOGE("llama.cpp aborted: %s", m);
+    __android_log_print(ANDROID_LOG_ERROR, "mobileLM", "llama.cpp aborted: %s", m);
 }
 
 static const char* pooling_name(enum llama_pooling_type p) {
@@ -774,12 +789,16 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     //
     // - `embeddings` has to be on, or llama_get_embeddings_seq returns NULL and
     //   every read below comes back empty for a reason that looks like a bug.
-    // - `n_batch` has to hold the whole sequence. Pooling happens once, over
-    //   the batch as given; a sequence split across ubatches is pooled
-    //   differently, and unlike generation there is no chunking path to fall
-    //   back on for an encoder-only model. 2048 covers any cross-encoder input
-    //   worth sending, and an encoder uses no KV cache, so a large ubatch costs
-    //   activation memory and not a growing cache.
+    // - `n_ubatch` has to hold the whole sequence — and this is the field that
+    //   matters, not `n_batch`. Pooling happens once, over the batch as given;
+    //   a sequence split across ubatches is pooled differently, and unlike
+    //   generation there is no chunking path for an encoder-only model.
+    //   `llama-context.cpp:1495` states the same requirement as a GGML_ASSERT,
+    //   which is a process kill: measured on the Edge 60, 606 tokens pass and
+    //   ~2400 do not. 2048 covers any cross-encoder input worth sending, and an
+    //   encoder uses no KV cache, so a large ubatch costs activation memory and
+    //   not a growing cache. Past the limit, `nativeEncode` refuses with the
+    //   count rather than letting the assert do it.
     enum llama_pooling_type pooling = LLAMA_POOLING_TYPE_NONE;
     bool is_encoder = model_declared_pooling(g_model, pooling);
     if (!is_encoder) {
@@ -793,30 +812,23 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
         ctx_params.embeddings   = true;
         ctx_params.pooling_type = pooling;
 
-        // `n_ubatch`, não `n_batch`. São dois campos e só um deles é o limite
-        // que importa aqui: `llama-context.cpp:1495` tem
-        // `GGML_ASSERT(cparams.n_ubatch >= n_tokens && "encoder requires
-        // n_ubatch >= n_tokens")`, com o comentário "micro-batching is not
-        // possible for non-causal encoding". Um encoder não pode ser dividido em
-        // microbatches — o pooling acontece uma vez, sobre o batch inteiro — então
-        // o ubatch tem de caber a sequência toda.
-        //
         // Subir só `n_batch` deixa `n_ubatch` no default de 512
         // (`llama-context.cpp:3699`) e o assert mata o processo com SIGABRT no
         // primeiro par (query, documento) que passa de 512 tokens. Foi medido:
         // 12 documentos de 24–45 tokens passavam, e o par de auto-casamento com
         // texto repetido caía. `ggml_abort` não imprime a razão quando há abort
         // callback, e sem tombstone o sintoma é só "o app travou" — o caminho
-        // inteiro foi recovered de `/data/tombstones/tombstone_10`, com
+        // inteiro foi recuperado de `/data/tombstones/tombstone_10`, com
         // `nativeEncode` → `llama_decode` → `llama_context::encode` → abort.
         //
-        // 2048 é o `n_batch` default e o limite do `n_ctx_train` do modelo entra
-        // logo acima, então os dois campos ficam coerentes. Um encoder não usa
-        // KV cache, então um ubatch grande custa memória de ativação e não um
-        // cache que cresce.
+        // 2048 é o `n_batch` default e o `n_ctx_train` do modelo entra logo acima,
+        // então os dois campos ficam coerentes. `g_encoder_max_tokens` recebe o
+        // mesmo valor para que a recusa em `nativeEncode` e o limite daqui não
+        // possam divergir.
         const uint32_t kEncoderUbatch = 2048u;
         ctx_params.n_batch  = std::max<uint32_t>(ctx_params.n_batch, kEncoderUbatch);
         ctx_params.n_ubatch = std::max<uint32_t>(ctx_params.n_ubatch, kEncoderUbatch);
+        g_encoder_max_tokens = ctx_params.n_ubatch;
         LOGI("Encoder model: pooling=%s, n_cls_out=%u, n_embd_out=%d, "
              "n_batch=%u, n_ubatch=%u",
              pooling_name(pooling),
@@ -824,6 +836,10 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
              llama_model_n_embd_out(g_model),
              (unsigned) ctx_params.n_batch,
              (unsigned) ctx_params.n_ubatch);
+    } else {
+        // A generation model has no sequence ceiling of this kind, and a stale
+        // value here would make `nativeEncode` refuse inputs it could serve.
+        g_encoder_max_tokens = 0;
     }
 
     // With the weights in system RAM, let them be computed there too.
@@ -1707,7 +1723,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
     snprintf(out, sizeof(out),
              "{\"is_encoder\":%s,\"pooling\":\"%s\",\"n_cls_out\":%u,"
              "\"n_embd_out\":%d,\"output_len\":%d,\"inferred_pooling\":%s,"
-             "\"arch_is_encoder\":%s,\"labels\":[%s]}",
+             "\"arch_is_encoder\":%s,\"max_input_tokens\":%u,\"labels\":[%s]}",
              (pooling != LLAMA_POOLING_TYPE_NONE) ? "true" : "false",
              pooling_name(pooling),
              (unsigned) n_cls,
@@ -1720,6 +1736,12 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
              // telling the caller "load an embedding model" sends them to fix
              // something that is already correct.
              arch_is_encoder(g_model) ? "true" : "false",
+             // Published so a client can find the ceiling before building a
+             // request that cannot be served. `nativeEncode` refuses past it with
+             // the token count, which is better than a process kill, but
+             // discovering the limit by being refused is one round trip too late
+             // for a caller that batches a hundred documents.
+             (unsigned) g_encoder_max_tokens,
              labels.c_str());
 
     return env->NewStringUTF(sanitizeUTF8(out, strlen(out)).c_str());
@@ -1811,6 +1833,32 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
         return nullptr;
     }
     tokens.resize(n);
+
+    // Recusar aqui, com o número, em vez de deixar o assert do llama.cpp
+    // derrubar o processo. `llama-context.cpp:1495` exige
+    // `n_ubatch >= n_tokens` e não tem volta: passados os tokens, é
+    // `ggml_abort` e SIGABRT, sem chance de resposta HTTP. Medido no Edge 60 com
+    // o `gte-reranker-modernbert-base`: 606 tokens passam e dão
+    // `Encoded 606 tokens -> 1 floats`; ~2400 tokens derrubam o app. Um cliente
+    // que mande um documento longo recebe um 400 dizendo o limite, não um
+    // processo morto — e a diferença entre os dois é a que decide se isto é
+    // usável em produção.
+    //
+    // O limite vem do mesmo `kEncoderUbatch` que o load aplicou, não de uma
+    // constante repetida aqui, porque os dois precisam concordar: se o load
+    // subir o teto e esta checagem não souber, o assert volta a ser a única
+    // linha de defesa.
+    if ((uint32_t) n > g_encoder_max_tokens) {
+        char buf[320];
+        snprintf(buf, sizeof(buf),
+                 "This pair tokenizes to %d tokens and this encoder accepts at "
+                 "most %u: an encoder pools the whole sequence in one pass, so "
+                 "it cannot be split into smaller batches. Shorten the document "
+                 "or the query.",
+                 n, (unsigned) g_encoder_max_tokens);
+        throwLoadError(env, buf);
+        return nullptr;
+    }
 
     // One batch, one sequence, and **every** token flagged for output. Pooling
     // aggregates over the tokens marked in `logits`; leave them false and the

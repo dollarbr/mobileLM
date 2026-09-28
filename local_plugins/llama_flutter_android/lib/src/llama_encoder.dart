@@ -53,6 +53,7 @@ class LlamaEncoder {
         outputLength: (json['output_len'] as num?)?.toInt() ?? 0,
         inferredPooling: json['inferred_pooling'] == true,
         archIsEncoder: json['arch_is_encoder'] == true,
+        maxInputTokens: (json['max_input_tokens'] as num?)?.toInt() ?? 0,
         labels:
             (json['labels'] as List?)?.map((e) => '$e').toList() ??
                 const <String>[],
@@ -109,6 +110,7 @@ class EncoderInfo {
     this.outputLength = 0,
     this.inferredPooling = false,
     this.archIsEncoder = false,
+    this.maxInputTokens = 0,
     this.labels = const <String>[],
   });
 
@@ -151,6 +153,16 @@ class EncoderInfo {
   /// because the only thing the native side can say is that it is not an
   /// encoder. It is.
   final bool archIsEncoder;
+
+  /// Most tokens one `(query, document)` pair may carry, 0 when unknown.
+  ///
+  /// An encoder pools the whole sequence in one pass and cannot be split into
+  /// microbatches, so this is a hard ceiling rather than a chunking hint.
+  /// `llama-context.cpp:1495` states the requirement as a `GGML_ASSERT`, which
+  /// on a phone means a `SIGABRT` with no HTTP response — measured on the Edge
+  /// 60: 606 tokens pass, ~2400 do not. Exceeding it now returns a message with
+  /// the count instead.
+  final int maxInputTokens;
 
   /// A model that emits one score per class.
   ///

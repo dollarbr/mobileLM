@@ -206,6 +206,11 @@ class OpenAiServerService {
               // one — and the difference is worth surfacing rather than folding
               // into a single field that looks equally confident either way.
               'inferred_pooling': encoder.inferredPooling,
+              // Published so a caller batching a hundred documents can find the
+              // ceiling without discovering it by being refused. The ceiling is
+              // real: an encoder pools the whole sequence in one pass, so it
+              // cannot be chunked the way generation can.
+              'max_input_tokens': encoder.maxInputTokens,
               'labels': encoder.labels,
             }
           : null,
