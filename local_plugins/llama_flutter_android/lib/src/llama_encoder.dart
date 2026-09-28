@@ -128,6 +128,14 @@ class EncoderInfo {
   final List<String> labels;
 
   /// A model that emits one score per class.
+  ///
+  /// `pooling == 'rank'` is required, not just `nClsOut > 1`, and the device is
+  /// why. A real `bge-small-en-v1.5` reports **both** `pooling: cls` and
+  /// `nClsOut: 1` with a label `LABEL_0` — the residue of a size-1 classification
+  /// head on a model that embeds. It returns 384 values. So `nClsOut` alone
+  /// cannot answer "is this a classifier", and a check built on it tells a caller
+  /// that an embedding model is a one-class classifier. Only a RANK pooling type
+  /// means the classification head is attached to the graph.
   bool get isClassifier => isEncoder && pooling == 'rank' && nClsOut > 1;
 
   /// A model that scores a query/document pair.
