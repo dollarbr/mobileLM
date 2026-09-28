@@ -20,9 +20,11 @@ import '../services/workspace_service.dart';
 import '../services/privileged_service.dart';
 import '../services/tools/builtin_tools.dart';
 import '../services/device_info_native.dart' as platform_info;
+import '../services/encoder_settings_service.dart';
 import '../services/image_generation_notification_service.dart';
 import '../services/scheduled_task_service.dart';
 import '../ffi/sd_ffi_bindings.dart';
+import 'encoder_parameters_panel.dart';
 import 'log_view.dart';
 
 class SettingsView extends GetView<SettingsController> {
@@ -133,11 +135,9 @@ class SettingsView extends GetView<SettingsController> {
                             icon: const Icon(Icons.check_circle_outline,
                                 size: 20),
                             onPressed: () => controller.setGlobalSystemPrompt(
-                                controller
-                                    .globalSystemPromptController.text)),
+                                controller.globalSystemPromptController.text)),
                       ),
-                      onSubmitted: (v) =>
-                          controller.setGlobalSystemPrompt(v),
+                      onSubmitted: (v) => controller.setGlobalSystemPrompt(v),
                     ),
                   ),
                 ],
@@ -153,11 +153,45 @@ class SettingsView extends GetView<SettingsController> {
                 children: [
                   _buildLiteRtCard(context, isDark),
                   const Divider(height: 0.5, indent: 16),
-                  _buildParametersPanel(context, isDark),
-                  const Divider(height: 0.5, indent: 16),
                   _buildThinkingCard(context, isDark),
                   const Divider(height: 0.5, indent: 16),
                   _buildComputeCard(context, isDark),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Embedding and rerank parameters live apart from the text ones
+              // because almost none of them mean the same thing on both sides. A
+              // temperature is a text-generation dial and has no meaning for a
+              // vector; a token ceiling is the one thing they share, and it is
+              // not a preference on either side — it is a hard limit read from
+              // the file. Merging them into one panel would mean either dead
+              // controls per role or controls whose meaning changes when the
+              // loaded model does.
+              _CollapsibleGroup(
+                isDark: isDark,
+                icon: Icons.gradient_rounded,
+                title: 'Embeddings',
+                subtitle: _encoderSubtitle(context, 'embed'),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                    child:
+                        EncoderParametersPanel(role: 'embed', isDark: isDark),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _CollapsibleGroup(
+                isDark: isDark,
+                icon: Icons.low_priority_rounded,
+                title: 'Rerank',
+                subtitle: _encoderSubtitle(context, 'rerank'),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                    child:
+                        EncoderParametersPanel(role: 'rerank', isDark: isDark),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -228,12 +262,11 @@ class SettingsView extends GetView<SettingsController> {
                   onTap: () {
                     const ladder = [0, 1, 2, 3, 4, 6, 8];
                     final i = ladder.indexOf(controller.agentMaxHops.value);
-                    controller.setAgentMaxHops(
-                        ladder[(i + 1) % ladder.length]);
+                    controller.setAgentMaxHops(ladder[(i + 1) % ladder.length]);
                   },
                 ),
               ]),
-               const SizedBox(height: 10),
+              const SizedBox(height: 10),
               _scheduledTasksTile(context, isDark),
               const SizedBox(height: 10),
               _sectionLabel(context, 'DIAGNOSTICS'),
@@ -251,8 +284,8 @@ class SettingsView extends GetView<SettingsController> {
                 _appleListTile(
                   context,
                   isDark,
-                  leading: _iconBox(
-                      const Color(0xFFB9F53E), Icons.dns_outlined),
+                  leading:
+                      _iconBox(const Color(0xFFB9F53E), Icons.dns_outlined),
                   title: 'local_api_server'.tr,
                   subtitle: 'openai_compatible_endpoint'.tr,
                   trailing: const Icon(Icons.chevron_right, size: 18),
@@ -327,18 +360,17 @@ class SettingsView extends GetView<SettingsController> {
     final showNotif = hive.getSetting<bool>(
           AppConstants.keyScheduledTaskNotifications,
           defaultValue: true,
-        ) ?? true;
+        ) ??
+        true;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text('show_background_notification'.tr),
-      subtitle: const Text(
-          'Display a persistent notification while tasks are\n'
+      subtitle: const Text('Display a persistent notification while tasks are\n'
           'scheduled or model is kept loaded in the background.'),
       trailing: Switch(
         value: showNotif,
         onChanged: (v) async {
-          await hive.setSetting(
-              AppConstants.keyScheduledTaskNotifications, v);
+          await hive.setSetting(AppConstants.keyScheduledTaskNotifications, v);
           if (!v) {
             await Get.find<ImageGenerationNotificationService>()
                 .cancelScheduledNotification();
@@ -478,91 +510,93 @@ class SettingsView extends GetView<SettingsController> {
     try {
       final service = Get.find<ScheduledTaskService>();
       showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => Container(
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.surface : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: EdgeInsets.fromLTRB(
-            20, 16, 20, 24 + MediaQuery.of(sheetCtx).viewInsets.bottom),
-        child: Obx(() => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('scheduled_tasks'.tr,
-                    style: GoogleFonts.inter(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                if (service.tasks.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    child: Text(
-                      'No tasks yet. A task runs its prompt every day at the '
-                      'chosen time with the model it was created with — even '
-                      'with the app closed — and posts the result here in chat.',
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (sheetCtx) => Container(
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.surface : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+              20, 16, 20, 24 + MediaQuery.of(sheetCtx).viewInsets.bottom),
+          child: Obx(() => Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('scheduled_tasks'.tr,
                       style: GoogleFonts.inter(
-                          fontSize: 13, color: Colors.grey.shade500),
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  if (service.tasks.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Text(
+                        'No tasks yet. A task runs its prompt every day at the '
+                        'chosen time with the model it was created with — even '
+                        'with the app closed — and posts the result here in chat.',
+                        style: GoogleFonts.inter(
+                            fontSize: 13, color: Colors.grey.shade500),
+                      ),
                     ),
+                  ...service.tasks.map((t) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(t.name,
+                            style:
+                                GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          '${t.frequencyLabel} ${t.hour.toString().padLeft(2, '0')}:'
+                          '${t.minute.toString().padLeft(2, '0')}'
+                          '${t.modelName == null ? "" : " · ${t.modelName}"}'
+                          '${t.keepModelLoaded ? " · model kept loaded" : ""}',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Switch(
+                              value: t.enabled,
+                              onChanged: (v) async {
+                                await service.setEnabled(t, v);
+                                if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit),
+                              onPressed: () async {
+                                final edited = await _editScheduledTaskDialog(
+                                    sheetCtx, service, t);
+                                if (edited && sheetCtx.mounted)
+                                  Navigator.pop(sheetCtx);
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () {
+                                service.remove(t.id);
+                                if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                              },
+                            ),
+                          ],
+                        ),
+                      )),
+                  const SizedBox(height: 8),
+                  _scheduledTaskNotificationTile(context, isDark),
+                  const SizedBox(height: 8),
+                  FilledButton.icon(
+                    onPressed: () async {
+                      final created =
+                          await _createScheduledTaskDialog(sheetCtx, service);
+                      if (created && sheetCtx.mounted) Navigator.pop(sheetCtx);
+                    },
+                    icon: const Icon(Icons.add),
+                    label: Text('new_daily_task'.tr),
                   ),
-                ...service.tasks.map((t) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(t.name,
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-                      subtitle: Text(
-                        '${t.frequencyLabel} ${t.hour.toString().padLeft(2, '0')}:'
-                        '${t.minute.toString().padLeft(2, '0')}'
-                        '${t.modelName == null ? "" : " · ${t.modelName}"}'
-                        '${t.keepModelLoaded ? " · model kept loaded" : ""}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Switch(
-                            value: t.enabled,
-                            onChanged: (v) async {
-                              await service.setEnabled(t, v);
-                              if (sheetCtx.mounted) Navigator.pop(sheetCtx);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.edit),
-                            onPressed: () async {
-                              final edited = await _editScheduledTaskDialog(
-                                  sheetCtx, service, t);
-                              if (edited && sheetCtx.mounted) Navigator.pop(sheetCtx);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () {
-                              service.remove(t.id);
-                              if (sheetCtx.mounted) Navigator.pop(sheetCtx);
-                            },
-                          ),
-                        ],
-                      ),
-                    )),
-                 const SizedBox(height: 8),
-                _scheduledTaskNotificationTile(context, isDark),
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                  onPressed: () async {
-                    final created = await _createScheduledTaskDialog(
-                        sheetCtx, service);
-                    if (created && sheetCtx.mounted) Navigator.pop(sheetCtx);
-                  },
-                  icon: const Icon(Icons.add),
-                  label: Text('new_daily_task'.tr),
-                ),
-              ],
-            )),
-      ),
-    );
+                ],
+              )),
+        ),
+      );
     } catch (e, st) {
       if (context.mounted) {
         Get.snackbar('Error', '$e', snackPosition: SnackPosition.BOTTOM);
@@ -602,8 +636,7 @@ class SettingsView extends GetView<SettingsController> {
                 controller: promptCtl,
                 minLines: 3,
                 maxLines: 5,
-                decoration: InputDecoration(
-                    labelText: 'prompt_to_run'.tr),
+                decoration: InputDecoration(labelText: 'prompt_to_run'.tr),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -612,10 +645,14 @@ class SettingsView extends GetView<SettingsController> {
                 items: [
                   DropdownMenuItem(value: 'daily', child: Text('daily'.tr)),
                   DropdownMenuItem(value: 'hourly', child: Text('hourly'.tr)),
-                  DropdownMenuItem(value: 'every2h', child: Text('every_2h'.tr)),
-                  DropdownMenuItem(value: 'every4h', child: Text('every_4h'.tr)),
-                  DropdownMenuItem(value: 'every6h', child: Text('every_6h'.tr)),
-                  DropdownMenuItem(value: 'every8h', child: Text('every_8h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every2h', child: Text('every_2h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every4h', child: Text('every_4h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every6h', child: Text('every_6h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every8h', child: Text('every_8h'.tr)),
                   DropdownMenuItem(value: 'once', child: Text('just_once'.tr)),
                 ],
                 onChanged: (v) {
@@ -633,8 +670,8 @@ class SettingsView extends GetView<SettingsController> {
                         ? Text('at_this_minute_past_each_interval'.tr)
                         : Text('at_this_time_every_day'.tr),
                 onTap: () async {
-                  final picked = await showTimePicker(
-                      context: dlgCtx, initialTime: time);
+                  final picked =
+                      await showTimePicker(context: dlgCtx, initialTime: time);
                   if (picked != null) setState(() => time = picked);
                 },
               ),
@@ -679,7 +716,8 @@ class SettingsView extends GetView<SettingsController> {
     );
     if (!ok) return false;
     try {
-      final modelPath = await Get.find<DownloadService>().modelPath(selectedModel);
+      final modelPath =
+          await Get.find<DownloadService>().modelPath(selectedModel);
       await service.add(
         name: nameCtl.text.trim(),
         prompt: promptCtl.text.trim(),
@@ -700,9 +738,8 @@ class SettingsView extends GetView<SettingsController> {
     }
   }
 
-  Future<bool> _editScheduledTaskDialog(
-      BuildContext context, ScheduledTaskService service,
-      ScheduledTask task) async {
+  Future<bool> _editScheduledTaskDialog(BuildContext context,
+      ScheduledTaskService service, ScheduledTask task) async {
     final nameCtl = TextEditingController(text: task.name);
     final promptCtl = TextEditingController(text: task.prompt);
     TimeOfDay time = TimeOfDay(hour: task.hour, minute: task.minute);
@@ -728,8 +765,7 @@ class SettingsView extends GetView<SettingsController> {
                 controller: promptCtl,
                 minLines: 3,
                 maxLines: 5,
-                decoration: InputDecoration(
-                    labelText: 'prompt_to_run'.tr),
+                decoration: InputDecoration(labelText: 'prompt_to_run'.tr),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -738,10 +774,14 @@ class SettingsView extends GetView<SettingsController> {
                 items: [
                   DropdownMenuItem(value: 'daily', child: Text('daily'.tr)),
                   DropdownMenuItem(value: 'hourly', child: Text('hourly'.tr)),
-                  DropdownMenuItem(value: 'every2h', child: Text('every_2h'.tr)),
-                  DropdownMenuItem(value: 'every4h', child: Text('every_4h'.tr)),
-                  DropdownMenuItem(value: 'every6h', child: Text('every_6h'.tr)),
-                  DropdownMenuItem(value: 'every8h', child: Text('every_8h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every2h', child: Text('every_2h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every4h', child: Text('every_4h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every6h', child: Text('every_6h'.tr)),
+                  DropdownMenuItem(
+                      value: 'every8h', child: Text('every_8h'.tr)),
                   DropdownMenuItem(value: 'once', child: Text('just_once'.tr)),
                 ],
                 onChanged: (v) {
@@ -759,8 +799,8 @@ class SettingsView extends GetView<SettingsController> {
                         ? Text('at_this_minute_past_each_interval'.tr)
                         : Text('at_this_time_every_day'.tr),
                 onTap: () async {
-                  final picked = await showTimePicker(
-                      context: dlgCtx, initialTime: time);
+                  final picked =
+                      await showTimePicker(context: dlgCtx, initialTime: time);
                   if (picked != null) setState(() => time = picked);
                 },
               ),
@@ -834,6 +874,34 @@ class SettingsView extends GetView<SettingsController> {
           snackPosition: SnackPosition.BOTTOM);
       return false;
     }
+  }
+
+  /// One line saying what the panel's overrides currently are, so the collapsed
+  /// header is not a bare title.
+  ///
+  /// Reads the count and not the values: a header that tried to summarise them
+  /// would have to be as wide as the longest prefix, and the useful signal is
+  /// "is anything overridden at all".
+  String _encoderSubtitle(BuildContext context, String role) {
+    final e = Get.find<EncoderSettingsService>();
+    if (role == 'embed') {
+      final parts = <String>[];
+      if (e.embedQueryPrefix.value != null) parts.add('query prefix');
+      if (e.embedPassagePrefix.value != null) parts.add('passage prefix');
+      if (e.embedNormalize.value != null) {
+        parts.add(e.embedNormalize.value! ? 'normalise' : 'raw');
+      }
+      if (parts.isEmpty) return 'All from the model';
+      return parts.join(' · ');
+    }
+    final parts = <String>[];
+    if (e.rerankTopN.value != null) parts.add('top ${e.rerankTopN.value}');
+    if (e.rerankDocumentSeparator.value != '\n') {
+      parts.add('sep "${e.rerankDocumentSeparator.value}"');
+    }
+    if (!e.rerankReturnDocuments.value) parts.add('no documents');
+    if (parts.isEmpty) return 'All from the model';
+    return parts.join(' · ');
   }
 
   Widget _sectionLabel(BuildContext context, String title) {
@@ -1131,8 +1199,8 @@ class SettingsView extends GetView<SettingsController> {
             hintText: 'https://searx.example.org/search',
             suffixIcon: IconButton(
               icon: const Icon(Icons.check_circle_outline, size: 20),
-              onPressed: () => controller
-                  .setCustomSearchUrl(controller.customSearchUrlController.text),
+              onPressed: () => controller.setCustomSearchUrl(
+                  controller.customSearchUrlController.text),
             ),
           ),
           onSubmitted: controller.setCustomSearchUrl,
@@ -1320,7 +1388,6 @@ class SettingsView extends GetView<SettingsController> {
         ),
     ]);
   }
-
 
   Widget _buildImageGenerationCard(BuildContext context, bool isDark) {
     final stepsValue = controller.imageSteps.value.toDouble();
@@ -1812,8 +1879,7 @@ class SettingsView extends GetView<SettingsController> {
               _appleListTile(
                 context,
                 isDark,
-                leading:
-                    _iconBox(accent, Icons.developer_board_rounded),
+                leading: _iconBox(accent, Icons.developer_board_rounded),
                 title: options[i].title,
                 subtitle: options[i].subtitle,
                 trailing: selected == options[i].value
@@ -1998,15 +2064,13 @@ class SettingsView extends GetView<SettingsController> {
       future: () async {
         final dir = await Get.find<DownloadService>().modelsDir;
         // The listing returns bare names; resolve them so sizes are real.
-        final names =
-            await Get.find<DownloadService>().getDownloadedModels();
+        final names = await Get.find<DownloadService>().getDownloadedModels();
         return names.map((n) => '$dir/$n').toList();
       }(),
       builder: (context, snap) {
         final files = snap.data ?? const <String>[];
         return _appleGroupedCard(context, isDark, children: [
-          if (snap.connectionState != ConnectionState.done &&
-              files.isEmpty)
+          if (snap.connectionState != ConnectionState.done && files.isEmpty)
             const Padding(
               padding: EdgeInsets.all(16),
               child: Center(
@@ -2027,16 +2091,14 @@ class SettingsView extends GetView<SettingsController> {
               _appleListTile(
                 context,
                 isDark,
-                leading: _iconBox(const Color(0xFF5856D6),
-                    Icons.insert_drive_file_outlined),
+                leading: _iconBox(
+                    const Color(0xFF5856D6), Icons.insert_drive_file_outlined),
                 title: files[i].split('/').last,
                 subtitle: () {
                   try {
                     final f = File(files[i]);
-                    final mb = (f.existsSync()
-                            ? f.lengthSync()
-                            : 0) /
-                        (1024 * 1024);
+                    final mb =
+                        (f.existsSync() ? f.lengthSync() : 0) / (1024 * 1024);
                     return '${mb.toStringAsFixed(0)} MB';
                   } catch (_) {
                     return '—';
@@ -2048,8 +2110,7 @@ class SettingsView extends GetView<SettingsController> {
             final mc = Get.find<ModelController>();
             final backing = mc.isBackingUp.value;
             final overall = mc.backupTotalBytes.value > 0
-                ? (mc.backupCopiedBytes.value /
-                    mc.backupTotalBytes.value)
+                ? (mc.backupCopiedBytes.value / mc.backupTotalBytes.value)
                 : null;
             return Column(children: [
               if (backing) ...[
@@ -2086,33 +2147,29 @@ class SettingsView extends GetView<SettingsController> {
               _appleListTile(
                 context,
                 isDark,
-                leading:
-                    _iconBox(AppColors.success, Icons.save_as_outlined),
+                leading: _iconBox(AppColors.success, Icons.save_as_outlined),
                 title: backing ? 'Backing up…' : 'Backup configs…',
                 subtitle: backing
                     ? 'Keep this screen open'
                     : 'Settings template · optional model files',
-                trailing: backing
-                    ? null
-                    : const Icon(Icons.chevron_right, size: 18),
+                trailing:
+                    backing ? null : const Icon(Icons.chevron_right, size: 18),
                 showDivider: true,
-                onTap: backing
-                    ? null
-                    : () => _showBackupSheet(context),
+                onTap: backing ? null : () => _showBackupSheet(context),
               ),
               // Always offered: restoring a config backup into a fresh
               // install is exactly when it is needed.
               _appleListTile(
-                  context,
-                  isDark,
-                  leading: _iconBox(
-                      const Color(0xFFFF9500), Icons.restore_rounded),
-                  title: 'Restore backup…',
-                  subtitle: 'Apply a config template · bring models back',
-                  trailing: const Icon(Icons.chevron_right, size: 18),
-                  showDivider: false,
-                  onTap: () => _showRestoreSheet(context),
-                ),
+                context,
+                isDark,
+                leading:
+                    _iconBox(const Color(0xFFFF9500), Icons.restore_rounded),
+                title: 'Restore backup…',
+                subtitle: 'Apply a config template · bring models back',
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                showDivider: false,
+                onTap: () => _showRestoreSheet(context),
+              ),
             ]);
           }),
         ]);
@@ -2172,7 +2229,9 @@ class SettingsView extends GetView<SettingsController> {
                   borderRadius: BorderRadius.circular(6)),
               child: Text(displayValue ?? value.toStringAsFixed(2),
                   style: GoogleFonts.inter(
-                      fontSize: 13, color: accent, fontWeight: FontWeight.w600)),
+                      fontSize: 13,
+                      color: accent,
+                      fontWeight: FontWeight.w600)),
             ),
           ),
         ]),
@@ -2236,149 +2295,147 @@ class SettingsView extends GetView<SettingsController> {
           : Icons.brightness_auto_outlined;
 }
 
-
-  Future<void> _showBackupSheet(BuildContext context) async {
-    final mc = Get.find<ModelController>();
-    var includeModels = false;
-    final selected = <String>{};
-    // Built once: recreating it inside StatefulBuilder would re-run the
-    // FutureBuilder on every toggle, and its empty-guard would then refill
-    // the selection the user had just cleared ("None" looked broken).
-    final namesFuture = Get.find<DownloadService>().getDownloadedModels();
-    var autoSelectDone = false;
-    await showModalBottomSheet(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setSheet) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('backup_configs'.tr,
-                    style: GoogleFonts.inter(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text(
-                    'Settings template (API keys never leave the device) '
-                    'into a dated folder of your chosen location.',
-                    style: GoogleFonts.inter(
-                        fontSize: 12, color: Theme.of(context).hintColor)),
-                const SizedBox(height: 10),
-                CheckboxListTile(
-                  value: includeModels,
-                  onChanged: (v) => setSheet(() => includeModels = v ?? false),
-                  title: Text('include_model_files'.tr),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                if (includeModels)
-                  Flexible(
-                    child: FutureBuilder<List<String>>(
-                      future: namesFuture,
-                      builder: (context, snap) {
-                        final names = snap.data ?? const <String>[];
-                        if (!autoSelectDone && names.isNotEmpty) {
-                          autoSelectDone = true;
-                          selected.addAll(names);
-                        }
-                        return Column(children: [
-                          Row(children: [
-                            TextButton(
-                                onPressed: () =>
-                                    setSheet(() => selected.addAll(names)),
-                                child: Text('all'.tr)),
-                            TextButton(
-                                onPressed: () => setSheet(selected.clear),
-                                child: Text('none'.tr)),
+Future<void> _showBackupSheet(BuildContext context) async {
+  final mc = Get.find<ModelController>();
+  var includeModels = false;
+  final selected = <String>{};
+  // Built once: recreating it inside StatefulBuilder would re-run the
+  // FutureBuilder on every toggle, and its empty-guard would then refill
+  // the selection the user had just cleared ("None" looked broken).
+  final namesFuture = Get.find<DownloadService>().getDownloadedModels();
+  var autoSelectDone = false;
+  await showModalBottomSheet(
+    context: context,
+    builder: (ctx) {
+      return StatefulBuilder(builder: (ctx, setSheet) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('backup_configs'.tr,
+                  style: GoogleFonts.inter(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(
+                  'Settings template (API keys never leave the device) '
+                  'into a dated folder of your chosen location.',
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: Theme.of(context).hintColor)),
+              const SizedBox(height: 10),
+              CheckboxListTile(
+                value: includeModels,
+                onChanged: (v) => setSheet(() => includeModels = v ?? false),
+                title: Text('include_model_files'.tr),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+              if (includeModels)
+                Flexible(
+                  child: FutureBuilder<List<String>>(
+                    future: namesFuture,
+                    builder: (context, snap) {
+                      final names = snap.data ?? const <String>[];
+                      if (!autoSelectDone && names.isNotEmpty) {
+                        autoSelectDone = true;
+                        selected.addAll(names);
+                      }
+                      return Column(children: [
+                        Row(children: [
+                          TextButton(
+                              onPressed: () =>
+                                  setSheet(() => selected.addAll(names)),
+                              child: Text('all'.tr)),
+                          TextButton(
+                              onPressed: () => setSheet(selected.clear),
+                              child: Text('none'.tr)),
+                        ]),
+                        SizedBox(
+                          height: 180,
+                          child: ListView(children: [
+                            for (final n in names)
+                              CheckboxListTile(
+                                dense: true,
+                                value: selected.contains(n),
+                                title: Text(n,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                onChanged: (v) => setSheet(() =>
+                                    v! ? selected.add(n) : selected.remove(n)),
+                              ),
                           ]),
-                          SizedBox(
-                            height: 180,
-                            child: ListView(children: [
-                              for (final n in names)
-                                CheckboxListTile(
-                                  dense: true,
-                                  value: selected.contains(n),
-                                  title: Text(n,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
-                                  onChanged: (v) => setSheet(() => v!
-                                      ? selected.add(n)
-                                      : selected.remove(n)),
-                                ),
-                            ]),
-                          ),
-                        ]);
-                      },
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.backup_outlined),
-                    label: Text('start_backup'.tr),
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      mc.backupConfigs(
-                        includeModels: includeModels,
-                        modelFiles: Set<String>.from(selected),
-                      );
+                        ),
+                      ]);
                     },
                   ),
                 ),
-              ]),
-            ),
-          );
-        });
-      },
-    );
-  }
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.backup_outlined),
+                  label: Text('start_backup'.tr),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    mc.backupConfigs(
+                      includeModels: includeModels,
+                      modelFiles: Set<String>.from(selected),
+                    );
+                  },
+                ),
+              ),
+            ]),
+          ),
+        );
+      });
+    },
+  );
+}
 
-  Future<void> _showRestoreSheet(BuildContext context) async {
-    final mc = Get.find<ModelController>();
-    await showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('restore_backup'.tr,
-                style: GoogleFonts.inter(
-                    fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: const Icon(Icons.settings_backup_restore_rounded),
-              title: Text('everything_configs___models'.tr),
-              subtitle: const Text(
-                  'Template first, then the files in the backup folder'),
-              onTap: () {
-                Navigator.pop(ctx);
-                mc.restoreEverything();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_suggest_outlined),
-              title: Text('configs_template_json'.tr),
-              subtitle: Text('overwrites_current_settings'.tr),
-              onTap: () {
-                Navigator.pop(ctx);
-                mc.restoreConfigs();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_copy_outlined),
-              title: Text('model_files_from_the_backup_folder'.tr),
-              subtitle: Text('skips_files_already_present_and_identica'.tr),
-              onTap: () {
-                Navigator.pop(ctx);
-                mc.restoreModelsFromBackup();
-              },
-            ),
-          ]),
-        ),
+Future<void> _showRestoreSheet(BuildContext context) async {
+  final mc = Get.find<ModelController>();
+  await showModalBottomSheet(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('restore_backup'.tr,
+              style:
+                  GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          ListTile(
+            leading: const Icon(Icons.settings_backup_restore_rounded),
+            title: Text('everything_configs___models'.tr),
+            subtitle: const Text(
+                'Template first, then the files in the backup folder'),
+            onTap: () {
+              Navigator.pop(ctx);
+              mc.restoreEverything();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_suggest_outlined),
+            title: Text('configs_template_json'.tr),
+            subtitle: Text('overwrites_current_settings'.tr),
+            onTap: () {
+              Navigator.pop(ctx);
+              mc.restoreConfigs();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder_copy_outlined),
+            title: Text('model_files_from_the_backup_folder'.tr),
+            subtitle: Text('skips_files_already_present_and_identica'.tr),
+            onTap: () {
+              Navigator.pop(ctx);
+              mc.restoreModelsFromBackup();
+            },
+          ),
+        ]),
       ),
-    );
-  }
+    ),
+  );
+}
 
 class _CollapsibleGroup extends StatefulWidget {
   final bool isDark;
@@ -2417,8 +2474,7 @@ class _CollapsibleGroupState extends State<_CollapsibleGroup> {
         InkWell(
           onTap: () => setState(() => _open = !_open),
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(children: [
               _iconBoxFor(context),
               const SizedBox(width: 14),
@@ -2431,9 +2487,8 @@ class _CollapsibleGroupState extends State<_CollapsibleGroup> {
                           style: GoogleFonts.inter(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
-                              color: widget.isDark
-                                  ? Colors.white
-                                  : Colors.black)),
+                              color:
+                                  widget.isDark ? Colors.white : Colors.black)),
                       if (widget.subtitle != null) ...[
                         const SizedBox(height: 2),
                         Text(widget.subtitle!,
@@ -2460,12 +2515,10 @@ class _CollapsibleGroupState extends State<_CollapsibleGroup> {
           crossFadeState:
               _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
           firstChild: const SizedBox(width: double.infinity),
-          secondChild: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Divider(height: 0.5, indent: 16, endIndent: 16),
-                ...widget.children,
-              ]),
+          secondChild: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Divider(height: 0.5, indent: 16, endIndent: 16),
+            ...widget.children,
+          ]),
         ),
       ]),
     );
@@ -2480,5 +2533,4 @@ class _CollapsibleGroupState extends State<_CollapsibleGroup> {
             borderRadius: BorderRadius.circular(7)),
         child: Icon(widget.icon, size: 17, color: _accent));
   }
-
 }
