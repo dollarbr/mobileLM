@@ -7,7 +7,6 @@ import '../core/colors.dart';
 import '../core/constants.dart';
 import '../services/hive_service.dart';
 import '../services/local_image_service.dart';
-import '../ffi/mobilelm_core_bindings.dart';
 import '../ffi/sd_ffi_bindings.dart';
 import 'package:sd_flutter_android/sd_flutter_android.dart';
 
@@ -61,13 +60,6 @@ class SettingsController extends GetxController {
   final customSearchToken = ''.obs;
   final customSearchUrlController = TextEditingController();
   final customSearchTokenController = TextEditingController();
-  /// Whether `.litertlm` models go through the Rust core. See
-  /// `AppConstants.keyHybridCoreEnabled` for why this defaults to off.
-  final hybridCoreEnabled = false.obs;
-
-  /// Why the switch could not be turned on, or null. Shown under it, so the
-  /// difference between "unavailable" and "broken" is visible rather than guessed.
-  final coreUnavailableReason = RxnString();
 
   final imageSteps = 8.obs;
   final imageGenForceCpu = AppConstants.defaultImageGenForceCpu.obs;
@@ -253,9 +245,6 @@ class SettingsController extends GetxController {
           defaultValue: AppConstants.defaultLiteRtPerformanceMode,
         ) ??
         AppConstants.defaultLiteRtPerformanceMode;
-    hybridCoreEnabled.value =
-        _hive.getSetting(AppConstants.keyHybridCoreEnabled, defaultValue: false) ??
-            false;
     imageSteps.value = _hive.getSetting(AppConstants.keyImageSteps,
             defaultValue: AppConstants.defaultImageSteps) ??
         AppConstants.defaultImageSteps;
@@ -960,24 +949,6 @@ class SettingsController extends GetxController {
     };
     thinkingMode.value = normalized;
     await _hive.setSetting(AppConstants.keyThinkingMode, normalized);
-  }
-
-  /// Turn the Rust core on or off for `.litertlm` models.
-  ///
-  /// Refuses to turn it on when the core is not in the build. A switch that sets a
-  /// flag the loader will ignore is worse than one that says so: the user flips it,
-  /// nothing changes, and the natural conclusion is that the feature is broken
-  /// rather than absent.
-  Future<void> setHybridCoreEnabled(bool value) async {
-    if (value && !MobilelmCore.isAvailable) {
-      coreUnavailableReason.value =
-          'This build has no Rust core. It ships in release APKs; a debug build '
-          'from before the wiring, or a web target, does not have it.';
-      return;
-    }
-    coreUnavailableReason.value = null;
-    hybridCoreEnabled.value = value;
-    await _hive.setSetting(AppConstants.keyHybridCoreEnabled, value);
   }
 
   Future<void> setLiteRtPerformanceMode(String mode) async {

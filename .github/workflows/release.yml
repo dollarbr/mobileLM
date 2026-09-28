@@ -9,24 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  # The Rust core's arm64 build. It is a separate job and a reusable workflow for
-  # one concrete reason: `ci.yml` runs on `push: branches: [main]`, so **a tag
-  # push never built anything.** While the cross-compile lived there, this file
-  # had no Rust artefact to download and could not have shipped the core at all —
-  # the gap was invisible precisely because the job was green in ci.yml and
-  # nobody runs ci.yml when they cut a tag.
-  #
-  # Note what this job does NOT have: `environment: release`. The signing secrets
-  # are not needed to compile a cdylib, and a job that could read them should not
-  # also be a job that does not need them. The environment stays on the job that
-  # actually signs.
-  native:
-    name: Rust core, arm64
-    uses: ./.github/workflows/rust-core.yml
-
   build:
     name: Build & Publish
-    needs: native
     runs-on: ubuntu-latest
 
     # The three RELEASE_* secrets live in the `release` environment, not at
@@ -50,28 +34,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0 # release notes diff against the previous tag
-
-      # `android/app/src/main/jniLibs/arm64-v8a/` is already where this app keeps a
-      # hand-placed `.so` that ships in the APK — `libomp.so` lives there and is
-      # committed — so no Gradle change is needed. Both of these are gitignored by
-      # name: ~42 MB has no business in git, and the core's rule is that no binary
-      # is committed.
-      - name: Put the Rust core and the LiteRT runtime in jniLibs
-        uses: actions/download-artifact@v4
-        with:
-          name: mobilelm-native-arm64
-          path: android/app/src/main/jniLibs/arm64-v8a
-
-      - name: Confirm the natives landed
-        run: |
-          dir=android/app/src/main/jniLibs/arm64-v8a
-          ls -lh "$dir"
-          for so in libmobilelm_core.so liblitert-lm.so; do
-            if [ ! -f "$dir/$so" ]; then
-              echo "::error::$so missing from jniLibs; the APK would have no engine" >&2
-              exit 1
-            fi
-          done
 
       - name: Check tag matches pubspec version
         env:
@@ -234,17 +196,16 @@ jobs:
           mv app-arm64-v8a-release.apk  "mobilelm-$TAG-arm64-v8a.apk"
           ls -lh mobilelm-*.apk
 
-      # Assert the natives are in the APK, from the APK. The step that checks
-      # jniLibs proves the files were downloaded; this proves they were packaged,
-      # which is a different thing — a `packagingOptions` exclusion or an ABI
-      # filter would pass the first and fail this.
+      # What ships, asserted in the APK rather than in jniLibs — a step that
+      # checks the staging directory proves a file was downloaded, not that it was
+      # packaged, and a `packagingOptions` exclusion or an ABI filter is invisible
+      # to the first.
       #
-      # Also asserted: that `liblitertlm_jni.so` is GONE. That is the evidence
-      # 0.4.0's claim rests on. The Kotlin plugin and its AAR are deleted in the
-      # commit that switches the app over; until both happen this is the check
-      # that says so, and it is here rather than in a comment because "the Kotlin
-      # plugin is gone" is exactly the kind of claim that drifts.
-      - name: The APK carries the Rust core, not the Kotlin plugin
+      # Asserted positively, because its absence is the whole point of a release
+      # that stays on the Kotlin plugin: `liblitertlm_jni.so` is the LiteRT-LM
+      # engine this app actually uses, and a release without it ships a model list
+      # that half of it cannot load.
+      - name: The APK carries the Kotlin plugin's engine, and no Rust core
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -252,31 +213,21 @@ jobs:
           apk="build/app/outputs/flutter-apk/mobilelm-$TAG-arm64-v8a.apk"
           test -f "$apk" || { echo "::error::no APK at $apk" >&2; exit 1; }
 
-          for so in libmobilelm_core.so liblitert-lm.so; do
-            if ! unzip -l "$apk" | grep -q "lib/arm64-v8a/$so"; then
-              echo "::error::$so is not in the APK" >&2
-              unzip -l "$apk" | grep 'lib/arm64-v8a/' >&2 || true
-              exit 1
-            fi
-          done
-
-          if [ "${REQUIRE_NO_KOTLIN_PLUGIN:-0}" = "1" ]; then
-            if unzip -l "$apk" | grep -q 'lib/arm64-v8a/liblitertlm_jni.so'; then
-              echo "::error::liblitertlm_jni.so is still in the APK; the Kotlin plugin was not removed" >&2
-              exit 1
-            fi
-            echo "ok: the Kotlin plugin's runtime is gone, as 0.4.0 claims"
-          else
-            if unzip -l "$apk" | grep -q 'lib/arm64-v8a/liblitertlm_jni.so'; then
-              echo "note: liblitertlm_jni.so is still present — both engines are shipped."
-              echo "      Expected before the Kotlin plugin is deleted; set"
-              echo "      REQUIRE_NO_KOTLIN_PLUGIN=1 in the repository variable once it is not."
-            else
-              echo "ok: liblitertlm_jni.so is absent"
-            fi
+          if ! unzip -l "$apk" | grep -q 'lib/arm64-v8a/liblitertlm_jni.so'; then
+            echo "::error::liblitertlm_jni.so is not in the APK; LiteRT-LM models would have no engine" >&2
+            unzip -l "$apk" | grep 'lib/arm64-v8a/' >&2 || true
+            exit 1
           fi
 
-          unzip -l "$apk" | grep 'lib/arm64-v8a/' | awk '{printf "  %-46s %s\n", $4, $1}'
+          # The parked Rust core shipped 37,2 MB of `liblitert-lm.so` for a path
+          # that was off. Its coming back is not a failure of this build, but it
+          # is worth a word rather than 37 MB of silence.
+          if unzip -l "$apk" | grep -q 'lib/arm64-v8a/liblitert-lm.so'; then
+            echo "::warning::liblitert-lm.so is in the APK again — that is the 37,2 MB the Kotlin plugin replaced"
+          fi
+
+          unzip -l "$apk" | grep 'lib/arm64-v8a/' \
+            | awk '{printf "  %-46s %8.1f MB\n", $4, $1/1048576}'
 
       # The assertion that would have caught this in the first place, and the one
       # that keeps it caught. It is cheap, it is the actual property that

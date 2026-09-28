@@ -4,6 +4,7 @@ import 'hive_service.dart';
 import '../core/constants.dart';
 import 'device_info_service.dart';
 import 'app_log_service.dart';
+import '../utils/token_rate.dart';
 
 // Conditionally import llama_flutter_android — only on Android
 import 'inference_android.dart' if (dart.library.html) 'inference_stub.dart'
@@ -351,12 +352,13 @@ class InferenceService extends GetxService {
                 firstVisibleTokenAt!.difference(startTime).inMilliseconds;
           }
           tokenCount.value++;
-          final speedStart = firstVisibleTokenAt ?? startTime;
-          final elapsedSeconds =
-              DateTime.now().difference(speedStart).inMilliseconds / 1000.0;
-          if (elapsedSeconds > 0) {
-            tokensPerSecond.value = tokenCount.value / elapsedSeconds;
-          }
+          // From `startTime`, not from the first token — see `token_rate.dart`
+          // for the number this used to print and why it was 1600× too high.
+          tokensPerSecond.value = endToEndTokensPerSecond(
+            tokens: tokenCount.value,
+            start: startTime,
+            now: DateTime.now(),
+          );
           if (loadedModelRuntime.value == 'litert') {
             tokenFlushBuffer.write(token);
             tokenFlushTimer ??= Timer(const Duration(milliseconds: 60), () {

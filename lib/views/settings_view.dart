@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_litert_lm/flutter_litert_lm.dart';
-import '../ffi/mobilelm_core_bindings.dart';
 import '../controllers/settings_controller.dart';
 import '../core/colors.dart';
 import '../controllers/chat_controller.dart';
@@ -153,12 +152,6 @@ class SettingsView extends GetView<SettingsController> {
                     : '${controller.liteRtPerformanceMode} · thinking ${controller.thinkingMode.value}',
                 children: [
                   _buildLiteRtCard(context, isDark),
-                  // Só entra na lista quando a build tem o núcleo, para não deixar um
-                  // item que nunca faz nada.
-                  if (_buildHybridCoreCard(context, isDark) case final core?) ...[
-                    const Divider(height: 0.5, indent: 16),
-                    core,
-                  ],
                   const Divider(height: 0.5, indent: 16),
                   _buildParametersPanel(context, isDark),
                   const Divider(height: 0.5, indent: 16),
@@ -1325,50 +1318,6 @@ class SettingsView extends GetView<SettingsController> {
           showDivider: i < modes.length - 1,
           onTap: () => controller.setLiteRtPerformanceMode(modes[i].value),
         ),
-    ]);
-  }
-
-  /// The Rust core switch, shown only when the build actually has it.
-  ///
-  /// Not shown when `MobilelmCore.isAvailable` is false, rather than shown
-  /// disabled: a permanently greyed switch invites a tap, and a tap that does
-  /// nothing is worse than one that was never offered.
-  Widget? _buildHybridCoreCard(BuildContext context, bool isDark) {
-    if (!MobilelmCore.isAvailable) return null;
-    final enabled = controller.hybridCoreEnabled.value;
-    final reason = controller.coreUnavailableReason.value;
-    final accent = isDark ? const Color(0xFFB9F53E) : AppColors.primary;
-
-    return _appleGroupedCard(context, isDark, children: [
-      _appleListTile(
-        context,
-        isDark,
-        leading: _iconBox(accent, Icons.memory_rounded),
-        title: 'Rust engine core',
-        subtitle: enabled
-            ? 'LiteRT-LM models load through libmobilelm_core.so'
-            : 'Off - LiteRT-LM models use the Kotlin plugin',
-        trailing: Switch(
-          value: enabled,
-          activeThumbColor: accent,
-          onChanged: (v) => controller.setHybridCoreEnabled(v),
-        ),
-        showDivider: false,
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: Text(
-          reason ??
-              'The core reaches LiteRT-LM through its C API instead of a Kotlin '
-                  'plugin. It changes how the app reaches the engine, not how fast '
-                  'the engine is. If a model fails to load, the app falls back to '
-                  'the plugin and says so in the log.',
-          style: TextStyle(
-            fontSize: 11,
-            color: isDark ? Colors.white38 : Colors.black38,
-          ),
-        ),
-      ),
     ]);
   }
 
