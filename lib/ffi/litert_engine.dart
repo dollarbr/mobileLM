@@ -770,6 +770,14 @@ class _StreamBridge {
   int _orphanedCallbacks = 0;
 
   void beginTurn(SendPort port, {required int maxTokens, required int messageBytes}) {
+    if (_turn > 0 && _orphanedCallbacks > 0) {
+      // Reported here, one turn late, because that is when the number is finally
+      // true. `endTurn` printed it while the last callback was still queued, so it
+      // always read 0 — the instrument was reporting the state before the event it
+      // measures.
+      print('[LiteRt] turn=$_turn dropped $_orphanedCallbacks callback(s) after '
+          'ending — the final event never reached the caller');
+    }
     _port = port;
     _turn++;
     _chunks = 0;
@@ -782,6 +790,18 @@ class _StreamBridge {
 
   /// Called once the blocking native call has returned, which is *before* the
   /// queued callbacks have necessarily run.
+  ///
+  /// **It must not clear the port.** A `listener` callback is dispatched to the
+  /// isolate's event loop, and this runs while that loop is still blocked in the
+  /// native call — so the `is_final` message the engine just queued is read *after*
+  /// this function returns. Clearing the port here made the bridge treat that
+  /// final event as a stray and drop it, and the turn then waited for an ending
+  /// that had been discarded. The device hung on the typing indicator with the
+  /// reason trapped in a Dart local.
+  ///
+  /// The port therefore lives until the next `beginTurn` replaces it. A callback
+  /// genuinely arriving after a turn is sent to a closed port, which is a no-op —
+  /// the right outcome for a stray, and the counter above notices it.
   void endTurn({required int nativeStatus}) {
     // `lastChunkAtMs` is 0 when the engine produced nothing at all, which reads
     // differently from "produced some and then stopped" — the two are the
@@ -792,16 +812,16 @@ class _StreamBridge {
         : DateTime.now().millisecondsSinceEpoch - _lastChunkAtMs;
     print('[LiteRt] endTurn turn=$_turn nativeStatus=$nativeStatus '
         'chunks=$_chunks firstChunk=${_announcedFirst ? 'yes' : 'NO'} '
-        'lastChunkToEndMs=$tail orphaned=$_orphanedCallbacks');
-    // The port is cleared only after the ending has been queued, and the queue
-    // holds the `_StreamEnd` before it holds nothing.
-    _port = null;
+        'lastChunkToEndMs=$tail');
   }
 
   void close() {
-    if (_port != null) {
-      print('[LiteRt] close while a turn was still open: '
-          'turn=$_turn chunks=$_chunks');
+    // `_port` is deliberately still set here, so its absence is the only reliable
+    // sign that no turn was ever started. A turn that began and never reached
+    // `endTurn` means the blocking call is still on the stack, and closing the
+    // callable underneath it is the crash this whole shape exists to avoid.
+    if (_turn > 0 && _chunks == 0 && !_announcedFirst && _port == null) {
+      print('[LiteRt] close with turn=$_turn unfinished');
     }
     callable.close();
   }
