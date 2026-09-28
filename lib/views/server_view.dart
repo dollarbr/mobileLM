@@ -243,20 +243,7 @@ class ServerView extends GetView<ServerController> {
               ]),
               const SizedBox(height: 12),
               _sectionLabel(context, 'USAGE EXAMPLES'),
-              _groupedCard(isDark, children: [
-                Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _codeBlock(context, isDark, 'List models',
-                              'curl ${controller.baseUrl}/v1/models${_authHeader()}'),
-                          _codeBlock(context, isDark, 'Chat completion',
-                              'curl ${controller.baseUrl}/v1/chat/completions \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n  -d \'{"model":"${controller.inference.loadedModelName.value}","messages":[{"role":"user","content":"Hello"}]}\''),
-                          _codeBlock(context, isDark, 'Python SDK',
-                              'from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${controller.baseUrl}/v1",\n    api_key="${controller.useApiKey.value ? controller.apiKey.value : "not-needed"}"\n)\n\nresponse = client.chat.completions.create(\n    model="${controller.inference.loadedModelName.value}",\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(response.choices[0].message.content)'),
-                        ])),
-              ]),
+              _usageExamples(context, isDark, controller),
             ],
 
             if (controller.lastError.value != null) ...[
@@ -284,6 +271,83 @@ class ServerView extends GetView<ServerController> {
       }),
     );
   }
+
+  // ── Usage examples, for the model that is actually loaded ──
+  //
+  // The three encoder endpoints did not exist when this screen was written, and
+  // the static list offered `/v1/chat/completions` to everyone. For a BERT that
+  // is a request that cannot work — there is no LM head — so the example was
+  // teaching the wrong thing to everyone and the right thing to no one.
+  //
+  // The examples are chosen by `modelRole` rather than printed all at once: a
+  // generation model has no `/v1/embeddings` to show, and a reranker has no
+  // `/v1/chat/completions`. The role comes from the encoder surface the native
+  // side reports, not from the file name, because the file name is how the
+  // bge-small with a size-1 classification head got called a classifier.
+  Widget _usageExamples(
+      BuildContext context, bool isDark, ServerController controller) {
+    final base = controller.baseUrl;
+    final model = controller.inference.loadedModelName.value;
+    final role = controller.modelRole;
+    final maxTokens = controller.encoder.value?.maxInputTokens ?? 0;
+
+    final blocks = <Widget>[];
+
+    if (role == null) {
+      blocks.add(_codeBlock(context, isDark, 'List models',
+          'curl $base/v1/models${_authHeader()}'));
+      blocks.add(_codeBlock(context, isDark, 'Chat completion',
+          'curl $base/v1/chat/completions \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n  -d \'{"model":"$model","messages":[{"role":"user","content":"Hello"}]}\''));
+      blocks.add(_codeBlock(context, isDark, 'Python SDK',
+          'from openai import OpenAI\n\nclient = OpenAI(\n    base_url="$base/v1",\n    api_key="${controller.useApiKey.value ? controller.apiKey.value : "not-needed"}"\n)\n\nresponse = client.chat.completions.create(\n    model="$model",\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(response.choices[0].message.content)'));
+    } else if (role == 'embedding') {
+      final dims = controller.encoder.value?.outputLength ?? 0;
+      blocks.add(_codeBlock(context, isDark, 'List models',
+          'curl $base/v1/models${_authHeader()}'));
+      blocks.add(_codeBlock(context, isDark, 'Embeddings — one vector per input',
+          'curl $base/v1/embeddings \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n  -d \'{"model":"$model","input":["first text","second text"]}\'\n\n# returns data[].embedding, one array of $dims floats each, L2-normalised\n# (measured on the Edge 60: norm 1.000000, so cosine is a plain dot product)'));
+      blocks.add(_codeBlock(context, isDark, 'Python SDK',
+          'from openai import OpenAI\n\nclient = OpenAI(\n    base_url="$base/v1",\n    api_key="${controller.useApiKey.value ? controller.apiKey.value : "not-needed"}"\n)\n\nvectors = client.embeddings.create(\n    model="$model",\n    input=["first text", "second text"],\n).data\nprint(len(vectors[0].embedding), "dimensions")'));
+    } else if (role == 'reranker') {
+      blocks.add(_codeBlock(context, isDark, 'List models',
+          'curl $base/v1/models${_authHeader()}'));
+      blocks.add(_codeBlock(context, isDark, 'Rerank — score a query against documents',
+          'curl $base/v1/rerank \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n  -d \'{"query":"how much storage does the map cache use",'
+          '"documents":["The cache holds about 340 MB.","Olive oil is pressed cold."]}\'\n\n# results come back sorted, best first, as {index, relevance_score}\n# the score is a logit: measured on the Edge 60, -0.37 to +2.19, so sigmoid\n# it and the high 0.9s are the ones that mean something'));
+      if (maxTokens > 0) {
+        blocks.add(_codeBlock(context, isDark, 'Limit',
+            'A query and document together must fit in $maxTokens tokens. An encoder\n'
+            'pools the whole sequence in one pass and cannot be split into smaller\n'
+            'batches, so a pair that does not fit comes back 400 with the count —\n'
+            'it does not crash the app, but it also is not truncated for you.'));
+      }
+      blocks.add(_codeBlock(context, isDark, 'Python SDK',
+          'from openai import OpenAI\n\nclient = OpenAI(\n    base_url="$base/v1",\n    api_key="${controller.useApiKey.value ? controller.apiKey.value : "not-needed"}"\n)\n\n'
+          '# the rerank shape follows Cohere and Jina, not OpenAI\n'
+          'resp = client.post(\n    "/rerank",\n    json={\n        "model": "$model",\n        "query": "how much storage does the map cache use",\n'
+          '        "documents": ["The cache holds about 340 MB.", "Olive oil is pressed cold."],\n    },\n)\n'
+          'for hit in resp.json()["results"]:\n    print(hit["relevance_score"], hit["index"])'));
+    } else {
+      final labels = controller.encoder.value?.labels ?? const <String>[];
+      blocks.add(_codeBlock(context, isDark, 'List models',
+          'curl $base/v1/models${_authHeader()}'));
+      blocks.add(_codeBlock(context, isDark, 'Classify — one score per label',
+          'curl $base/v1/classify \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n  -d \'{"input":"some text","labels":${_dartList(labels)}}\'\n\n'
+          '# this app\'s own shape: there is no standard one.\n'
+          '# labels come from the GGUF; a model with one label is a reranker, not a classifier.'));
+    }
+
+    return _groupedCard(isDark, children: [
+      Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: blocks)),
+    ]);
+  }
+
+  String _dartList(List<String> items) =>
+      items.isEmpty ? '[]' : '[${items.map((e) => '"$e"').join(",")}]';
 
   // ── Helpers ──
 

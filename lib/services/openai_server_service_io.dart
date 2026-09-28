@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
+import 'encoder_settings_service.dart';
 import 'inference_service.dart';
 
 class OpenAiServerService {
@@ -274,9 +275,17 @@ class OpenAiServerService {
           'the embedding families.';
     }
     if (wanted == 'embeddings' && (info.isReranker || info.isClassifier)) {
+      // Name only the endpoints this model can actually answer. The old text
+      // said "Use /v1/rerank or /v1/classify" to a reranker, and /v1/classify
+      // refuses it too — measured on the Edge 60 with
+      // gte-reranker-modernbert-base: "returns 1 value(s) and 1 label(s), so it
+      // is not a multi-class classifier". Pointing a caller at an endpoint that
+      // will also refuse costs a round trip to learn the same thing twice.
+      final alsoClassifies = info.isClassifier;
       return 'The loaded model is a ${info.isReranker ? 'reranker' : 'classifier'} '
           '(${info.pooling} pooling, ${info.nClsOut} output(s)), which returns scores '
-          'rather than a vector. Use /v1/rerank or /v1/classify.';
+          'rather than a vector. Use /v1/rerank'
+          '${alsoClassifies ? ' or /v1/classify' : ''}.';
     }
     if (wanted == 'rerank' && !info.isReranker) {
       // A count of classes is not evidence here, and saying so is the point.
@@ -372,11 +381,28 @@ class OpenAiServerService {
     }
 
     final inference = Get.find<InferenceService>();
+    final saved = Get.find<EncoderSettingsService>();
     final data = <Map<String, dynamic>>[];
     _busy = true;
     try {
       for (var i = 0; i < inputs.length; i++) {
-        final out = await LlamaEncoder.encode(inputs[i]);
+        // The prefix is applied here, on the server, rather than expected of the
+        // client — which is the only place it can be applied consistently. Every
+        // E5-family model was trained with `query: ` and `passage: ` on the two
+        // sides, and every BGE wants `query: ` on the query side only. A client
+        // that gets it wrong gets vectors that retrieve worse and nothing else:
+        // the request succeeds, the dimensions are right, and the cosine is
+        // plausible. There is no error to notice.
+        //
+        // `input` alone is the passage side. A client that also sends `query`
+        // gets the query side instead, which is the same field name `/v1/rerank`
+        // already uses, so the two endpoints read the same way.
+        final q = (body['query'] as String?)?.trim();
+        final onQuerySide = q != null && q.isNotEmpty;
+        final prefix = onQuerySide
+            ? (saved.embedQueryPrefix.value ?? '')
+            : (saved.embedPassagePrefix.value ?? '');
+        final out = await LlamaEncoder.encode('$prefix${onQuerySide ? q : inputs[i]}');
         // Norm is checked, not returned: a pooled vector of the right length
         // and all zeros is what a model gives when the batch was never marked
         // for output, and it would sail through every other check here.
@@ -387,10 +413,17 @@ class OpenAiServerService {
           }, status: HttpStatus.internalServerError);
           return;
         }
+        // `null` asks the model; `false` is the one override worth having, since
+        // cosine retrieval and raw dot-product retrieval are different choices
+        // and a caller that wants the raw vector should not have to re-normalise
+        // on top of ours.
+        final values = saved.embedNormalize.value == false
+            ? out.values
+            : _normalize(out.values);
         data.add({
           'object': 'embedding',
           'index': i,
-          'embedding': _normalize(out.values),
+          'embedding': values,
         });
       }
     } on EncoderUnavailable catch (e) {
@@ -445,8 +478,7 @@ class OpenAiServerService {
     }
     final List<String> documents;
     try {
-      documents =
-          _stringList(body['documents'] ?? body['texts'], 'documents');
+      documents = _documentsFrom(body['documents'] ?? body['texts']);
     } on FormatException catch (e) {
       await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
       return;
@@ -456,7 +488,13 @@ class OpenAiServerService {
           status: HttpStatus.badRequest);
       return;
     }
-    final topN = (body['top_n'] as num?)?.toInt();
+    // The request's own `top_n` wins over the saved default. A client that sent
+    // one has told us what it wants; silently preferring our setting would make
+    // the response shape depend on a phone-side preference the client cannot
+    // see, which is the kind of coupling that makes a server hard to reason
+    // about from the outside.
+    final saved = Get.find<EncoderSettingsService>();
+    final topN = (body['top_n'] as num?)?.toInt() ?? saved.rerankTopN.value;
 
     _busy = true;
     final results = <Map<String, dynamic>>[];
@@ -465,7 +503,23 @@ class OpenAiServerService {
         final out = await LlamaEncoder.encode(documents[i], query: query);
         results.add({
           'index': i,
+          // The raw logit, and deliberately not the sigmoid. This is the
+          // contract that was measured on the Edge 60 — a spread of 2,0698
+          // across a set with one real answer, and the NDCG@10 of 0,9981 came
+          // from these numbers — and the console reads this field to draw its
+          // bars. Changing it to a probability would silently rescale every
+          // measurement already taken, and a cross-encoder's sigmoid is not
+          // calibrated anyway: it spans 0,46–0,87 on a set with one obvious
+          // answer, which is not a probability of anything.
+          //
+          // The probability is offered alongside, under a name that says what
+          // it is, for a client that wants one. Both, never one instead of the
+          // other.
           'relevance_score': out.values.isEmpty ? 0.0 : out.values.first,
+          if (saved.rerankSigmoid.value)
+            'relevance_score_probability':
+                _sigmoid(out.values.isEmpty ? 0.0 : out.values.first),
+          if (saved.rerankReturnDocuments.value) 'document': documents[i],
         });
       }
     } on EncoderUnavailable catch (e) {
@@ -485,6 +539,55 @@ class OpenAiServerService {
       'results': ranked,
       'meta': {'billed_units': {'search_units': documents.length}},
     });
+  }
+
+  /// Splits a `documents` field into individual documents.
+  ///
+  /// A JSON array is taken as-is: it already has boundaries, and re-splitting it
+  /// on a separator would break any document that happens to contain one. A
+  /// string is split on the configured separator, which defaults to a newline.
+  /// The reason this is configurable at all is that a newline cannot be
+  /// distinguished from a paragraph break — a document sent as one line with
+  /// blank lines in it arrives here as three documents, ranked, and returned
+  /// without a word of complaint.
+  List<String> _documentsFrom(Object? raw) {
+    if (raw is List) {
+      return raw
+          .map((e) => '$e'.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    if (raw is! String) {
+      throw const FormatException(
+          "'documents' must be a string or an array of strings");
+    }
+    if (raw.trim().isEmpty) return const [];
+    final sep = Get.find<EncoderSettingsService>().rerankDocumentSeparator.value;
+    return raw
+        .split(sep)
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
+  static double _sigmoid(double x) {
+    if (x >= 0) return 1 / (1 + _exp(-x));
+    final e = _exp(x);
+    return e / (1 + e);
+  }
+
+  static double _exp(double x) {
+    // Bounded because `exp` overflows to infinity well inside the range a logit
+    // can reach, and a JSON payload carrying `Infinity` is not valid JSON — the
+    // client would see a parse error instead of a score.
+    if (x > 700) return double.infinity;
+    if (x < -700) return 0;
+    var sum = 1.0, term = 1.0;
+    for (var i = 1; i < 24; i++) {
+      term *= x / i;
+      sum += term;
+    }
+    return sum;
   }
 
   /// `POST /v1/classify` — this app's own shape, because there is no standard

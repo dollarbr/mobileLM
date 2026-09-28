@@ -21,6 +21,7 @@ import 'services/download_service.dart';
 import 'services/device_info_service.dart';
 import 'services/local_image_service.dart';
 import 'services/app_log_service.dart';
+import 'services/encoder_settings_service.dart';
 import 'services/crash_reporting_service.dart';
 import 'services/image_generation_notification_service.dart';
 import 'services/scheduled_task_service.dart';
@@ -105,6 +106,11 @@ void main() {
     await imageNotifications.init();
     await imageNotifications.configureBackgroundService();
     Get.put(ServerController(), permanent: true);
+    // Registered before ModelController, which reads nothing from it, but before
+    // the API server can serve a request — the handlers look it up per request
+    // and an unregistered service would be a 500 with a null lookup rather than
+    // a default.
+    Get.put(EncoderSettingsService(), permanent: true);
     Get.put(ModelController());
     final workspace = Get.put(WorkspaceService());
     await workspace.initialize();

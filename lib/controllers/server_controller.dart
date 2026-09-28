@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 import '../core/constants.dart';
 import '../services/app_log_service.dart';
@@ -25,6 +26,28 @@ class ServerController extends GetxController {
 
   final useApiKey = false.obs;
   final apiKey = ''.obs;
+
+  /// What the loaded model actually is, as far as the API is concerned.
+  ///
+  /// Null means "not asked yet", which the view renders as no examples rather
+  /// than as chat examples: showing a `curl` for `/v1/chat/completions` to
+  /// someone who has a BERT loaded is how a user finds out that the endpoint
+  /// exists by getting a refusal.
+  ///
+  /// Refreshed by the `ever` on `loadedModelName` below, so it follows a model
+  /// swap without the model controller knowing this controller exists.
+  final encoder = Rxn<EncoderInfo>();
+
+  /// A short label for the loaded model, for the examples: "embedding",
+  /// "reranker", "classifier", or null for a generation model.
+  String? get modelRole {
+    final info = encoder.value;
+    if (info == null || !info.isEncoder) return null;
+    if (info.isClassifier) return 'classifier';
+    if (info.isReranker) return 'reranker';
+    if (info.isEmbedding) return 'embedding';
+    return 'encoder';
+  }
 
   /// User-configured port (default 8080). May be overridden at start time
   /// if the user's choice is already in use.
@@ -48,6 +71,32 @@ class ServerController extends GetxController {
     portCtrl =
         TextEditingController(text: serverPort.value.toString());
     apiKeyCtrl = TextEditingController(text: apiKey.value);
+
+    // Ask what the model is now, and again on every swap. `LlamaEncoder.info()`
+    // goes over the JNI, so it is one round trip per model load rather than one
+    // per frame — the alternative, reading it in the view's `Obx`, would ask
+    // again on every rebuild of the examples list.
+    ever(inference.loadedModelName, (_) => refreshEncoder());
+    refreshEncoder();
+  }
+
+  /// Re-reads the encoder surface of the loaded model.
+  ///
+  /// A failure here is not a failure to report: a generation model, a LiteRT
+  /// runtime, and a model that is not loaded at all all make this throw, and all
+  /// three mean the same thing to the view — there is no encoder, so show the
+  /// chat examples. The endpoint's own refusal carries the detail when someone
+  /// actually calls it.
+  Future<void> refreshEncoder() async {
+    if (!inference.isModelLoaded.value) {
+      encoder.value = null;
+      return;
+    }
+    try {
+      encoder.value = await LlamaEncoder.info();
+    } on Object {
+      encoder.value = null;
+    }
   }
 
   bool get hasLocalModel => inference.isModelLoaded.value;
