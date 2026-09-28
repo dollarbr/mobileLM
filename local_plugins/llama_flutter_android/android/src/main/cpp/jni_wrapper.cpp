@@ -240,9 +240,30 @@ static bool arch_is_encoder(const llama_model* model) {
 // query. `sigmoid` of it spans 0.496–0.561 where a calibrated reranker wants
 // 0.005–0.995. So the ordering was good and the number was meaningless, and only
 // a model that admits it has no head can be refused up front.
-static bool model_has_classification_head(const llama_model* model) {
-    char buf[256] = {0};
-    return llama_model_meta_val_str(model, "cls.output.weight", buf, sizeof(buf) - 1) > 0;
+//
+// Read with the ggml reader, not `llama_model_meta_val_str`: that enumerates the
+// **key-value** pairs, and a tensor name is not a key-value pair. Asking it for
+// `cls.output.weight` returns 0 for every model, which is how
+// `gte-reranker-modernbert-base` — the best-formed reranker available, with the
+// head right there in the file — was refused with "no classification head".
+static bool gguf_has_tensor(const char* path, const char* name) {
+    if (!path || !*path) return false;
+    // `gguf_init_from_file` recebe a struct por valor, não por ponteiro.
+    gguf_init_params params = {};
+    params.no_alloc = true;
+    gguf_context* ctx = gguf_init_from_file(path, params);
+    if (!ctx) {
+        LOGE("Could not reopen %s to look for tensor '%s'; treating it as absent",
+             path, name);
+        return false;
+    }
+    const bool found = gguf_find_tensor(ctx, name) >= 0;
+    gguf_free(ctx);
+    return found;
+}
+
+static bool model_has_classification_head(const char* model_path) {
+    return gguf_has_tensor(model_path, "cls.output.weight");
 }
 
 // Whether a pooling type can be *inferred* for a model that declares none.
@@ -259,13 +280,14 @@ static bool model_has_classification_head(const llama_model* model) {
 // Returning false leaves the model as a generation model, which is the safe
 // direction: it stays usable for chat, and `/v1/embeddings` refuses with a
 // message instead of returning a wrong vector.
-static bool infer_pooling(const llama_model* model, enum llama_pooling_type& out) {
+static bool infer_pooling(const llama_model* model, const char* model_path,
+                          enum llama_pooling_type& out) {
     out = LLAMA_POOLING_TYPE_NONE;
     if (!arch_is_encoder(model)) return false;
 
     // The gate, and the only hard requirement. A head means llama.cpp can reach a
     // logit; without one it cannot, whatever the architecture claims to be.
-    if (!model_has_classification_head(model)) {
+    if (!model_has_classification_head(model_path)) {
         LOGE("Encoder architecture with no cls.output.weight in the GGUF: this "
              "conversion has no classification head, so there is no logit to "
              "return. llama.cpp would hand back one float of a pooled hidden "
@@ -614,6 +636,13 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
         return;
     }
     LOGI("Loading model: %s", model_path);
+    // Uma cópia, porque `model_path` é devolvido ao JNI logo depois de
+    // `llama_model_load_from_file` e a detecção de encoder precisa reabrir o
+    // arquivo para ver se a cabeça de classificação está lá. Usar o ponteiro
+    // depois do `ReleaseStringUTFChars` é use-after-free — e um use-after-free
+    // que passa: a string é curta, o allocator devolve o mesmo bloco e o teste
+    // passa com lixo que por acaso é o caminho certo.
+    const std::string model_path_str(model_path);
 
     std::ifstream model_file(model_path, std::ios::binary | std::ios::ate);
     if (!model_file) {
@@ -730,7 +759,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
         // the file, not an absence of the capability — see infer_pooling. The
         // declared path stays first, so a model that knows what it is is never
         // second-guessed.
-        is_encoder = infer_pooling(g_model, pooling);
+        is_encoder = infer_pooling(g_model, model_path_str.c_str(), pooling);
     }
     if (is_encoder) {
         ctx_params.embeddings   = true;
