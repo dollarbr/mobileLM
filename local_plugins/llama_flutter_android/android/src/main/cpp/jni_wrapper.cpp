@@ -322,6 +322,30 @@ static bool infer_pooling(const llama_model* model, const char* model_path,
     return true;
 }
 
+// Why an aborted encode needs its own line in the log.
+//
+// `ggml_abort` (ggml/src/ggml.c) does print the reason — to stderr, with a
+// backtrace — and then calls abort(). On Android that print goes nowhere: the
+// tombstone for the crash that cost this file its diagnosis lists
+// `fd 1: /dev/null` and `fd 2: /dev/null`, because Flutter redirects both. So the
+// message existed, was correct, and was discarded. What was left was a SIGABRT
+// with no cause in app.log, and the cause had to be recovered by symbolising
+// `/data/tombstones/tombstone_10` by hand: `nativeEncode` → `llama_decode` →
+// `llama_context::encode` (llama-context.cpp:1495) → abort.
+//
+// The app's own log ring buffer is readable (`adb exec-out run-as ... cat
+// app_flutter/logs/app.log`), so writing the reason there is the difference
+// between knowing and not. Returning does not prevent the abort — ggml calls
+// `abort()` unconditionally after the callback returns, and the typedef is
+// `void` — so this adds observability and changes no behaviour.
+//
+// Not to be confused with `llama_context_params.abort_callback`, which is
+// `bool (*)(void * data)` and means "the caller asked to cancel", a different
+// thing on a different path.
+static void log_abort_reason(const char* message) {
+    LOGE("llama.cpp aborted: %s", message ? message : "(no message)");
+}
+
 static const char* pooling_name(enum llama_pooling_type p) {
     switch (p) {
         case LLAMA_POOLING_TYPE_NONE: return "none";
@@ -636,6 +660,10 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
         return;
     }
     LOGI("Loading model: %s", model_path);
+    // Registered per load rather than once in JNI_OnLoad, so it cannot be
+    // clobbered by anything the plugin loads later, and so it is obvious in the
+    // code that it belongs to the model's lifetime.
+    ggml_set_abort_callback(log_abort_reason);
     // Uma cópia, porque `model_path` é devolvido ao JNI logo depois de
     // `llama_model_load_from_file` e a detecção de encoder precisa reabrir o
     // arquivo para ver se a cabeça de classificação está lá. Usar o ponteiro
@@ -764,11 +792,38 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     if (is_encoder) {
         ctx_params.embeddings   = true;
         ctx_params.pooling_type = pooling;
-        ctx_params.n_batch      = std::max<uint32_t>(ctx_params.n_batch, 2048u);
-        LOGI("Encoder model: pooling=%s, n_cls_out=%u, n_embd_out=%d",
+
+        // `n_ubatch`, não `n_batch`. São dois campos e só um deles é o limite
+        // que importa aqui: `llama-context.cpp:1495` tem
+        // `GGML_ASSERT(cparams.n_ubatch >= n_tokens && "encoder requires
+        // n_ubatch >= n_tokens")`, com o comentário "micro-batching is not
+        // possible for non-causal encoding". Um encoder não pode ser dividido em
+        // microbatches — o pooling acontece uma vez, sobre o batch inteiro — então
+        // o ubatch tem de caber a sequência toda.
+        //
+        // Subir só `n_batch` deixa `n_ubatch` no default de 512
+        // (`llama-context.cpp:3699`) e o assert mata o processo com SIGABRT no
+        // primeiro par (query, documento) que passa de 512 tokens. Foi medido:
+        // 12 documentos de 24–45 tokens passavam, e o par de auto-casamento com
+        // texto repetido caía. `ggml_abort` não imprime a razão quando há abort
+        // callback, e sem tombstone o sintoma é só "o app travou" — o caminho
+        // inteiro foi recovered de `/data/tombstones/tombstone_10`, com
+        // `nativeEncode` → `llama_decode` → `llama_context::encode` → abort.
+        //
+        // 2048 é o `n_batch` default e o limite do `n_ctx_train` do modelo entra
+        // logo acima, então os dois campos ficam coerentes. Um encoder não usa
+        // KV cache, então um ubatch grande custa memória de ativação e não um
+        // cache que cresce.
+        const uint32_t kEncoderUbatch = 2048u;
+        ctx_params.n_batch  = std::max<uint32_t>(ctx_params.n_batch, kEncoderUbatch);
+        ctx_params.n_ubatch = std::max<uint32_t>(ctx_params.n_ubatch, kEncoderUbatch);
+        LOGI("Encoder model: pooling=%s, n_cls_out=%u, n_embd_out=%d, "
+             "n_batch=%u, n_ubatch=%u",
              pooling_name(pooling),
              (unsigned) llama_model_n_cls_out(g_model),
-             llama_model_n_embd_out(g_model));
+             llama_model_n_embd_out(g_model),
+             (unsigned) ctx_params.n_batch,
+             (unsigned) ctx_params.n_ubatch);
     }
 
     // With the weights in system RAM, let them be computed there too.
