@@ -164,6 +164,16 @@ class OpenAiServerService {
         // way "no encoder" is the right answer, not a failed request.
       }
     }
+    // Three states, not two. `isEncoder` is a loaded encoder with a pooling type;
+    // `archIsEncoder` is an encoder-only architecture this build could not turn
+    // into a scorer (jina-reranker-v1-tiny-en: a real cross-encoder whose GGUF
+    // has no cls.output.*, so there is no logit to return). Neither can generate
+    // — a BERT has no LM head, and answering `text: true` sends a client to
+    // /v1/chat for whatever the encoder does produce. So `generates` excludes
+    // both, and a file this build cannot use reports no capability at all rather
+    // than one it does not have.
+    final generates =
+        hasModel && !encoder.isEncoder && !encoder.archIsEncoder;
     await _json(request, {
       'server': 'mobileLM Local OpenAI API',
       'running': true,
@@ -171,15 +181,20 @@ class OpenAiServerService {
       'runtime': inference.loadedModelRuntime.value,
       'requires_litert': false,
       'capabilities': {
-        'text': hasModel && !encoder.isEncoder,
+        'text': generates,
         'image': isLiteRt && inference.isVisionLoaded.value,
         'audio': isLiteRt,
-        'streaming': hasModel && !encoder.isEncoder,
+        'streaming': generates,
         'gguf': hasModel && !isLiteRt,
         'embeddings': encoder.isEmbedding,
         'rerank': encoder.isReranker,
         'classify': encoder.isClassifier,
       },
+      if (encoder.archIsEncoder && !encoder.isEncoder)
+        'note': 'Encoder architecture with no classification head in its GGUF: '
+            'no cls.output.* tensor, so there is no logit. This build can do '
+            'nothing with it — not generation (an encoder has no LM head) and '
+            'not a score.',
       'encoder': encoder.isEncoder
           ? {
               'pooling': encoder.pooling,
@@ -214,6 +229,22 @@ class OpenAiServerService {
           '(BERT, ModernBERT, or an embedding/reranker model) first.';
     }
     if (!info.isEncoder) {
+      // An encoder architecture that could not be given a pooling type is not a
+      // chat model, and telling the caller to load an embedding model sends them
+      // to fix something that is already correct. Measured on the Edge 60:
+      // jina-reranker-v1-tiny-en ranks correctly (NDCG@10 0.9981 on a graded set)
+      // but its GGUF carries no cls.output.*, so llama.cpp returns one float of a
+      // pooled hidden state — a value in (-1, 1) that orders plausibly and is
+      // not a score. Refusing it here, by name, is the whole point.
+      if (info.archIsEncoder) {
+        return 'The loaded model is an encoder whose GGUF has no classification '
+            'head, so it cannot produce a $wanted score: the conversion kept no '
+            'cls.output.* tensor, which is where the logit would come from. '
+            'llama.cpp would return one float of a pooled hidden state instead '
+            '— a number in (-1, 1) that ranks plausibly and means nothing. Load '
+            'a reranker whose GGUF carries the head, such as '
+            'gte-reranker-modernbert-base.';
+      }
       return 'The loaded model is a generation model, not an encoder. '
           'Embeddings, rerank and classify need a GGUF whose metadata carries '
           '<arch>.pooling_type — a BERT or ModernBERT architecture, or one of '

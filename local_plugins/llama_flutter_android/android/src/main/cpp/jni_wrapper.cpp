@@ -183,20 +183,24 @@ static bool model_declared_pooling(const llama_model* model, enum llama_pooling_
     return false;
 }
 
-// Encoder architectures, for the case where the GGUF does not say what it is.
+// Encoder-only architectures, for the case where the GGUF does not say what it is.
 //
-// `jina-bert-v2`, `bert`, `modern-bert`, `nomic-bert`, `neo-bert` and
-// `eurobert` are all encoder-only: they cannot generate, and they exist to be
-// pooled. `jina-reranker-v1-tiny-en`, measured on the Edge 60, declares
-// **no** `<arch>.pooling_type` at all — llama.cpp then falls back to
-// `LLAMA_POOLING_TYPE_NONE` (llama-context.cpp:216) and an embedding model with
-// no declared pooling would silently stop working.
+// The list is the set of encoder-only architectures in `llama-arch.cpp`, spelled
+// exactly as that file spells them. That exactness is not pedantry: this list said
+// `modernbert` and `llama-arch.cpp` says `modern-bert`, so
+// `gte-reranker-modernbert-base` — 150 M, `cls.output.weight` e `cls.norm.weight`
+// no lugar certo, o modelo de reranker mais bem formado que apareceu — carregou e
+// respondia `/v1/chat` sem poolar nada. Um hífen faltando e o sintoma é o mesmo
+// de um modelo quebrado.
 //
-// The architectures are listed here rather than guessed, because this is the one
-// place a wrong guess is invisible: ask a causal model to pool and it returns
-// something plausible. The list is the set of encoder-only architectures in
-// `llama-arch.cpp`, so it is a maintenance obligation — a new encoder family
-// needs a line here — and that is why the log says which branch decided.
+// Because that will happen again, the list is only a **veto**, never the gate.
+// `model_has_classification_head` is the gate: without a head in the file there
+// is no logit to return, and llama.cpp would hand back one float of a pooled
+// hidden state instead. So a name missing from `kEncoders` now leaves a working
+// model un-inferred — it stays a generation model and `/v1/rerank` refuses with a
+// message — where before it could have inferred RANK on a model that cannot
+// produce a score. The failure direction is what matters: the list can only be
+// too short, never too permissive.
 static bool arch_is_encoder(const llama_model* model) {
     // `general.architecture` straight out of the metadata, which is the
     // canonical spelling (`llama-arch.cpp:166`). Not `llama_model_desc`: that
@@ -209,13 +213,36 @@ static bool arch_is_encoder(const llama_model* model) {
     const std::string a(arch);
 
     static const char* kEncoders[] = {
-        "bert", "modernbert", "jina-bert-v2", "jina-bert-v3",
-        "nomic-bert", "neo-bert", "eurobert",
+        "bert",         "modern-bert",    "nomic-bert",   "nomic-bert-moe",
+        "neo-bert",     "jina-bert-v2",   "jina-bert-v3", "eurobert",
     };
     for (const char* e : kEncoders) {
         if (a == e) return true;
     }
     return false;
+}
+
+// Whether the file carries a classification head, i.e. whether a logit exists at
+// all. `llama-graph.cpp:3753` applies `cls_out` only if it is non-null, and the
+// loader fills it only for the architectures that ask for it — `bert`,
+// `modern-bert`, `neo-bert`, `qwen3` do, and `jina-bert-v2`, `jina-bert-v3`,
+// `nomic-bert` and `eurobert` do not.
+//
+// This is not hypothetical, and the file that proved it is the reason this
+// function exists. `jina-reranker-v1-tiny-en` is a genuine cross-encoder — the
+// model card's own example ranks correctly, and through this app it scored
+// NDCG@10 0.9981 on a graded set — but its GGUF has no `cls.output.*`. What
+// llama.cpp computes instead is `tanh(cls · h[0] + cls_b)`, where `cls` is the
+// `nn.Linear(384, 1)` the conversion *did* keep, and the 384×384 `pooler.dense`
+// that `modeling_bert.py` applies before it was dropped. The result is a number
+// in (-1, 1) that correlates with relevance and is not a score: 40+ measurements
+// on the device never left (-1, 1), not even for a document identical to the
+// query. `sigmoid` of it spans 0.496–0.561 where a calibrated reranker wants
+// 0.005–0.995. So the ordering was good and the number was meaningless, and only
+// a model that admits it has no head can be refused up front.
+static bool model_has_classification_head(const llama_model* model) {
+    char buf[256] = {0};
+    return llama_model_meta_val_str(model, "cls.output.weight", buf, sizeof(buf) - 1) > 0;
 }
 
 // Whether a pooling type can be *inferred* for a model that declares none.
@@ -236,6 +263,17 @@ static bool infer_pooling(const llama_model* model, enum llama_pooling_type& out
     out = LLAMA_POOLING_TYPE_NONE;
     if (!arch_is_encoder(model)) return false;
 
+    // The gate, and the only hard requirement. A head means llama.cpp can reach a
+    // logit; without one it cannot, whatever the architecture claims to be.
+    if (!model_has_classification_head(model)) {
+        LOGE("Encoder architecture with no cls.output.weight in the GGUF: this "
+             "conversion has no classification head, so there is no logit to "
+             "return. llama.cpp would hand back one float of a pooled hidden "
+             "state instead — a number in (-1, 1) that ranks plausibly and "
+             "means nothing. Leaving it as a generation model.");
+        return false;
+    }
+
     const llama_vocab* vocab = llama_model_get_vocab(model);
     if (!vocab) return false;
 
@@ -244,19 +282,21 @@ static bool infer_pooling(const llama_model* model, enum llama_pooling_type& out
     const bool has_sep = llama_vocab_sep(vocab) != LLAMA_TOKEN_NULL;
     const bool has_rerank_prompt = llama_model_chat_template(model, "rerank") != nullptr;
     if (!has_bos || (!has_eos && !has_sep && !has_rerank_prompt)) {
-        LOGE("Encoder architecture with no pooling_type and no usable boundary "
-             "(bos=%d eos=%d sep=%d rerank_prompt=%d); leaving it as a generation model",
+        LOGE("Encoder architecture with a classification head but no usable "
+             "boundary (bos=%d eos=%d sep=%d rerank_prompt=%d); leaving it as a "
+             "generation model",
              (int) has_bos, (int) has_eos, (int) has_sep, (int) has_rerank_prompt);
         return false;
     }
 
-    // A declared class count is the file saying "I have a classification head".
-    // jina-reranker-tiny reports 0, and it *is* a reranker, so that is not the
-    // signal; architecture plus a boundary is. n_cls_out is read afterwards by
-    // pooled_output_len, which is where it actually belongs.
+    // `n_cls_out` is deliberately not consulted. jina-reranker-v1-tiny-en reports
+    // `n_cls_out: 1` and gte-reranker-modernbert-base reports 1 via
+    // `classifier.output_labels = ["LABEL_0"]`; both agree, and neither is what
+    // decides this. The head's presence in the file is.
     out = LLAMA_POOLING_TYPE_RANK;
     LOGI("No <arch>.pooling_type in the GGUF, but the architecture is an encoder "
-         "with a usable boundary; treating it as a reranker (RANK)");
+         "with a classification head and a usable boundary; treating it as a "
+         "reranker (RANK)");
     return true;
 }
 
@@ -1582,13 +1622,20 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
     char out[1024] = {0};
     snprintf(out, sizeof(out),
              "{\"is_encoder\":%s,\"pooling\":\"%s\",\"n_cls_out\":%u,"
-             "\"n_embd_out\":%d,\"output_len\":%d,\"inferred_pooling\":%s,\"labels\":[%s]}",
+             "\"n_embd_out\":%d,\"output_len\":%d,\"inferred_pooling\":%s,"
+             "\"arch_is_encoder\":%s,\"labels\":[%s]}",
              (pooling != LLAMA_POOLING_TYPE_NONE) ? "true" : "false",
              pooling_name(pooling),
              (unsigned) n_cls,
              llama_model_n_embd_out(g_model),
              pooled_output_len(g_model, pooling),
              inferred ? "true" : "false",
+             // Separate from `is_encoder` on purpose. A model whose architecture
+             // is an encoder but whose pooling stayed NONE is not a chat model:
+             // it is an encoder this build could not turn into a scorer, and
+             // telling the caller "load an embedding model" sends them to fix
+             // something that is already correct.
+             arch_is_encoder(g_model) ? "true" : "false",
              labels.c_str());
 
     return env->NewStringUTF(sanitizeUTF8(out, strlen(out)).c_str());
