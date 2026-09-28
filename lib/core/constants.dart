@@ -74,6 +74,17 @@ class AppConstants {
   static const String keyTemperature = 'temperature';
   static const String keyMaxTokens = 'max_tokens';
   static const String keyContextSize = 'context_size';
+
+  // Per-role encoder parameters. Each is nullable and a null means "ask the
+  // model" — see `EncoderSettingsService` for why these are not defaults.
+  static const String keyEmbedQueryPrefix = 'embed_query_prefix';
+  static const String keyEmbedPassagePrefix = 'embed_passage_prefix';
+  static const String keyEmbedNormalize = 'embed_normalize';
+  static const String keyRerankTopN = 'rerank_top_n';
+  static const String keyRerankReturnDocuments = 'rerank_return_documents';
+  static const String keyRerankSigmoid = 'rerank_sigmoid';
+  static const String keyRerankDocumentSeparator = 'rerank_document_separator';
+  static const String keyEncoderMaxInputTokens = 'encoder_max_input_tokens';
   static const String keyScheduledTaskNotifications = 'scheduled_task_notifications';
   static const String keyServerApiKey = 'server_api_key';
   static const String keyServerUseApiKey = 'server_use_api_key';
@@ -195,6 +206,177 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
   }
 
   // Available Models for Download
+  //
+  // ── Encoders ────────────────────────────────────────────────────────────────
+  // Every entry below was screened with `tool/gguf-screen.py` before it was
+  // written here, which reads the GGUF header over a range request and answers
+  // what the app will answer after a 450 MB download. That is not a nicety: a
+  // model can load, occupy the screen and produce nothing, and there is no other
+  // symptom. `jina-reranker-v1-tiny-en` is 36 MB, half a second to load, and has
+  // no output at all — its conversion put the head at `cls.weight` where
+  // llama.cpp looks for `cls.output`, and dropped the `pooler.dense` the head was
+  // trained against. Its own `general.tags` still say `reranker`.
+  //
+  // The screen checks two things, and the second is not optional:
+  //   1. `cls.output.weight` is present — without it there is no logit, and
+  //      llama.cpp hands back one float of a pooled hidden state instead, which
+  //      is a number in (-1, 1) that ranks plausibly and means nothing.
+  //   2. `general.architecture` is one the vendored llama.cpp knows. This is what
+  //      rejects `laya_english_q8_0` (architecture `ggmlc`) and
+  //      `gte-multilingual-reranker-base` (`new`) — the second of which carries a
+  //      perfect `[768]` head and still does not load, which is the case a
+  //      head-only check would wave through.
+  //
+  // Sizes are the `content-length` of the URL as checked on 2026-09-28, not the
+  // hub's rounded display size.
+  //
+  // `role` is declared here, on purpose. The app already has a role for every
+  // model — `LlamaEncoder` reports one from the loaded file's own tensors — and
+  // the temptation is to sort the menu off the filename. That is how
+  // `bge-small-en-v1.5` became a "classifier" once: the name does not carry the
+  // architecture, and the app's own rule (`pooling == 'rank'` and `nClsOut > 1`)
+  // is the only one that does. A curated list is a place to assert what is known
+  // at curation time from the screened file, which is a different and stronger
+  // claim than what can be guessed from a name.
+  static const List<Map<String, String>> encoderModels = [
+    // ── rerankers: a query scored against documents ──────────────────────────
+    {
+      'role': 'rerank',
+      'name': 'GTE Reranker ModernBERT Base (Q4_K_M)',
+      'filename': 'gte-reranker-modernbert-base-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/jolleyboy/gte-reranker-modernbert-base-GGUF/resolve/main/gte-reranker-modernbert-base-Q4_K_M.gguf',
+      'size': '101.4 MB',
+      'description':
+          'Cross-encoder reranker, ModernBERT, Portuguese and English. Measured '
+              'on an Edge 60 at 111 ms per query with a real logit spread of '
+              '2,07. The one to start with.',
+      'template': 'modern-bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'rerank',
+      'name': 'GTE Reranker ModernBERT Base (Q8_0)',
+      'filename': 'gte-reranker-modernbert-base-Q8_0.gguf',
+      'url':
+          'https://huggingface.co/keisuke-miyako/gte-reranker-modernbert-base-gguf-q8_0/resolve/main/gte-reranker-modernbert-base-Q8_0.gguf',
+      'size': '153.4 MB',
+      'description':
+          'The same reranker in Q8_0, for when the last 0,2 of the NDCG is worth '
+              '54 MB. Verified end to end on an Edge 60.',
+      'template': 'modern-bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'rerank',
+      'name': 'BGE Reranker Base (Q8_0)',
+      'filename': 'bge-reranker-base-Q8_0.gguf',
+      'url':
+          'https://huggingface.co/xinming0111/bge-reranker-base-Q8_0-GGUF/resolve/main/bge-reranker-base-q8_0.gguf',
+      'size': '289.7 MB',
+      'description':
+          'Cross-encoder reranker, BERT architecture, English. The head and the '
+              'pooler projection are both in the file, which is the check that '
+              'matters.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'rerank',
+      'name': 'BCE Reranker Base v1 (Q4_K_M)',
+      'filename': 'bce-reranker-base_v1-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/jfiekdjdk/bce-reranker-base_v1-Q4_K_M-GGUF/resolve/main/bce-reranker-base_v1-q4_k_m.gguf',
+      'size': '208.9 MB',
+      'description':
+          'Cross-encoder reranker, BERT, English and Chinese. Well formed: '
+              'cls.output.weight [768] with the 768x768 pooler beside it.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    // ── embeddings: text to one vector ──────────────────────────────────────
+    {
+      'role': 'embed',
+      'name': 'Multilingual E5 Small (Q8_0)',
+      'filename': 'multilingual-e5-small-Q8_0.gguf',
+      'url':
+          'https://huggingface.co/keisuke-miyako/multilingual-e5-small-gguf-q8_0/resolve/main/multilingual-e5-small-Q8_0.gguf',
+      'size': '125.8 MB',
+      'description':
+          'Embeds in 100 languages including Portuguese, mean-pooled. The one '
+              'to reach for on a pt_BR device — a purely English embedder makes '
+              'Portuguese search quietly bad.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'embed',
+      'name': 'BGE Small EN v1.5 (F16)',
+      'filename': 'bge-small-en-v1.5-f16.gguf',
+      'url':
+          'https://huggingface.co/unsloth/bge-small-en-v1.5-GGUF/resolve/main/bge-small-en-v1.5-f16.gguf',
+      'size': '64.5 MB',
+      'description':
+          'Smallest usable embedder: 33M parameters, 384 dimensions, CLS '
+              'pooling. Verified on an Edge 60.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'embed',
+      'name': 'BGE Small EN v1.5 (Q8_0)',
+      'filename': 'bge-small-en-v1.5-Q8_0.gguf',
+      'url':
+          'https://huggingface.co/ggml-org/bge-small-en-v1.5-Q8_0-GGUF/resolve/main/bge-small-en-v1.5-q8_0.gguf',
+      'size': '35.0 MB',
+      'description':
+          'The same 33M embedder in Q8_0 — half the bytes of F16 for a 384-float '
+              'vector, where the quantisation is nearly free.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'embed',
+      'name': 'E5 Small v2 (Q8_0)',
+      'filename': 'e5-small-v2-Q8_0.gguf',
+      'url':
+          'https://huggingface.co/ggml-org/e5-small-v2-Q8_0-GGUF/resolve/main/e5-small-v2-q8_0.gguf',
+      'size': '35.0 MB',
+      'description':
+          'Small mean-pooled embedder, English, 384 dimensions. Needs "query: " '
+              'and "passage: " prefixes on the two sides, as every E5 does.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'embed',
+      'name': 'Nomic Embed Text v1.5 (Q4_K_M)',
+      'filename': 'nomic-embed-text-v1.5-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_K_M.gguf',
+      'size': '80.2 MB',
+      'description':
+          'Long-context embedder, 8k, mean-pooled, 768 dimensions. The only '
+              'screened option that embeds a whole document in one pass.',
+      'template': 'nomic-bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'embed',
+      'name': 'ModernBERT Embed Base (Q8_0)',
+      'filename': 'modernbert-embed-base-Q8_0.gguf',
+      'url':
+          'https://huggingface.co/keisuke-miyako/modernbert-embed-base-gguf-q8_0/resolve/main/modernbert-embed-base-Q8_0.gguf',
+      'size': '152.8 MB',
+      'description':
+          'ModernBERT embedder, mean-pooled, 768 dimensions. The same '
+              'architecture as the reranker above, so it is worth having both to '
+              'see the difference a scoring head makes.',
+      'template': 'modern-bert',
+      'runtime': 'llama',
+    },
+  ];
+
   static const List<Map<String, String>> availableModels = [
     {
       'name': 'Qwen 3 0.6B (LiteRT-LM)',
