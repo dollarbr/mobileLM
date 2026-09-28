@@ -159,6 +159,31 @@ class SettingsView extends GetView<SettingsController> {
                 ],
               ),
               const SizedBox(height: 10),
+              // Sampling gets its own group instead of a card nested inside Text
+              // generation, because the two are not the same decision and are not
+              // touched at the same time. "Which runtime, and do I think" is
+              // something you settle once per model; temperature and top-p are
+              // something you move while you read the output. Nesting the second
+              // inside the first also meant the sampling numbers were two levels
+              // deep in a screen that already carries three encoder groups, so
+              // they were the hardest panel in the app to reach.
+              //
+              // The inline literal rather than a `.tr` key is deliberate: the map
+              // is pt_BR-only, and a key that is not in it renders as its own name
+              // — which is how a title ends up reading `text_parameters`.
+              _CollapsibleGroup(
+                isDark: isDark,
+                icon: Icons.tune_rounded,
+                title: 'Text parameters',
+                subtitle: _textParametersSubtitle(),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _buildParametersPanel(context, isDark),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
               // Embedding and rerank parameters live apart from the text ones
               // because almost none of them mean the same thing on both sides. A
               // temperature is a text-generation dial and has no meaning for a
@@ -1776,14 +1801,33 @@ class SettingsView extends GetView<SettingsController> {
 
   /// Slider panel with every open-weight sampler knob. Lives under Text
   /// Generation; values apply from the next generation on.
+  /// What the closed group shows. The three sampler values, because they are the
+  /// ones a reader wants to check without opening anything, and the context size
+  /// because that is the value that has to be right before a long prompt, and it
+  /// is silently clamped for LiteRT models.
+  String _textParametersSubtitle() {
+    return 'temp ${controller.temperature.value.toStringAsFixed(2)}'
+        ' · top-p ${controller.topP.value.toStringAsFixed(2)}'
+        ' · top-k ${controller.topK.value}'
+        ' · ctx ${controller.contextSize.value}';
+  }
+
+  /// The sampling body, no group around it.
+  ///
+  /// It used to return its own `_CollapsibleGroup` titled "Parameters" and live
+  /// inside the "Text generation" group, which put a collapsible card inside a
+  /// collapsible card and a second "Parameters" heading on a screen that has three
+  /// encoder groups below it. The wrapper now belongs to the caller, so this is
+  /// just the contents.
+  ///
+  /// `stretch` because `_CollapsibleGroup` lays children out in a `Column` with
+  /// the default `center` cross axis, and a plain `Column` here would shrink-wrap
+  /// itself around the widest slider instead of filling the row.
   Widget _buildParametersPanel(BuildContext context, bool isDark) {
     final accent = isDark ? const Color(0xFF0A84FF) : AppColors.primary;
-    return _CollapsibleGroup(
-      isDark: isDark,
-      icon: Icons.tune_rounded,
-      title: 'Parameters',
-      subtitle:
-          'temp ${controller.temperature.value.toStringAsFixed(2)} · top-p ${controller.topP.value.toStringAsFixed(2)} · top-k ${controller.topK.value}',
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _modelParameterSlider(
           context,
