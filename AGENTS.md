@@ -14,7 +14,7 @@ ModernBERT)** + cloud models com auto-detect de contexto/capabilidades.
 
 ## Encoders — o que a 0.4.0 trouxe (leia antes de mexer)
 
-Dez encoders no catálogo (7 rerankers, 3 embedders), served por
+**Dezesseis** encoders no catálogo (9 `rerank`, 7 `embed`), served por
 `/v1/embeddings`, `/v1/rerank` e `/v1/classify`. As regras que custaram tempo
 para achar, todas medidas:
 
@@ -404,15 +404,120 @@ precisam instalar por cima de qualquer build.
 
 | Aparelho | Papel | Regra |
 |---|---|---|
-| **Galaxy A72** (SM-A725M, Snapdragon 720G / SM7125, Android 14, 5,6 GB) | **debug** — é onde tudo é medido | recebe debug à vontade. A tela dele **estraga**: a imagem aparece mas o touch não responde, então tudo é feito por comando adb, nunca por toque. Não é quebra do aparelho e não é reparável aqui. |
+| **Galaxy A72** (SM-A725M, Snapdragon 720G / SM7125, **/e/OS e-4.3, Android 15**, 5,6 GB, `adb root`) | **debug** — é onde tudo é medido | recebe debug à vontade. A tela dele **estraga**: a imagem aparece mas o touch não responde, então tudo é feito por comando adb, nunca por toque. Não é quebra do aparelho e não é reparável aqui. |
 | **Motorola Edge 60** (Dimensity 7300, Mali-G615) | **só release** | nunca instalar debug. Instalar debug sobre uma release significa trocar a assinatura → desinstalar → perde modelos, histórico e workspace. É por isso que a 0.4.0 ficou um ciclo inteiro sem conseguir testar no Edge 60. |
 
 Medir no A72 é a escolha certa mesmo sendo mais fraco: um número que sai dele é um
 piso, não uma média.
 
+## Onde as threads de cálculo ficam (leia antes de mexer em afinidade)
+
+**O app prende os workers de cálculo do ggml nos núcleos grandes, sozinho.** Um
+230M no Galaxy A72 respondeu a **6,5 tok/s** sem isso e **18,0 tok/s** com, no
+mesmo build e na mesma ROM, minutos separados.
+
+O ganho **não é de clock**. `time_in_state` do cpu6 do A72 tem **3.811.046
+ticks em 652.800 Hz contra 39.018 em 2.323.200** — o cluster quase nunca sai do
+piso, preso ou não. O que muda é a **utilização**: `schedutil` decide frequência
+pela utilização *por núcleo*, dois threads soltos em oito núcleos deixavam cada
+A76 lendo quase zero, e presos os dois A76 leem ~50%. **Cortar frequência não
+resolve** — é o que a tentativa anterior fez, e não fez nada.
+
+Três coisas que contrariam o suficiente para valerem o comentário no código:
+
+1. **`cpumask` é indexado por WORKER, não por núcleo.** Com `strict_cpu = 1`,
+   `ggml_thread_cpumask_next` (`ggml-cpu.c:2723`) dá ao worker *j* o *j*-ésimo
+   bit ligado — **um núcleo por worker**. Escrever `cpumask[0..n_threads-1] =
+   true` prende os dois workers no cpu6 e eles serializam.
+2. **`ggml_threadpool_new`/`_free` não linkam.** Moram em
+   `libggml-cpu-android_armv8.*.so`, carregada por `dlopen`; a chamada direta dá
+   `ld.lld: undefined symbol`. Vêm do registro CPU por
+   `ggml_backend_reg_get_proc_address`.
+3. **A máscara é lida com `int`, e `int` desloca.** Qualquer `cpu >= 32` dá
+   deslocamento indefinido e o hardware guarda os bits baixos, então uma máscara
+   de 0xC0 reportava 18 membros: `6,7,38,39,70,71,102,103,134,...`. Só limitar
+   o laço pela largura da máscara resolve; `1ULL` **não** resolve, porque
+   `1ULL << 70` também é indefinido. E `1 << cpu` sobre um `cpu_set_t` de 1024
+   bits, em `buildCpuSet`, era permissão para **rodar em** 18 núcleos — o oposto
+   de pin.
+
+Rota: `llama_attach_threadpool(ctx, pool, pool_batch)`, API pública do
+`llama.h` vendorizado (linha 491). **Nenhum arquivo vendorizado foi alterado.**
+
+Escopo, deliberado: só na contagem **automática** (uma contagem digitada em
+Settings é override do usuário) e só no caminho **GGUF**. O LiteRT não tem
+gancho equivalente aqui — `planLiteRtTier` decide por `npuAvailable` e nunca
+mediu.
+
+Medido: 1 thread dá 11,6 tok/s e 2 dão 18,0. A hipótese de que 1 thread ganharia
+— 100% de um núcleo parece melhor ao `schedutil` do que 50% — é **medida e falsa**.
+
+## O benchmark de CPU é melhor-de-N, e por quê
+
+`measureGeneration` roda o modelo **até três vezes e fica com a melhor**, porque
+a primeira run depois de abrir o processo não é a velocidade do aparelho. Mesmo
+processo, mesmo modelo, mesmo build, runs separadas por segundos:
+
+| run | prefill | tok/s | 1º token |
+|---|---|---|---|
+| 1ª | 2.820 ms | **0,2** | 71,4 s |
+| 2ª | 137 ms | **17,4** | 0,7 s |
+
+**87×**, e a causa é o governor, não o engine. Isso importa mais do que parece
+porque é o número que decide se o app oferece esconder o catálogo local: um
+usuário que instala e toca no botão uma vez seria dito 25× mais lento do que é.
+
+**Um warm-up contado em tokens não resolve, e isso foi medido:** 8 tokens de
+warm-up deram 0,3 tok/s, porque 8 tokens na taxa fria são 23 s e o rampa é mais
+longo que isso. As tentativas **são** o warm-up. Melhor-de-N é o erro na
+direção certa: subestimar custa os modelos do usuário, superestimar custa uma
+ideia errada sobre o próprio telefone.
+
+Dois erros de medição que existiram e que só o aparelho mostrou:
+
+- **TTFT era o tempo total usando o rótulo** — `gotFirst` era um `bool` e o
+  stopwatch era lido depois da geração inteira.
+- **Tokens eram palavras** — `split(RegExp(r'\s+')).length`. Só corrigir isso
+  levou o mesmo aparelho de 17,4 para 32,0 tok/s.
+
+Contar por `onToken` é correto porque o engine chama uma vez por token que ele
+contou, então a assinatura dele não precisou mudar.
+
+## O que falta: micro-benchmark no LiteRT (decidido, não implementado)
+
+`planLiteRtTier({required String mode, required bool npuAvailable})` devolve
+NPU → GPU → CPU e **nunca mediu nada**. Para o GGUF isso foi consertado pela
+faixa de tamanho, que é extrapolação acima de 1B; para o LiteRT **não há nem
+isso**, porque a escolha é feita antes de qualquer número existir.
+
+Se for implementado, o que já está medido e precisa ser respeitado:
+
+- **A carga é o custo, não a geração.** Comparar CPU e GPU de verdade significa
+  carregar duas vezes. E o LiteRT tem fallback **nativo** — `Backend.{cpu,gpu,npu}`
+  mapeado em Dart→Kotlin, com NPU→GPU→CPU do lado nativo. Então "pedi GPU" e
+  "rodei na GPU" não são a mesma coisa, e o AGENTS desta arquivo já diz: reportar
+  o backend **real**, não o tier pedido. Um micro-benchmark que mede o fallback
+  em vez do pedido mede a coisa errada.
+- **A primeira run é 87× mais lenta** (medido, ver acima). O benchmark de CPU
+  descarta; o do LiteRT teria que descartar do mesmo jeito, senão ele mede o
+  ramp do governor e escolhe o backend errado — que é o pior jeito de errar.
+- **O NPU é o caso perigoso.** No Edge 60 ele é inalcançável a nível de driver
+  (o linker namespace bloqueia `libneuron_adapter_mgvi.so`) e no MT6878 não há
+  prova. Benchmark de NPU pode ser ruído, e ruído aqui vira escolha de backend.
+- **O ganho do GGUF foi de 4-6×.** Se o LiteRT der 1,1×, um micro-benchmark que
+  roda a cada carga custa mais do que ele informa. Por isso a resposta honesta
+  para GPU pode ser "sempre GPU, e é isso" — o que precisa ser **medido uma vez**,
+  não decidido de memória.
+
+O que faria a frase "isto faz X, que antes não existia" sair verdadeira: hoje
+não há como saber qual backend o LiteRT deveria usar neste aparelho. Com o
+micro-benchmark, há — e ele é por aparelho e por modelo, não por tabela.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
+  `gradle.properties` — nunca sature todos os núcleos. (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
+  `gradle.properties` — nunca sature todos os núcleos. (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
   `gradle.properties` — nunca sature todos os núcleos.
 - **Threads: o default é o número de núcleos *grandes*, não metade dos núcleos.**
   Motivo medido, e é o oposto do que parece certo. No A72 (Snapdragon 720G)
@@ -425,9 +530,32 @@ piso, não uma média.
 - R8 está desligado (`isMinifyEnabled = false`). Não adicione regras ProGuard por
   precaução — elas não fazem efeito e podem mascarar problemas reais.
 - **Plugins locais com `dependency_overrides` podem não ser detectados pelo Flutter plugin discovery.** Se `dart_plugin_registrant.dart` não inclui, registrar manualmente no `MainActivity`.
-- Modelo pequeno (<2B) prefere CPU no prefill: GPU (Vulkan) ter overhead de shader
-  que domina até ~2B parâmetros. `n_gpu_layers==0` deve zerar a lista de dispositivos,
-  não apenas pular offload — senão ggml sched offloads ops pro Vulkan (`op_offload`).
+- **Modelo pequeno na CPU, e agora isso é código, não conselho.** A regra "GPU
+  (Vulkan) tem overhead de shader que domina até ~2B" morou anos neste arquivo
+  como observação, e a escada de aceleração nunca a implementou:
+  `planAcceleration` recebia `mode`, `vulkanSupported`, `recommendedGpuLayers` e
+  `npuAvailable` — quatro respostas de **capacidade** e nenhuma sobre o que ia
+  ser executado. Medido no Edge 60: o benchmark dava **57 tok/s** e a carga do
+  mesmo modelo dava **10-14 tok/s com 25 s de primeiro token**, porque o
+  `auto_fast` colocou um 230M na GPU.
+
+  | modelo | CPU | GPU |
+  |---|---|---|
+  | LFM2.5 230M Q4_0 (149 MB) | **57 tok/s** | 10-14 tok/s |
+  | 1B Q4_0 (~700 MB) | **21,2 tok/s** | 3,4 tok/s |
+
+  Agora `auto_fast` mantém um GGUF abaixo de 1280 MB na CPU, e o motivo na tela
+  nomeia a medição em vez de afirmar uma preferência. **O corte é extrapolação
+  acima do que foi medido** — tudo até 1B tem número, nada entre 1B e 2B tem —
+  e é por isso que ele é o primeiro candidato a um micro-benchmark de verdade.
+  Três fronteiras que os testes fixam: acima da faixa nada muda (e um modelo
+  desse tamanho precisa do offload para carregar); `gpu_fast` sobrepõe, porque
+  quem pede a GPU foi informado dos números; e tamanho desconhecido (0) não é
+  tamanho pequeno.
+
+  Continua valendo, e por um motivo diferente do que se acreditava:
+  `n_gpu_layers==0` deve zerar a lista de dispositivos, não apenas pular offload
+  — senão ggml sched offloads ops pro Vulkan (`op_offload`).
 - **CPU Safe tem que *não abrir* o backend Vulkan, e não só não usá-lo.** As duas
   metades são separadas de propósito, porque só a segunda não bastava.
   `model_params.devices = cpu_only` (o conserto do Edge 60, ~5,5 s) resolve onde os
