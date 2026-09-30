@@ -6,7 +6,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.5.0+2007**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.5.1+2008**.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + **encoders (embeddings/rerank/classify, BERT e
@@ -163,7 +163,9 @@ endpoints não existiam, e `/v1/classify` continua sem nenhum modelo do catálog
 usando, porque os classificadores queexists não são GGUF carregável (ver a seção
 Encoders acima e a 0.4.0 em [`docs/suggestions.md`](docs/suggestions.md)).
 
-**O classificador de verdade é a `0.5.1`, e a rota é TFLite.** Ele estava
+**O classificador de verdade é a `0.5.2`, e a rota é TFLite.** Ele estava
+reservado para a `0.4.1`, nunca existiu, foi absorvido pela `0.5.0` com o
+pinning, e a `0.5.1` tomou a correção da escada de aceleração. Ele estava
 reservado para a `0.4.1`, e a `0.4.1` nunca existiu — nem tag nem release — de
 modo que a reserva foi absorvida pela `0.5.0` quando o pinning dos threads de
 cálculo subiu como minor. Verificado antes de decidir: `gh release list` para
@@ -196,12 +198,12 @@ barato de notar uma exclusão de `packagingOptions` ou um filtro de ABI — foi 
 que os 37,2 MB do `liblitert-lm.so` ficaram visíveis por semanas.
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.5.0+2007` → tag `0.5.0`. O workflow falha de propósito se divergirem.
+`+build`: `0.5.1+2008` → tag `0.5.1`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.5.0` (pinning automático nos núcleos grandes + benchmark de CPU corrigido), `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.4.0` (encoders: `/v1/embeddings`, `/v1/rerank` e `/v1/classify`; 10 encoders no catálogo; console de encoder; parâmetros por papel; `config.json` como pre-flight no HF).
+Release tags publicadas: `0.5.1` (a escada de aceleração passou a ver o tamanho do modelo), `0.5.0` (pinning automático nos núcleos grandes + benchmark de CPU corrigido), `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.4.0` (encoders: `/v1/embeddings`, `/v1/rerank` e `/v1/classify`; 10 encoders no catálogo; console de encoder; parâmetros por papel; `config.json` como pre-flight no HF).
 
 **A `0.3.5` foi preparada e nunca publicada.** O commit existe
 (`ffd30471b`), o pubspec chegou a `0.3.5+2005` e este guia dizia que ela estava
@@ -237,11 +239,11 @@ sobrescreve o versionCode por ABI (`FlutterPlugin.kt`,
 APKs de ABIs diferentes possam coexistir. Os índices estão em
 `FlutterPluginConstants.ABI_VERSION`:
 
-| ABI | índice | `0.5.0+2007` sai como |
+| ABI | índice | `0.5.1+2008` sai como |
 |---|---|---|
-| `armeabi-v7a` | 1 | 3007 |
-| `arm64-v8a` | **2** | **5007** |
-| `x86_64` | 4 (o 3 foi reservado e removido) | 6007 |
+| `armeabi-v7a` | 1 | 3008 |
+| `arm64-v8a` | **2** | **5008** |
+| `x86_64` | 4 (o 3 foi reservado e removido) | 6008 |
 
 O APK arm64 da 0.3.5 tem `versionCode='4005'`, medido com `aapt2 dump badging` —
 `2 * 1000 + 2005`. Sem `--split-per-abi` o override não se aplica e o versionCode é
@@ -250,8 +252,8 @@ build number e a 0.3.4 não bate. **Não compare pubspec com `dumpsys` sem essa 
 
 Regra prática: o que precisa crescer é o **publicado**. Os publicados até 0.3.3
 foram 2002, 2003, 2001, 2001, 2001, 2001, 2001 — ad-hoc, e 0.2.1 (2001) é *menor*
-que 0.2.0 (2003), uma regressão. O maior publicado é **4006** (0.4.0, medido), e
-a 0.5.0 usa `+2007` e publica 5007. Daqui
+que 0.2.0 (2003), uma regressão. O maior publicado é **5007** (0.5.0, medido), e
+a 0.5.1 usa `+2008` e publica 5008. Daqui
 em diante: bump de release ⇒ build number tal que `build + 2000` fique acima do
 publicado anterior, senão o update falha com
 `INSTALL_FAILED_VERSION_DOWNGRADE`.

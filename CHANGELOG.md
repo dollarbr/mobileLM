@@ -4,6 +4,94 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1+2008] - 2026-09-30
+
+Patch. A 0.5.0 entregou o pinning e o benchmark; a 0.5.1 conserta a coisa que a
+0.5.0 tornou visível — com o benchmark funcionando, deu para ver que ele e a
+carga do modelo discordavam.
+
+### fix: a escada de aceleração não via o tamanho do modelo
+
+No **Edge 60** (Dimensity 7300, Mali-G615) o benchmark dava **57 tok/s** e a
+carga do mesmo modelo dava **10-14 tok/s com 25 s de primeiro token**. Os dois
+números eram verdadeiros: o `auto_fast` colocou um modelo de 230M na GPU, e na
+GPU de um telefone um 230M é mais lento que a CPU do mesmo telefone.
+
+`planAcceleration` recebia `mode`, `vulkanSupported`, `recommendedGpuLayers` e
+`npuAvailable` — quatro respostas de **capacidade** e nenhuma palavra sobre o que
+ia ser executado. Capacidade não é adequação. Uma Mali-G615 com memória sobrando
+responde "sim" a um 230M, corretamente, e a resposta é 4x mais lenta que a CPU
+que ela acabou de recusar.
+
+| modelo | CPU | GPU |
+|---|---|---|
+| LFM2.5 230M Q4_0 (149 MB) | **57 tok/s** | 10–14 tok/s |
+| 1B Q4_0 (~700 MB) | **21,2 tok/s** | 3,4 tok/s |
+
+Agora o `auto_fast` mantém um GGUF pequeno na CPU, e o motivo nomeia a medição:
+
+> CPU — 142 MB model, and the GPU is slower than the CPU at this size
+> (measured twice on the Edge 60: 57 vs 10-14 tok/s at 230M, 21,2 vs 3,4 at 1B)
+
+Três fronteiras, todas em `test/acceleration_test.dart`:
+
+- **Acima da faixa, nada muda.** O corte é 1280 MB porque é o topo do que foi
+  medido. Nada aqui mede a GPU de um telefone acima de ~2B, e um modelo desse
+  tamanho precisa do offload para carregar.
+- **`gpu_fast` continua sobrepondo.** Quem toca em "GPU Fast" foi informado dos
+  números e pediu a GPU; sobrepô-lo é fazer do app a coisa que ele tenta não ser.
+- **Tamanho desconhecido não é tamanho pequeno.** 0 significa "não lido", e a
+  escada volta ao comportamento anterior em vez de inventar um tamanho.
+
+Verificado no A72, que tem Adreno 618 e o mesmo problema: o probe recomendou
+16 camadas e a carga foi para a CPU.
+
+### fix: a máscara de afinidade era lida com um int que desloca, inventando núcleos
+
+`buildComputeThreadpool` e `buildCpuSet` percorriam um `cpu_set_t` (1024 bits)
+testando `mask & (1 << cpu)`, com `mask` chegando como `jint` de 32 bits. Para
+qualquer `cpu >= 32` o deslocamento é indefinido e o hardware guarda os bits
+baixos, então `1 << 38` é `1 << 6` na prática. Uma máscara de 0xC0 — dois
+núcleos, cpu6 e cpu7 do A72 — reportava dezoito membros:
+
+> Compute threadpool: 2 thread(s), strict_cpu=1, worker 0..1 pinned to cpu
+> 6,7,38,39,70,71,102,103,134,135,166,167,198,199,230,2
+
+O pin em si estava certo, e por sorte e não por correção: o laço sobe, então os
+núcleos reais vêm primeiro e o chamador pega os `n_threads` primeiros antes de
+qualquer fantasma. **Alargar o deslocamento para 64 bits piorou em vez de
+consertar** — `1ULL << 70` também é indefinido, porque a conta excede a
+largura, e o período dos fantasmas saiu de 32 para 64 e ficou. Só limitar o
+laço pela largura da máscara resolve, e nenhuma escolha de tipo resolveria.
+
+Duas coisas liam os fantasmas, e as duas estavam vivas:
+
+- `cores.size()` os contava, então a guarda "esta máscara nomeia menos núcleos
+  que threads, o que serializaria" **nunca podia disparar**. Parecia uma
+  verificação funcionando.
+- `buildCpuSet` fazia CPU_SET de dezoito núcleos, que é permissão para *rodar
+  em* dezoito — o oposto de pin. Esse é o caminho que `nativeSetComputeAffinity`
+  usa, e ele hoje não é chamado, então ainda não custou nada. É a função que
+  custaria.
+
+Os dois laços agora param em 64 e `mask` é `int64_t`, igual ao lado Dart. O
+`jint` de 32 bits no canal é seguro porque `cpu_topology_test.dart` já garante
+máscara < `1 << 16`.
+
+Agora a linha diz `worker 0..1 pinned to cpu 6,7`, ao lado de
+`cpumask slots set: 6,7` — os dois concordam, que é a única razão para imprimir
+os dois.
+
+### Sobre o micro-benchmark lembrado
+
+**Nunca houve um micro-benchmark escolhendo o acelerador.** O que existia era
+`core.plan(...)`, no núcleo Rust — um *planejador*, não uma medição — e o
+`result.benchmark` era o self-check de boot do próprio núcleo, que decidia se
+ele podia ser usado. Os dois saíram na 0.3.5, quando o núcleo deixou o APK. A
+regra sempre foi uma regra; estava em Rust, e depois passou a ser este mesmo
+corpo em Dart. O que faltava nunca foi a medição. Era o modelo.
+
+
 ## [0.5.0+2007] - 2026-09-29
 
 Minor, e a frase que a regra do repo exige saiu verdadeira: **antes disto o app
