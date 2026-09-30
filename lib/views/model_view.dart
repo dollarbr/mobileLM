@@ -8,6 +8,8 @@ import 'hf_search_sheet.dart';
 import '../controllers/settings_controller.dart';
 import '../core/colors.dart';
 import '../models/ai_model.dart';
+import '../services/cpu_self_test.dart';
+import '../services/cpu_self_test_service.dart';
 import '../services/download_service.dart';
 import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
@@ -72,6 +74,7 @@ class ModelView extends GetView<ModelController> {
                 if (controller.modelScope.value == 'local') ...[
                   _buildImportingProgress(context),
                   _buildEncoderMenu(context),
+                  _buildCpuSelfTestCard(context),
                   const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -218,6 +221,319 @@ class ModelView extends GetView<ModelController> {
         onTap: () => _showEncoderSheet(context),
       ),
     );
+  }
+
+  /// The CPU self-test, offered where it is actually relevant.
+  ///
+  /// It lives here and not only in Settings because this is the screen where the
+  /// user decides what to download, and the question it answers is "will this
+  /// phone run a model at all".
+  ///
+  /// Three rules it obeys, all of them about not taking the choice away:
+  ///
+  /// - **Never automatic.** Nothing runs it. The card offers; the tap decides.
+  ///   A self-test that fires by itself is a 150 MB load and a minute of CPU
+  ///   the user did not ask for, which is the same complaint as an ad.
+  /// - **Dismissible, permanently.** A dismissal is stored, so it does not come
+  ///   back on the next visit. "Ask me again on every launch" is nagging, and a
+  ///   nag is how a useful suggestion gets removed from the app.
+  /// - **Cancellable while it runs.** A test that cannot be stopped is a test
+  ///   the user resents, and it is the one that is easy to get wrong because the
+  ///   llama.cpp call is not itself cancellable.
+  Widget _buildCpuSelfTestCard(BuildContext context) {
+    return Obx(() {
+      final svc = Get.isRegistered<CpuSelfTestService>()
+          ? Get.find<CpuSelfTestService>()
+          : null;
+      if (svc == null || !svc.offerEnabled) {
+        return const SizedBox.shrink();
+      }
+
+      final state = svc.state;
+      final benchmark = pickBenchmarkModel(controller.availableModels.toList());
+      final missing = benchmark != null &&
+          !controller.downloadedFiles.contains(benchmark.filename);
+      final tested = state.verdict.value != null;
+
+      final accent = Theme.of(context).colorScheme.primary;
+      final verdict = state.verdict.value;
+      final (icon, color) = switch (verdict) {
+        CpuVerdict.ok => (Icons.check_circle_rounded, AppColors.success),
+        CpuVerdict.slow => (Icons.speed_rounded, AppColors.warning),
+        CpuVerdict.fail => (Icons.error_rounded, AppColors.error),
+        null => (Icons.speed_rounded, accent),
+      };
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Material(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest
+              .withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: state.running.value
+                      ? null
+                      : () => _runCpuSelfTest(svc, benchmark, missing),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: state.running.value
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: accent),
+                          )
+                        : Icon(icon, size: 20, color: color),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: state.running.value
+                        ? null
+                        : () => _runCpuSelfTest(svc, benchmark, missing),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            state.running.value
+                                ? 'Benchmark running…'
+                                : 'Benchmark usability',
+                            style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 3),
+                        Text(
+                          state.running.value
+                              ? 'CPU Safe mode, one short question. Takes a '
+                                  'few seconds to load the model, then a few '
+                                  'to answer.'
+                              : missing
+                                  ? 'Downloads the 230M model and runs it in '
+                                      'CPU Safe mode, then reports your real '
+                                      'tok/s. Nothing is downloaded or run '
+                                      'until you tap.'
+                                  : tested
+                                      ? 'CPU Safe · ${state.summary.value}'
+                                      : 'Runs the 230M model in CPU Safe mode '
+                                          'and reports your real tok/s, so you '
+                                          'know whether a local model is worth '
+                                          'the download.',
+                          style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              height: 1.35,
+                              color: Theme.of(context).hintColor),
+                        ),
+                        if (tested) ...[
+                          const SizedBox(height: 6),
+                          _cpuSelfTestAdvice(context, verdict,
+                              state.tokensPerSecond.value),
+                        ],
+                        if (state.running.value) ...[
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: svc.cancel,
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(0, 32),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text('Cancel',
+                                style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.error)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                // Dismissal is a close button and not a swipe: the rows in this
+                // list already have a swipe gesture, and adding a second one
+                // makes both of them wrong.
+                IconButton(
+                  onPressed: () => svc.dismissOffer(),
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  tooltip: 'Do not suggest this again',
+                  icon: Icon(Icons.close_rounded,
+                      color: Theme.of(context).hintColor),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  /// The verdict, turned into what to do about it.
+  ///
+  /// A rate on its own is not actionable, so each verdict says the next step.
+  ///
+  /// The slow branch offers a button rather than only a sentence, because the
+  /// two things it can do — hide the list, or leave it alone — are both
+  /// reversible and both one tap. Hiding 40 models the user may still want is
+  /// only acceptable if undoing it is easier than scrolling past them, and an
+  /// offer with no button is not undoable.
+  Widget _cpuSelfTestAdvice(
+      BuildContext context, CpuVerdict? verdict, double? tps) {
+    final suggestsCloud =
+        benchmarkSaysUseCloudModels(verdict ?? CpuVerdict.fail, tps);
+    final (text, color) = switch (verdict) {
+      CpuVerdict.ok => (
+          'Fast enough for local models. 1B and under should be comfortable; '
+              'larger ones are worth trying before you download them.',
+          AppColors.success
+        ),
+      CpuVerdict.slow => (
+          tps == null
+              ? 'The CPU returned nothing. Cloud models are the reliable choice '
+                  'on this device.'
+              : 'Under ${kCpuUsableTokensPerSecond.toStringAsFixed(0)} tok/s. '
+                  'Cloud models will feel better; a local 230M still works if '
+                  'you would rather keep it on the device.',
+          AppColors.warning
+        ),
+      CpuVerdict.fail => (
+          'The CPU path returned nothing, so local models are not going to work '
+              'here. Use the cloud models — and if this repeats, the engine is '
+              'the problem rather than the model size.',
+          AppColors.error
+        ),
+      null => ('', AppColors.primary),
+    };
+
+    final hidden = controller.localCatalogueHidden.value;
+    final ignored = controller.ignoreBenchmarkAdvice.value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.arrow_right_rounded, size: 14, color: color),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(text,
+                  style: GoogleFonts.inter(
+                      fontSize: 12, height: 1.35, color: color)),
+            ),
+          ],
+        ),
+        // No offer when the user has declined it in Settings. The number above
+        // still stands: declining the consequence is not the same as hiding the
+        // measurement.
+        if (suggestsCloud && !ignored) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () => controller.setLocalCatalogueHidden(true),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  hidden ? 'Local list hidden' : 'Hide the local model list',
+                  style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: hidden ? AppColors.success : color),
+                ),
+              ),
+              if (hidden)
+                TextButton(
+                  onPressed: () => controller.setLocalCatalogueHidden(false),
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text('Show it anyway',
+                      style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).hintColor)),
+                ),
+              TextButton(
+                onPressed: () => controller.setIgnoreBenchmarkAdvice(true),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 30),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text('Keep models anyway',
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).hintColor)),
+              ),
+            ],
+          ),
+        ],
+        if (suggestsCloud && ignored) ...[
+          const SizedBox(height: 2),
+          Text('Showing local models because you asked to ignore benchmarks.',
+              style: GoogleFonts.inter(
+                  fontSize: 11.5, color: Theme.of(context).hintColor)),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _runCpuSelfTest(
+    CpuSelfTestService svc,
+    AiModel? benchmark,
+    bool missing,
+  ) async {
+    // Asked before anything happens, because the alternative is discovering the
+    // cost afterwards: 150 MB to download, then a load the user cannot
+    // interrupt. Confirming first is the only place the choice is really theirs.
+    if (missing && benchmark != null) {
+      final go = await Get.dialog<bool>(
+        AlertDialog(
+          title: const Text('Download the benchmark?'),
+          content: Text(
+            '"${benchmark.name}" is ${benchmark.size}. It is the smallest '
+            'model here, and it is what measures whether this phone can run a '
+            'model at all. Without it the test cannot run.',
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Get.back(result: false),
+                child: const Text('Not now')),
+            FilledButton(
+                onPressed: () => Get.back(result: true),
+                child: const Text('Download')),
+          ],
+        ),
+      );
+      if (go != true) return;
+      await controller.downloadModel(benchmark);
+      if (!controller.downloadedFiles.contains(benchmark.filename)) return;
+    }
+
+    final r = await svc.run(availableModels: controller.availableModels.toList());
+    if (svc.state.cancelled.value) return;
+    if (!Get.isSnackbarOpen) {
+      Get.snackbar(
+        r.passed ? 'CPU works' : 'CPU problem',
+        describeCpuSelfTest(r),
+        snackPosition: SnackPosition.BOTTOM,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   void _showEncoderSheet(BuildContext context) {

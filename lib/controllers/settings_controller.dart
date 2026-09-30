@@ -276,7 +276,15 @@ class SettingsController extends GetxController {
     } else {
       imageGenBackend.value = Backend.cpu;
     }
-    _detectImageGpu();
+    // Only when the GPU is actually wanted. detectGpuVendor() is EGL, and EGL
+    // on this device brings the whole Adreno driver into the process --
+    // libvulkan.so and all of it -- even though the caller only wanted a vendor
+    // string to pick a Stable Diffusion backend. Measured on a Galaxy A72: a
+    // llama.cpp prefill that used to stall with every thread asleep then spent
+    // minutes at 100% of a core with the driver resident and no Vulkan work to
+    // do. A probe with a side effect of that size does not belong on a boot
+    // path that runs before the user has opened the image settings.
+    if (!imageGenForceCpu.value) _detectImageGpu();
     fontScale.value = _hive.getSetting(AppConstants.keyFontScale,
             defaultValue: AppConstants.defaultFontScale) ??
         AppConstants.defaultFontScale;
@@ -1036,6 +1044,15 @@ class SettingsController extends GetxController {
   }
 
   Future<void> setImageBackendMode(bool useGpu) async {
+    // The boot-time detection is skipped when image gen is on CPU, so this is
+    // the moment to run it -- the user is asking for the GPU, and the cost of
+    // loading the driver is now the thing they just opted into. Running it here
+    // rather than in recommendedImageGpuBackend() keeps that function pure and
+    // keeps the detection to one call per opt-in.
+    if (useGpu && imageGpuVendor.value == 'detecting') {
+      imageGpuVendor.value = 'detecting';
+      await _detectImageGpu();
+    }
     final backend = useGpu ? recommendedImageGpuBackend() : Backend.cpu;
     imageGenBackend.value = backend;
     imageGenForceCpu.value = !useGpu || backend == Backend.cpu;

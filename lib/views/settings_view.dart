@@ -1,3 +1,4 @@
+import '../utils/cpu_topology.dart';
 import 'dart:io' show File, Platform;
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,8 @@ import '../controllers/chat_controller.dart';
 import 'server_view.dart';
 import '../core/constants.dart';
 import '../services/inference_service.dart';
+import '../services/cpu_self_test.dart';
+import '../services/cpu_self_test_service.dart';
 import '../controllers/model_controller.dart';
 import '../services/download_service.dart';
 import '../services/hive_service.dart';
@@ -296,6 +299,80 @@ class SettingsView extends GetView<SettingsController> {
               const SizedBox(height: 10),
               _sectionLabel(context, 'DIAGNOSTICS'),
               _appleGroupedCard(context, isDark, children: [
+                // The benchmark tile and the two switches that govern it used to
+                // live inside _buildLiteRtCard, which is only built when a
+                // LiteRT model is selected. On a GGUF phone they did not exist:
+                // no card on the Models screen, no tile in Settings, and the
+                // benchmark could only be reached from a build where the run had
+                // already been performed once. Found on the Galaxy A72 by
+                // dumping the accessibility tree instead of tapping coordinates
+                // at a remembered row — `input tap` on a screen that does not
+                // respond to touch fails silently, so the absence looked like a
+                // navigation mistake repeated nine times.
+                //
+                // A CPU benchmark does not care which runtime is loaded: it
+                // always loads its own 230M GGUF. So it belongs with the
+                // diagnostics, where it is reachable regardless.
+                Obx(() {
+                  final svc = Get.find<CpuSelfTestService>();
+                  final st = svc.state;
+                  return _appleListTile(
+                    context,
+                    isDark,
+                    leading: _iconBox(
+                        isDark ? const Color(0xFFB9F53E) : AppColors.primary,
+                        Icons.speed_rounded),
+                    title: 'CPU benchmark',
+                    subtitle: st.running.value
+                        ? 'Running…'
+                        : st.summary.value.isEmpty
+                            ? 'Runs the 230M model and measures real speed'
+                            : st.summary.value,
+                    trailing: st.running.value
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: isDark
+                                    ? const Color(0xFFB9F53E)
+                                    : AppColors.primary),
+                          )
+                        : Switch(
+                            value: svc.offerEnabled,
+                            onChanged: (v) => v
+                                ? svc.restoreOffer()
+                                : svc.dismissOffer(),
+                          ),
+                    onTap:
+                        st.running.value ? null : () => _runBenchmark(svc),
+                  );
+                }),
+                Obx(() {
+                  final mc = Get.find<ModelController>();
+                  return _appleListTile(
+                    context,
+                    isDark,
+                    leading: _iconBox(
+                        isDark ? const Color(0xFFB9F53E) : AppColors.primary,
+                        Icons.visibility_off_outlined),
+                    title: 'Show models, ignore benchmarks',
+                    subtitle: mc.ignoreBenchmarkAdvice.value
+                        ? 'The benchmark still shows its number, but never offers '
+                            'to hide the local list again'
+                        : mc.localCatalogueHidden.value
+                            ? 'Showing only what is on this device. Encoders '
+                                'still work.'
+                            : 'Keeps the local list whatever the benchmark says, '
+                                'and stops it offering to hide it',
+                    trailing: Switch(
+                      value: mc.ignoreBenchmarkAdvice.value,
+                      onChanged: mc.setIgnoreBenchmarkAdvice,
+                    ),
+                    onTap: () => mc.setIgnoreBenchmarkAdvice(
+                        !mc.ignoreBenchmarkAdvice.value),
+                  );
+                }),
                 _appleListTile(
                   context,
                   isDark,
@@ -1372,6 +1449,21 @@ class SettingsView extends GetView<SettingsController> {
         ]));
   }
 
+  /// Runs the CPU benchmark from Settings. Separate from the Models-tab card
+  /// because this one is the durable entry point: it is here after a
+  /// dismissal, and it carries the switch that brings the card back.
+  Future<void> _runBenchmark(CpuSelfTestService svc) async {
+    final models = Get.find<ModelController>().availableModels.toList();
+    final r = await svc.run(availableModels: models);
+    if (svc.state.cancelled.value) return;
+    Get.snackbar(
+      r.passed ? 'CPU works' : 'CPU problem',
+      describeCpuSelfTest(r),
+      snackPosition: SnackPosition.BOTTOM,
+      duration: const Duration(seconds: 5),
+    );
+  }
+
   Widget _buildLiteRtCard(BuildContext context, bool isDark) {
     final modes = [
       (
@@ -1411,6 +1503,13 @@ class SettingsView extends GetView<SettingsController> {
           showDivider: i < modes.length - 1,
           onTap: () => controller.setLiteRtPerformanceMode(modes[i].value),
         ),
+      // The CPU benchmark tile and the "Show models, ignore benchmarks" switch
+      // used to be here, at the end of the LiteRT card. That card is only built
+      // when a LiteRT model is selected, so on a phone running a GGUF the
+      // benchmark had no way to be started at all. They now live in the
+      // DIAGNOSTICS group, where they are reachable with any model loaded —
+      // the benchmark loads its own 230M GGUF and does not care which runtime
+      // the app happens to be holding.
     ]);
   }
 
@@ -1904,13 +2003,23 @@ class SettingsView extends GetView<SettingsController> {
         _parameterDivider(isDark),
         (() {
           final cores = Platform.numberOfProcessors;
-          final half = (cores ~/ 2).clamp(2, 6);
+          // Read the same topology the loader reads, so this label describes what
+          // will actually happen. It used to say "half the cores" and promise
+          // "Leaves the little cores out of the sync barrier", which on a Galaxy
+          // A72 was the opposite of the truth: half of eight is cpu0-3 and all
+          // four of those are A55, so the default took the little cores *into*
+          // the barrier. A label that overstates what the code does is worse than
+          // no label, because it is what stops anyone from suspecting it.
+          final bigCores = bigCoreCount(readMaxFreqPerCoreSync(), totalCores: cores);
           final selected = controller.cpuThreads.value;
           final options = <({int value, String title, String subtitle})>[
             (
               value: 0,
-              title: 'Threads: Auto — half the cores ($half)',
-              subtitle: 'Leaves the little cores out of the sync barrier',
+              title: 'Threads: Auto — the big cores ($bigCores)',
+              subtitle: bigCores >= cores
+                  ? 'Every core is a big one on this device'
+                  : 'Cores cpu0-${cores - 1} left out; ggml syncs every thread '
+                      'at the end of each op and a slow one sets the pace',
             ),
             (
               value: cores,

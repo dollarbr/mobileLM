@@ -28,6 +28,22 @@ class AiModel {
   final bool isImported;
   final bool isCustom;
 
+  /// The model the app uses to prove the CPU path works, and the one every
+  /// benchmark number is taken against.
+  ///
+  /// This is a role, not a size. It exists because of a measurement: a 230M
+  /// model answers a short turn in ~12 tok/s on a Galaxy A72 (Snapdragon 720G,
+  /// two A76), while a 360M one on the same phone did not return a token inside
+  /// the 60 s prefill budget. Same engine, same gate, same code — the only
+  /// variable that changed was how much arithmetic the prefill had to do. So a
+  /// device that is too slow to answer a bigger model can still be *measured*,
+  /// which is what a self-test needs. Anything heavier would make the test
+  /// indistinguishable from the thing it is testing.
+  ///
+  /// Kept out of the picker's normal flow on purpose: it is a yardstick, not a
+  /// suggestion. One model in the catalogue carries it today.
+  final bool isBenchmark;
+
   AiModel({
     required this.name,
     required this.filename,
@@ -41,6 +57,7 @@ class AiModel {
     this.isCustom = false,
     this.mmprojUrl = '',
     this.mmprojFilename = '',
+    this.isBenchmark = false,
   }) : runtime = runtime ?? runtimeFromFilename(filename, template: template);
 
   factory AiModel.fromMap(Map<String, String> map) => AiModel(
@@ -54,6 +71,7 @@ class AiModel {
         isVision: map['vision'] == 'true',
         isImported: map['imported'] == 'true',
         isCustom: map['custom'] == 'true',
+        isBenchmark: map['benchmark'] == 'true',
         mmprojUrl: map['mmprojUrl'] ?? '',
         mmprojFilename: map['mmprojFilename'] ?? '',
       );
@@ -69,6 +87,7 @@ class AiModel {
         if (isVision) 'vision': 'true',
         if (isImported) 'imported': 'true',
         if (isCustom) 'custom': 'true',
+        if (isBenchmark) 'benchmark': 'true',
         if (mmprojUrl.isNotEmpty) 'mmprojUrl': mmprojUrl,
         if (mmprojFilename.isNotEmpty) 'mmprojFilename': mmprojFilename,
       };
@@ -96,6 +115,7 @@ class AiModel {
     bool? isVision,
     bool? isImported,
     bool? isCustom,
+    bool? isBenchmark,
     String? mmprojUrl,
     String? mmprojFilename,
   }) {
@@ -110,6 +130,7 @@ class AiModel {
       isVision: isVision ?? this.isVision,
       isImported: isImported ?? this.isImported,
       isCustom: isCustom ?? this.isCustom,
+      isBenchmark: isBenchmark ?? this.isBenchmark,
       mmprojUrl: mmprojUrl ?? this.mmprojUrl,
       mmprojFilename: mmprojFilename ?? this.mmprojFilename,
     );

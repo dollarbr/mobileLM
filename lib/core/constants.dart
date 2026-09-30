@@ -41,6 +41,32 @@ class AppConstants {
   static const String keyLocalModelRuntime = 'local_model_runtime';
   static const String keyLocalModelBackend = 'local_model_backend';
   static const String keyLiteRtPerformanceMode = 'litert_performance_mode';
+
+  /// Whether the Models tab still offers to run the CPU self-test. False once
+  /// the user dismisses the card. Separate from the result, which is a
+  /// measurement and not a preference.
+  static const String keyCpuSelfTestOffer = 'cpu_self_test_offer';
+
+  /// When true, the Models tab shows only what is already on the device plus
+  /// the online tab, and the whole download catalogue goes away. For someone who
+  /// chats with a cloud model and never wants to manage local files: the list
+  /// is 40 entries they will not download any of.
+  static const String keyLocalCatalogueHidden = 'local_catalogue_hidden';
+
+  /// Overrides the benchmark's advice. Off by default.
+  ///
+  /// The benchmark says "this phone is under 5 tok/s, cloud models will feel
+  /// better" and offers to hide the local list. Hiding 40 models is a big
+  /// change to make on the strength of one 24-token run, so the offer is
+  /// declined by default and this flag is the permanent version of declining it
+  /// — the user says once, in Settings, and the benchmark stops offering again
+  /// for good.
+  ///
+  /// The advice is still shown. Suppressing the number because the user does not
+  /// want the consequence would be the wrong trade: the measurement is the
+  /// useful part, and the list is the part they get to decide about.
+  static const String keyIgnoreBenchmarkAdvice =
+      'show_models_ignore_benchmarks';
   static const String keyThinkingMode = 'thinking_mode';
   static const String keyToolsEnabled = 'tools_enabled';
   static const String keyEnabledTools = 'enabled_tools';
@@ -67,6 +93,14 @@ class AppConstants {
   /// Per-model Auto Fast benchmark verdicts. Key = prefix + 'name:bytes',
   /// value = 'cpu' | 'gpu'. Measured once, reused on every later load.
   static const String autoFastBenchKeyPrefix = 'auto_fast_bench_';
+
+  /// Set once, for the whole device, when a GPU that registered and reported a
+  /// layer count then refused the model at `llama_model_load` with
+  /// "Unsupported device". Per device and not per model on purpose: a backend
+  /// that cannot host one GGUF is not going to host the next one, and the probe
+  /// that discovers it is itself what puts the driver in the process. Measured
+  /// on a Galaxy A72 — see the Auto Fast fallback in `inference_android.dart`.
+  static const String gpuLoadFailedKey = 'gpu_load_failed';
   /// Same scheme for the vision projector backend ('cpu' | 'gpu').
   static const String visionBenchKeyPrefix = 'vision_bench_';
   static const String keyImageModelPath = 'image_model_path';
@@ -89,7 +123,22 @@ class AppConstants {
   static const String keyServerApiKey = 'server_api_key';
   static const String keyServerUseApiKey = 'server_use_api_key';
   static const String keyServerPort = 'server_port';
-  static const int defaultServerPort = 8080;
+  /// The port the local API server listens on when the user has not chosen one.
+  ///
+  /// 8091, not the 8080 that every OpenAI-compatible server in the world uses —
+  /// which is exactly why it is a bad default on a phone. 8080 is the first port
+  /// anybody reaches for, so it is the one already taken: by a Syncthing on one
+  /// device, by a Bifrost gateway on the development host, and by whatever else
+  /// the person running this has on their machine. A default that collides is a
+  /// default that costs every user a port-collision dance, and the collision
+  /// handler here is a silent walk up to the next free port, so the cost is not
+  /// even visible as an error.
+  ///
+  /// This is only the *default*. A port the user set is stored in Hive under
+  /// [keyServerPort] and always wins, so nobody who already chose one sees this
+  /// change. The single source of truth for the number lives here;
+  /// `ServerController` reads it rather than keeping a second copy.
+  static const int defaultServerPort = 8091;
   static const String keyImageSteps = 'image_steps';
   static const String keyImageGenForceCpu = 'image_gen_force_cpu';
   /// CPU threads for llama.cpp. 0 means "half the cores".
@@ -375,6 +424,102 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'template': 'modern-bert',
       'runtime': 'llama',
     },
+    // ── the second wave, screened 2026-09-28 ──────────────────────────────
+    // Every entry here needed no code change to work, which is a much
+    // stronger claim than "was found", and it is the reason these six are in
+    // the catalogue while `Qwen3-Reranker-0.6B` and the two mxbai rerankers
+    // are not. Those three are the same models minus their `cls.output.weight`,
+    // and a reranker with no head loads, occupies the screen, and then
+    // returns nothing at all.
+    {
+      'role': 'rerank',
+      'name': 'BGE Reranker v2 M3 (Q4_K_M)',
+      'filename': 'bge-reranker-v2-m3-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q4_K_M.gguf',
+      'size': '418.1 MB',
+      'description':
+          '568M, multilingual, arch bert. Carries both cls.output.weight and '
+          'pooler, and that pair is what decides whether a score is a score — the '
+          'jina v1 file above has the head without the pooler and returns a number '
+          'in (-1,1) that ranks plausibly. Twice the size of the BGE Reranker '
+          'Base and multilingual, which on a pt_BR phone is the part that matters.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'rerank',
+      'name': 'BGE Reranker v2 M3 (Q2_K)',
+      'filename': 'bge-reranker-v2-m3-Q2_K.gguf',
+      'url':
+          'https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q2_K.gguf',
+      'size': '349.5 MB',
+      'description':
+          'The same reranker in Q2_K: 69 MB cheaper for a quantisation that costs '
+          'a little ordering rather than the shape of the answer.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'rerank',
+      'name': 'Jina Reranker v2 Base Multilingual (Q4_K_M)',
+      'filename': 'jina-reranker-v2-base-multilingual-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/gpustack/jina-reranker-v2-base-multilingual-GGUF/resolve/main/jina-reranker-v2-base-multilingual-Q4_K_M.gguf',
+      'size': '212.1 MB',
+      'description':
+          '278M, arch bert, head and pooler both present. The smallest reranker '
+          'here that returns a real logit — and it is the v2 of a family whose v1 '
+          'is in this catalogue and does not work, so the version in the name is '
+          'the entire difference.',
+      'template': 'bert',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'rerank',
+      'name': 'Qwen3 Reranker 4B (Q4_K_M)',
+      'filename': 'Qwen3-Reranker-4B-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/Voodisss/Qwen3-Reranker-4B-GGUF-llama_cpp/resolve/main/Qwen3-Reranker-4B-Q4_K_M.gguf',
+      'size': '2.4 GB',
+      'description':
+          'The strongest reranker screened, and the first qwen3 the app treats as '
+          'an encoder. It declares its own pooling_type=rank and carries '
+          'cls.output.weight [2560, 2] with yes/no labels — the head llama.cpp '
+          'loads for LLM_ARCH_QWEN3. Unmeasured: every number this catalogue '
+          'quotes is the ModernBERT above, and a qwen3 has never run here.',
+      'template': 'qwen3',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'rerank',
+      'name': 'Qwen3 Reranker 4B (Q2_K)',
+      'filename': 'Qwen3-Reranker-4B-Q2_K.gguf',
+      'url':
+          'https://huggingface.co/Voodisss/Qwen3-Reranker-4B-GGUF-llama_cpp/resolve/main/Qwen3-Reranker-4B-Q2_K.gguf',
+      'size': '1.7 GB',
+      'description':
+          'The same 4B reranker in Q2_K: 2,4 GB becomes 1,7 GB. The size is what '
+          'decides this one, and 4B is already the top of the range this app is '
+          'aimed at.',
+      'template': 'qwen3',
+      'runtime': 'llama',
+    },
+    {
+      'role': 'embed',
+      'name': 'Qwen3 Embedding 0.6B (Q8_0)',
+      'filename': 'Qwen3-Embedding-0.6B-Q8_0.gguf',
+      'url':
+          'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf',
+      'size': '609.5 MB',
+      'description':
+          'Published by Qwen itself. Arch qwen3, declares pooling_type=last, 1024 '
+          'dimensions. The only embedder here that is a decoder rather than a '
+          'BERT, and the one that reads a whole document in a single pass — which '
+          'is the actual argument for it over the 80 MB Nomic above.',
+      'template': 'qwen3',
+      'runtime': 'llama',
+    },
   ];
 
   static const List<Map<String, String>> availableModels = [
@@ -410,51 +555,92 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'template': 'litert',
       'runtime': 'litert',
     },
-    // Quantisation-aware models: the weights were trained knowing they would
-    // end up 4-bit, so a Q4_0 build holds far closer to the full-precision
-    // model than a plain post-training quant of the same size. Q4_0 is also
-    // the layout llama.cpp repacks for ARM dot-product and i8mm kernels, so
-    // it is the fastest 4-bit path on a phone. Vendors name the recipe
-    // differently — Google says QAT, Liquid says QAD — same idea.
+    // These four were "Quantisation-aware": the weights were trained knowing
+    // they would end up 4-bit, and vendors name the recipe differently — Google
+    // says QAT, Liquid says QAD. The idea is sound and the files are smaller
+    // than a post-training quant of the same size.
+    //
+    // They do not work here. Measured on a Galaxy A72 (SM-A725M, Snapdragon
+    // 720G, /e/OS 4.3 A15): the LFM2.5-230M in its official QAD-Q4_0 file loads,
+    // prefills at 263 tok/s, and then emits 24 consecutive token id 0 — which
+    // that GGUF declares as tokenizer.ggml.padding_token_id, not as its EOS
+    // (7). It answers nothing, and the answer looks like a slow phone.
+    //
+    // It is the file, not the build and not the device. Same model, same repo,
+    // 128 bytes apart in metadata, as a plain Q4_0: real text. As Q4_K_M: real
+    // text, 3.9 tok/s. Built with GGML_CPU_ALL_VARIANTS OFF to take the Q4_0
+    // out of the ARM dot-product repack entirely, on the same ordinary kernels
+    // Q4_K already used: still 24 pads. The repack was innocent — the weights
+    // are wrong whichever kernel path reads them. This is the same shape as the
+    // "ARM-optimized" GGUFs already noted for this vendored llama.cpp: it fails
+    // on every device, and a 404 is not the only way a URL can be wrong.
+    //
+    // So: plain Q4_0, which is the layout llama.cpp does repack for ARM
+    // dot-product, and therefore the fastest 4-bit path on a phone. Do not put
+    // another QAT/QAD entry in without running it first and reading the sampled
+    // token ids out of app.log — a model that answers nothing still reports a
+    // plausible tok/s, because the sampler is working fine on garbage weights.
     {
-      'name': 'LFM2.5 230M (QAD Q4_0)',
-      'filename': 'LFM2.5-230M-QAD-Q4_0.gguf',
+      'name': 'LFM2.5 230M (Q4_0)',
+      'filename': 'LFM2.5-230M-Q4_0.gguf',
       'url':
-          'https://huggingface.co/LiquidAI/LFM2.5-230M-GGUF/resolve/main/LFM2.5-230M-QAD-Q4_0.gguf',
-      'size': '0.15 GB',
+          'https://huggingface.co/LiquidAI/LFM2.5-230M-GGUF/resolve/main/LFM2.5-230M-Q4_0.gguf',
+      'size': '0.14 GB',
       'description':
-          'Quantisation-aware 4-bit. Smallest model here — runs on anything',
+          'Smallest model here — runs on anything. The benchmark model, so it has '
+          'to be one that answers: see the QAT/QAD note above',
       'template': 'chatml',
       'runtime': 'llama',
+      'benchmark': 'true',
     },
     {
-      'name': 'LFM2.5 350M (QAD Q4_0)',
-      'filename': 'LFM2.5-350M-QAD-Q4_0.gguf',
+      // The floor of the catalogue, and the reason the benchmark works. 135M
+      // parameters, 105 MB, and on a Galaxy A72 (two A76) the prefill is a
+      // rounding error rather than a budget problem. Kept even though it is
+      // worse at conversation than the 230M: a self-test has to be cheap enough
+      // to always pass, or it stops being a self-test and starts being a second
+      // way to fail.
+      'name': 'SmolLM2 135M (Q4_K_M)',
+      'filename': 'SmolLM2-135M-Instruct-Q4_K_M.gguf',
       'url':
-          'https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/main/LFM2.5-350M-QAD-Q4_0.gguf',
-      'size': '0.22 GB',
-      'description': 'Quantisation-aware 4-bit, tuned for edge devices',
-      'template': 'chatml',
-      'runtime': 'llama',
-    },
-    {
-      'name': 'LFM2.5 1.2B Instruct (QAD Q4_0)',
-      'filename': 'LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf',
-      'url':
-          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf',
-      'size': '0.70 GB',
+          'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf',
+      'size': '0.10 GB',
       'description':
-          'Quantisation-aware 4-bit. Multilingual, and the sweet spot for most phones',
+          'The smallest thing here that still speaks, and the next candidate for '
+          'the CPU benchmark — lighter than the 230M, but not the benchmark yet '
+          'because the pass/fail thresholds are calibrated against the 230M on a '
+          'Galaxy A72, and those need re-measuring before they describe this',
       'template': 'chatml',
       'runtime': 'llama',
     },
     {
-      'name': 'LFM2.5 2.6B (QAD Q4_0)',
-      'filename': 'LFM2.5-2.6B-QAD-Q4_0.gguf',
+      'name': 'LFM2.5 350M (Q4_0)',
+      'filename': 'LFM2.5-350M-Q4_0.gguf',
       'url':
-          'https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-QAD-Q4_0.gguf',
-      'size': '1.59 GB',
-      'description': 'Quantisation-aware 4-bit, the largest LFM2.5 that still fits comfortably',
+          'https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/main/LFM2.5-350M-Q4_0.gguf',
+      'size': '0.20 GB',
+      'description': '4-bit, tuned for edge devices',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'LFM2.5 1.2B Instruct (Q4_0)',
+      'filename': 'LFM2.5-1.2B-Instruct-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_0.gguf',
+      'size': '0.65 GB',
+      'description':
+          '4-bit. Multilingual, and the sweet spot for most phones',
+      'template': 'chatml',
+      'runtime': 'llama',
+    },
+    {
+      'name': 'LFM2.5 2.6B (Q4_0)',
+      'filename': 'LFM2.5-2.6B-Q4_0.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-Q4_0.gguf',
+      'size': '1.48 GB',
+      'description': '4-bit, the largest LFM2.5 that still fits comfortably',
       'template': 'chatml',
       'runtime': 'llama',
     },

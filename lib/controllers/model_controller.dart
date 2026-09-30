@@ -81,6 +81,14 @@ class ModelController extends GetxController {
   final fileSizes = <String, int>{}.obs;
   final modelScope = 'local'.obs;
 
+  /// Hides the download catalogue in the Models tab. See [displayedModels] for
+  /// why, and for what deliberately survives.
+  final localCatalogueHidden = false.obs;
+
+  /// Keeps the local model list regardless of what the benchmark said. Set once,
+  /// in Settings, and the benchmark stops offering to hide the list.
+  final ignoreBenchmarkAdvice = false.obs;
+
   /// Section titles the user has opened. Everything starts folded, so the tab
   /// opens on a short index of what exists instead of 30-odd cards. Not
   /// persisted: a fresh launch is a fresh index.
@@ -107,10 +115,40 @@ class ModelController extends GetxController {
     sortSmallestFirst.value = !sortSmallestFirst.value;
   }
 
+  /// Hide or show the download catalogue. See [displayedModels] for what
+  /// survives and why.
+  Future<void> setLocalCatalogueHidden(bool hidden) async {
+    localCatalogueHidden.value = hidden;
+    await _hive.setSetting(AppConstants.keyLocalCatalogueHidden, hidden);
+  }
+
+  /// Declining the benchmark's advice, permanently.
+  ///
+  /// One tap, and the benchmark still shows its number — this hides the *offer*,
+  /// not the measurement, because a number the user cannot act on is a warning
+  /// they will learn to dismiss.
+  Future<void> setIgnoreBenchmarkAdvice(bool ignore) async {
+    ignoreBenchmarkAdvice.value = ignore;
+    await _hive.setSetting(AppConstants.keyIgnoreBenchmarkAdvice, ignore);
+    if (ignore) await setLocalCatalogueHidden(false);
+  }
+
 
   List<AiModel> get displayedModels {
     final active = _inference.loadedModelName.value;
-    final models = [...availableModels];
+    // The catalogue can be hidden entirely, leaving only what is on the device.
+    //
+    // The trigger is real: for someone who chats with a cloud model, the Models
+    // tab is 40 entries of files they will never download, and that is not
+    // neutral — a long list of things that will not work on this phone is worse
+    // than a short one. What survives is the models already downloaded plus
+    // anything hand-imported, because those are decisions the user already made
+    // and hiding them would strand the files.
+    final models = localCatalogueHidden.value
+        ? availableModels
+            .where((m) => m.isImported || m.isCustom || isDownloaded(m.filename))
+            .toList()
+        : [...availableModels];
     models.sort((a, b) {
       if (a.filename == active) return -1;
       if (b.filename == active) return 1;
@@ -225,6 +263,14 @@ class ModelController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    localCatalogueHidden.value = _hive.getSetting(
+            AppConstants.keyLocalCatalogueHidden,
+            defaultValue: false) ??
+        false;
+    ignoreBenchmarkAdvice.value = _hive.getSetting(
+            AppConstants.keyIgnoreBenchmarkAdvice,
+            defaultValue: false) ??
+        false;
     _loadCustomModels();
     // Encoders first, so they are the first thing in the list rather than
     // something to scroll to. They are a different kind of model: a BERT has no
