@@ -22,6 +22,7 @@ import 'services/device_info_service.dart';
 import 'services/local_image_service.dart';
 import 'services/app_log_service.dart';
 import 'services/encoder_settings_service.dart';
+import 'services/cpu_self_test_service.dart';
 import 'services/crash_reporting_service.dart';
 import 'services/image_generation_notification_service.dart';
 import 'services/scheduled_task_service.dart';
@@ -47,6 +48,11 @@ void main() {
     appLogBuffer.clear();
 
     appLog.info('app_started'.tr);
+    // Once, at startup, where it belongs. The pt_BR-only translation map and the
+    // pt_BR fallback mean this is not a detail — an English device silently
+    // renders every untranslated `.tr` key as its own name — but it is a fact
+    // about the device, not about the widget tree.
+    appLog.info('[Intl] deviceLocale=${Get.deviceLocale}');
 
     // Initialize Firebase before any Firebase-dependent services
     try {
@@ -111,6 +117,10 @@ void main() {
     // and an unregistered service would be a 500 with a null lookup rather than
     // a default.
     Get.put(EncoderSettingsService(), permanent: true);
+    // After ModelController, not before: the self-test resolves the benchmark
+    // model out of the catalogue it publishes, and registering earlier would
+    // read an empty list.
+    Get.put(CpuSelfTestService(), permanent: true);
     Get.put(ModelController());
     final workspace = Get.put(WorkspaceService());
     await workspace.initialize();
@@ -217,7 +227,13 @@ class MobileLMApp extends StatelessWidget {
     return Obx(() {
       final themeMode = settings.themeMode.value;
       final scale = settings.fontScale.value; // read here → Obx tracks it
-      print('[Intl] deviceLocale=${Get.deviceLocale}');
+      // No print here. This line is inside the root Obx's build, so it runs on
+      // every rebuild of the entire app — and a benchmark generation rebuilds
+      // once per token. Measured on the A72: 498 lines of the same string in
+      // one session, which is a fifth of the 1 MiB log budget spent saying
+      // nothing, and it costs a `print` on the frame that is also decoding
+      // tokens. The locale is now reported once, below, where it is a fact
+      // about startup rather than about the build.
       return GetMaterialApp(
         title: 'mobileLM',
         translations: AppTranslation(),

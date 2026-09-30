@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
@@ -136,6 +137,42 @@ class AppLogService extends GetxService {
   }
 
   void _push(AppLogEntry entry) {
+    // `entries` is an RxList, and `insert` marks every Obx watching it as
+    // needing a rebuild *synchronously*. That is fine when a log line arrives
+    // from a timer or a channel callback, and fatal when it arrives during a
+    // build — which is not exotic at all, because a GetX controller created by
+    // `Get.find` inside a build runs its `onInit` inside that build.
+    //
+    // Measured on the Galaxy A72, from the log rather than guessed at:
+    //
+    //   ChatController.onInit (chat_controller.dart:161)
+    //     -> refreshEncoderRole (:253)
+    //       -> AppLogService.info -> _add -> _push (:139)
+    //         -> RxList.insert -> RxObjectMixin.refresh
+    //           -> GetStream._notifyData -> ObxState._updateTree -> setState
+    //
+    // and the framework reports "setState() or markNeedsBuild() called during
+    // build ... The widget which was currently being built: ChatView". GetX
+    // does not swallow it: it surfaces as an uncaught zone error, the Obx is
+    // left with a dirty element, and the subtree under it does not come back.
+    // In the run that produced this trace the tap that opened Settings was
+    // swallowed and the Logs screen opened instead.
+    //
+    // The fix is not in the Obx — there is no bug in the Obx, and the trace
+    // points at the writer, not the watcher. Defer the mutation to after the
+    // frame that is currently being built. A microtask is not enough: one
+    // scheduled during the build phase still runs inside the frame, before the
+    // phase ends, which is the same error with a smaller stack.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => _insert(entry));
+      return;
+    }
+    _insert(entry);
+  }
+
+  void _insert(AppLogEntry entry) {
     entries.insert(0, entry);
     if (entries.length > _maxEntries) {
       entries.removeRange(_maxEntries, entries.length);

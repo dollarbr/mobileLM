@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show compute, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart'
@@ -158,7 +159,25 @@ class ChatController extends GetxController {
     // message list changes.
     ever(Get.find<InferenceService>().loadedModelName,
         (_) => refreshEncoderRole());
-    refreshEncoderRole();
+    // Deferred, and not for tidiness. This controller is reached by `Get.find`
+    // from ChatView's build, so `onInit` runs *inside* that build — and
+    // `refreshEncoderRole` writes two observables (`encoderRole.value` and the
+    // log service's RxList) before its first `await`. Writing an observable
+    // that an `Obx` already observes, from inside the build of the tree that
+    // `Obx` lives in, is what produced:
+    //
+    //   "setState() or markNeedsBuild() called during build. The widget which
+    //    was currently being built ... was: ChatView"
+    //
+    // as an uncaught zone error, after which the Obx keeps a dirty element and
+    // its subtree does not come back. The visible symptom was never a crash:
+    // a tap meant for Settings was swallowed and the Logs screen came up
+    // instead, which reads as a navigation bug and gets debugged as one.
+    //
+    // Post-frame, and only the *initial* call. The `ever` above fires from a
+    // model load, which is never inside a build, and deferring that one would
+    // make the console lag the load by a frame for no reason.
+    WidgetsBinding.instance.addPostFrameCallback((_) => refreshEncoderRole());
   }
 
   /// How much of the message area the console takes when an encoder is loaded.
