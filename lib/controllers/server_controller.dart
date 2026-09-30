@@ -172,11 +172,17 @@ class ServerController extends GetxController {
   Future<void> startServer() async {
     if (isRunning.value || isStarting.value) return;
     lastError.value = null;
-    if (!hasLocalModel) {
-      lastError.value = 'Load a local GGUF or LiteRT-LM model first.';
-      Get.snackbar('Server not started', lastError.value!);
-      return;
-    }
+    // No model gate, deliberately.
+    //
+    // It used to refuse here: "Load a local GGUF or LiteRT-LM model first." That
+    // is circular now and was always awkward — the server is how you load a
+    // model over the network, so requiring one to start it means the feature
+    // cannot bootstrap itself and a client that wanted to swap models had to go
+    // and touch the phone. The endpoints that need a model already refuse
+    // cleanly with no model: `_localModelError` for generation,
+    // `_encoderUnavailable` for embeddings/rerank/classify. A server that is up,
+    // reports `loaded: null`, and answers 400 with a sentence is a better
+    // answer than a port that is not listening at all.
 
     // Make sure any previously-stale server is fully cleaned up before
     // trying a new bind.  stopServer sets _server to null and force-closes

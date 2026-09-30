@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: o servidor sobe sem modelo, e a gestão de modelo funciona por HTTP
+
+O toggle recusava subir sem modelo ("Load a local GGUF or LiteRT-LM model
+first"). Era circular depois que a API ganhou gestão de modelos: **o servidor é
+como se carrega um modelo pela rede**, então exigir um modelo para subi-lo
+impedia a feature de se inicializar sozinha — e trocar de modelo exigia ir até o
+telefone.
+
+O que substitui o portão são recusas que já existiam e são melhores que uma
+porta fechada: os cinco endpoints que precisam de modelo respondem 400 com uma
+frase, e `capabilities` não promete nada quando não há modelo. A recusa de
+geração agora **nomeia o caminho por onde sair por HTTP**
+(`POST /v1/models/load` com um filename de `GET /v1/models/local`), porque um
+cliente que não sabe que existe um toggle num telefone que não está na mão
+recebe a instrução errada.
+
+`load` entre **runtimes diferentes** é recusado com `409`. GGUF e LiteRT-LM são
+duas bibliotecas nativas diferentes e a sessão se amarra a uma delas na
+primeira carga. O primeiro sintoma era pior do que a recusa: o endpoint
+respondia **`202 accepted`** para `Qwen3-0.6B.litertlm` e 24 s depois o GGUF
+seguia carregado e o LiteRT nunca carregou — um 202 que não é seguido da coisa
+que promete é pior que uma recusa, porque o cliente acredita que vai ter
+aquilo. Agora o 409 diz qual runtime seria preciso, qual a sessão tem, e que o
+caminho é reiniciar e repetir. E o modelo carregado não é tocado.
+
+### Verificado no A72, partida a frio, 19 verificações e zero falhas
+
+| | |
+|---|---|
+| servidor sem modelo | sobe, `loaded: null` |
+| os 5 endpoints que precisam de modelo | 400 cada um, com o caminho |
+| `capabilities` sem modelo | `{}` |
+| `load` de GGUF pela API | 202, carrega em 3 s, `backend=cpu gpu_layers=0` |
+| `load` de LiteRT pela API | 202, carrega em 6 s, **`backend=gpu`** |
+| `unload` | 409, servidor de pé |
+| `load` entre runtimes | 409, modelo carregado intacto |
+| chave | 401 sem / 401 errada / 200 certa / 200 com `bearer` minúsculo |
+
+O `backend=gpu` do LiteRT contra o `backend=cpu` do GGUF de 142 MB é a
+assimetria entre `planLiteRtTier` (sempre prefere GPU) e `planAcceleration`
+(que mantém GGUF pequeno na CPU), agora reproduzível em dois comandos.
+
+
 ### feat: a API local controla os modelos, e a chave passa a ser exigida
 
 `GET /v1/models/local`, `POST /v1/models/{download,load,unload}` — listar,

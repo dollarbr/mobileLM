@@ -638,6 +638,62 @@ POST, nem o forward, nem o servidor; era a ordem. `GET` respondia o tempo todo
 porque nada bloqueava. Agora é resposta, um turno do event loop, e só então a
 operação.
 
+## O servidor sobe sem modelo — e por que a troca de runtime é recusada
+
+O toggle recusava: "Load a local GGUF or LiteRT-LM model first". Era circular
+depois que a API ganhou gestão de modelos — **o servidor é como se carrega um
+modelo pela rede**, então exigir um modelo para subi-lo impede a feature de se
+inicializar sozinha, e um cliente que quisesse trocar de modelo tinha que ir
+até o telefone. O portão saiu.
+
+O que substitui o portão são recusas que já existiam e são melhores que uma
+porta fechada: `_localModelError` para geração e `_encoderUnavailable` para
+embeddings/rerank/classify. Um servidor no ar que reporta `loaded: null` e
+responde 400 com uma frase é melhor do que uma porta que não está escutando.
+
+A mensagem de recusa **nomeia o caminho por onde sair**, que agora é o próprio
+HTTP: `POST /v1/models/load` com um filename de `GET /v1/models/local`. Um
+cliente que não sabe que existe um toggle num telefone que não está na mão
+recebeu a instrução errada.
+
+A tela do servidor deixou de dizer "requires a loaded model" — isso
+contradiria o toggle duas linhas acima que agora funciona. Sem modelo, os
+primeiros exemplos são os de gestão, que são os que funcionam.
+
+### `load` entre runtimes diferentes é recusado, e era um `202` que não fazia nada
+
+GGUF roda num `.so` e LiteRT-LM em outro. A sessão se amarra a um deles na
+primeira carga e não troca sem restart — `_sessionNativeRuntime`. Isso não é um
+aviso, é um fato sobre o processo, e a resposta de `loadModel` era um terceiro
+diálogo.
+
+O primeiro sintoma: `POST /v1/models/load {"filename":"Qwen3-0.6B.litertlm",
+"accept_risk":true}` respondia **`202 accepted`** e 24 s depois o GGUF seguia
+carregado e o LiteRT nunca carregou. **Um 202 que não é seguido da coisa que
+promete é pior que uma recusa** — o cliente acredita que vai ter aquilo. Agora é
+`409` dizendo qual runtime seria preciso, qual a sessão está usando, e que o
+caminho é reiniciar e repetir (depois de um restart não há runtime de sessão, e
+carrega sem pedir restart). E o modelo carregado **não é tocado** pela recusa.
+
+Medido no A72, partida a frio, 19 verificações e zero falhas:
+
+| | |
+|---|---|
+| servidor sem modelo | sobe, `/health` 200, `loaded: null` |
+| os 5 endpoints que precisam de modelo | 400 cada um, com o caminho na mensagem |
+| `capabilities` sem modelo | `{}` — não promete nada |
+| `load` de GGUF pela API | 202, carrega em 3 s, `backend=cpu gpu_layers=0` |
+| `load` de LiteRT pela API | 202, carrega em 6 s, **`backend=gpu`** |
+| `unload` | 409, e o servidor fica de pé |
+| `load` entre runtimes | 409, e o modelo carregado continua |
+| chave | 401 sem / 401 errada / 200 certa / 200 com `bearer` minúsculo |
+| `gemma-3-270m` baixado pela API | aparece como `downloaded` |
+
+O `backend=gpu` do LiteRT contra o `backend=cpu` do GGUF de 142 MB é a
+assimetria que a seção do micro-benchmark do LiteRT descreve, agora vista de
+um jeito que a API torna reproduzível: `planLiteRtTier` sempre prefere GPU,
+`planAcceleration` mantém GGUF pequeno na CPU.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no

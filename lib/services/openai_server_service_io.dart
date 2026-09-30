@@ -459,6 +459,36 @@ class OpenAiServerService {
       return;
     }
 
+    // Switching native runtime is a third dialog, and it is not a warning — it
+    // is a fact about the process. GGUF runs on one `.so` and LiteRT-LM on
+    // another; the session binds to one of them on the first load and cannot
+    // change without a restart.
+    //
+    // Caught here rather than left to `loadModel` because that method's answer
+    // is a dialog, and a dialog nobody answers means the request silently does
+    // nothing: the endpoint answered `202 accepted` for `Qwen3-0.6B.litertlm`,
+    // and 24 s later the GGUF was still loaded and the LiteRT never was. A 202
+    // that is not followed by the thing it promised is worse than a refusal.
+    final target = _findModel(controller, filename);
+    final targetRuntime = (target?.runtime ??
+            AiModel.runtimeFromFilename(filename))
+        .toLowerCase();
+    final currentRuntime = inference.sessionNativeRuntime.toLowerCase();
+    if (inference.requiresAppRestartForRuntime(targetRuntime)) {
+      await _json(request, {
+        'error': 'This model needs a different native runtime than the one '
+            'this session is using.',
+        'filename': filename,
+        'needed_runtime': targetRuntime,
+        'session_runtime': currentRuntime.isEmpty ? null : currentRuntime,
+        'hint': 'GGUF and LiteRT-LM are two different native libraries and a '
+            'session binds to one on its first load. Restart the app, then POST '
+            'this again: after a restart there is no session runtime yet, so it '
+            'loads without a restart.',
+      }, status: HttpStatus.conflict);
+      return;
+    }
+
     // The load shows a memory-safety dialog. There is nobody to answer it over
     // HTTP, and the two wrong answers are both bad: leaving it up blocks the
     // caller forever, and letting `loadModel` run without a decision frees the
@@ -1166,7 +1196,13 @@ class OpenAiServerService {
 
   String? _localModelError(InferenceService inference) {
     if (!inference.isModelLoaded.value) {
-      return 'No local model loaded. Load a GGUF or LiteRT-LM model first.';
+      // Names the way out, and the way out is over HTTP: the server starts
+      // without a model precisely so this can be a self-contained instruction.
+      // A client that has to know that a toggle exists on a phone it is not
+      // holding has been told the wrong thing.
+      return 'No local model loaded. POST /v1/models/load with a filename from '
+          'GET /v1/models/local to load one; the downloaded ones have state '
+          '"downloaded".';
     }
     return null;
   }

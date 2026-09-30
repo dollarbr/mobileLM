@@ -111,9 +111,17 @@ class ServerView extends GetView<ServerController> {
                                   fontSize: 15, fontWeight: FontWeight.w500)),
                           const SizedBox(height: 2),
                           Text(
+                              // Not "requires a loaded model" any more, because
+                              // it does not. The server starts with nothing
+                              // loaded precisely so a client can load one over
+                              // it, and the endpoints that need a model refuse
+                              // on their own with a 400 that names the file to
+                              // POST. Saying "requires" here would contradict
+                              // the toggle two rows up that now works.
                               controller.hasLocalModel
                                   ? 'Local model ready'
-                                  : 'Requires a loaded GGUF or LiteRT-LM model',
+                                  : 'No model loaded — chat and encoder endpoints '
+                                      'will refuse; model management still works',
                               style: GoogleFonts.inter(
                                   fontSize: 13,
                                   color: Theme.of(context).hintColor)),
@@ -305,7 +313,25 @@ class ServerView extends GetView<ServerController> {
 
     final blocks = <Widget>[];
 
-    if (role == null) {
+    // Com o servidor no ar e nenhum modelo carregado, `role` é null e a tela
+    // mostrava um `curl /v1/chat/completions` que só volta 400. Agora o servidor
+    // sobe sem modelo justamente para isto, então os primeiros exemplos são os
+    // de gestão — que são os que funcionam.
+    if (model.isEmpty) {
+      blocks.add(_codeBlock(context, isDark, 'What is on this phone',
+          'curl $base/v1/models/local${_authHeader()}'));
+      blocks.add(_codeBlock(context, isDark, 'Load a downloaded model',
+          'curl $base/v1/models/load \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n'
+          '  -d \'{"filename":"LFM2.5-230M-Q4_0.gguf","accept_risk":true}\'\n\n'
+          '# 202, then poll /v1/models/local until its state is "loaded".\n'
+          '# accept_risk stands for the tap on "Load" in the app; the file and\n'
+          '# memory checks still run and can still refuse. LiteRT (.litertlm)\n'
+          '# loads the same way.'));
+      blocks.add(_codeBlock(context, isDark, 'Download one from the catalogue',
+          'curl $base/v1/models/download \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n'
+          '  -d \'{"filename":"<filename>"}\'\n\n'
+          '# Progress shows up as state "downloading" on /v1/models/local.'));
+    } else if (role == null) {
       blocks.add(_codeBlock(context, isDark, 'List models',
           'curl $base/v1/models${_authHeader()}'));
       blocks.add(_codeBlock(context, isDark, 'Chat completion',
