@@ -24,3 +24,4 @@ export 'src/generation_config.dart';
 export 'src/llama_multimodal.dart';
 export 'src/llama_meta.dart';
 export 'src/llama_encoder.dart';
+export 'src/llama_affinity.dart';

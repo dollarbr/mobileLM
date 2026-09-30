@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../utils/cpu_topology.dart';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;
 import 'package:get/get.dart';
@@ -99,24 +100,50 @@ class InferenceEngine {
     int gpuLayers = 0;
     String gpuNameStr = '';
 
-    try {
-      final gpu = await _controller!.detectGpu();
-      gpuNameStr = gpu.gpuName;
+    // The probe is not a question, it is a side effect: nativeDetectGpu() is
+    // what calls ggml_backend_load("libggml-vulkan.so"), so asking "is there a
+    // GPU" is what puts the driver in the process. On CPU Safe that question has
+    // a known answer, and asking it anyway is what left a 258 MB model sitting in
+    // llama_decode for the full 60 s prefill budget with every thread asleep.
+    // See modeMayOpenGpu in acceleration.dart for the measurement.
+    // A device that already failed to load a model on its GPU does not get
+    // asked again. The probe is not free — it is what dlopens the Vulkan
+    // backend — and a device that has already proven the backend cannot host a
+    // model gains nothing from a second visit.
+    final gpuKnownBad = _readBoolSetting(AppConstants.gpuLoadFailedKey);
 
-      print('[Inference] GPU: ${gpu.gpuName}');
-      print('[Inference]   Vulkan: ${gpu.vulkanSupported}');
-      print('[Inference]   Free RAM: ${gpu.freeRamBytes ~/ 1024 ~/ 1024}MB');
-      print('[Inference]   Recommended layers: ${gpu.recommendedGpuLayers}');
+    if (modeMayOpenGpu(liteRtPerformanceMode) && !gpuKnownBad) {
+      try {
+        final gpu = await _controller!.detectGpu();
+        gpuNameStr = gpu.gpuName;
 
+        print('[Inference] GPU: ${gpu.gpuName}');
+        print('[Inference]   Vulkan: ${gpu.vulkanSupported}');
+        print('[Inference]   Free RAM: ${gpu.freeRamBytes ~/ 1024 ~/ 1024}MB');
+        print('[Inference]   Recommended layers: ${gpu.recommendedGpuLayers}');
+
+        final plan = planAcceleration(
+          mode: liteRtPerformanceMode,
+          vulkanSupported: gpu.vulkanSupported,
+          recommendedGpuLayers: gpu.recommendedGpuLayers.toInt(),
+        );
+        gpuLayers = plan.gpuLayers;
+        print('[Inference] ${plan.reason}');
+      } catch (e) {
+        print('[Inference] GPU detection failed: $e — CPU fallback');
+      }
+    } else {
+      // Same plan, same reason, same gpuLayers=0 — computed without a probe, so
+      // nothing is fabricated here.
       final plan = planAcceleration(
         mode: liteRtPerformanceMode,
-        vulkanSupported: gpu.vulkanSupported,
-        recommendedGpuLayers: gpu.recommendedGpuLayers.toInt(),
+        vulkanSupported: false,
+        recommendedGpuLayers: 0,
       );
-      gpuLayers = plan.gpuLayers;
+      gpuNameStr = 'not initialised (CPU mode)';
+      print('[Inference] CPU mode: not probing, so the Vulkan backend is never '
+          'loaded and the driver is not in the process');
       print('[Inference] ${plan.reason}');
-    } catch (e) {
-      print('[Inference] GPU detection failed: $e — CPU fallback');
     }
 
     // ── Thread Tuning ──
@@ -128,11 +155,52 @@ class InferenceEngine {
     // the end of each op, so on a big.LITTLE phone the little cores set the
     // pace for the big ones and more threads can measure slower. The setting
     // exists because that is worth testing per device, not assuming.
-    final cores = Platform.numberOfProcessors;
-    int threads = cpuThreads > 0 ? cpuThreads : (cores ~/ 2).clamp(2, 6);
-    threads = threads.clamp(1, cores < 1 ? 1 : cores);
-    print('[Inference] Threads: $threads of $cores cores'
-        '${cpuThreads > 0 ? ' (user set)' : ' (auto, half)'}');
+      // Read the topology instead of assuming it. "Half the cores" is right only
+      // when the fast cores are the first half of the list, and they are not: on
+      // a Galaxy A72 (Snapdragon 720G) cpu0-5 are A55 at 1804 MHz and cpu6-7 are
+      // A76 at 2323 MHz, so half of eight put all four threads on the little
+      // cores. Measured cost: SmolLM2-360M, 258 MB, 191 tokens of prefill, zero
+      // tokens inside the 60 s prefill budget, reported as "Model did not
+      // respond. Try a smaller model or shorter conversation." The model was
+      // fine. The default was inverted.
+      //
+      final cores = Platform.numberOfProcessors;
+      int threads;
+      String threadSource;
+      int bigMask = 0;
+      if (cpuThreads > 0) {
+        threads = cpuThreads;
+        threadSource = 'user set';
+      } else {
+        final freqs = await readMaxFreqPerCore();
+        final big = bigCoreCount(freqs, totalCores: cores);
+        threads = big;
+        bigMask = bigCoreMask(freqs, totalCores: cores);
+        threadSource = freqs.isEmpty
+            ? 'auto, no topology readable, half'
+            : 'auto, $big big core${big == 1 ? '' : 's'} of $cores';
+      }
+      threads = threads.clamp(1, cores < 1 ? 1 : cores);
+      print('[Inference] Threads: $threads of $cores cores ($threadSource)');
+
+      // The count above says how many threads; this says which cores, and the
+      // two are not the same decision. Unpinned, those $threads float across all
+      // $cores and the big cluster can be left idle: on the A72 each A76 saw so
+      // little utilization that schedutil held it at 652.800 Hz of a 2.323.200
+      // ceiling, and the same build measured 3.9 tok/s on one run and 7.6 on the
+      // next. Pinned, it holds the ceiling for the whole generation.
+      //
+      // Only for the automatic case. A thread count typed in Settings is a
+      // deliberate override and the user who set it has not been asked about
+      // placement — and on a homogeneous CPU the mask is the whole machine, so
+      // pinning there would be theatre. bigCoreMask returns 0 when the topology
+      // is not readable with confidence, and 0 means "do not pin", which is the
+      // right answer to a phone we could not measure.
+      if (bigMask != 0) {
+        await LlamaComputeAffinity.setMask(bigMask);
+        print('[Inference] Compute threads pinned to mask '
+            '0x${bigMask.toRadixString(16)}');
+      }
 
     // Google Tensor SoC (Pixel 6/7/8) has known Q4_K_M dequant bugs
     // that corrupt logits at >1 thread on Gemma models. Force single-threaded
@@ -167,7 +235,39 @@ class InferenceEngine {
         gpuLayers: layers,
       );
     }
-    await loadWith(gpuLayers);
+    // A GPU that cannot host the model is not a slow GPU, it is a dead end, and
+    // nothing above can learn it from ggml_backend_dev_count() alone: Vulkan
+    // registers fine, the ladder gets a layer count, and the refusal only
+    // arrives at llama_model_load. Measured on a Galaxy A72 (SM-A725M, /e/OS):
+    // Auto Fast saw Vulkan on the Adreno 618, recommended 16 layers, and the log
+    // went
+    //
+    //     llama_prepare_model_devices: using device Vulkan0 (Adreno (TM) ...
+    //     llama_model_load: error loading model: Unsupported device
+    //
+    // while the Settings row this very plan came from reads "Try GPU first, then
+    // CPU fallback". The fallback is the point: the user asked for fast-if-
+    // possible, not for an error. So retry on the CPU, and remember the verdict
+    // for the whole device — a GPU that cannot load one model will not load the
+    // next one, and paying the same probe again helps nobody.
+    try {
+      await loadWith(gpuLayers);
+    } catch (e) {
+      if (gpuLayers <= 0) rethrow;
+      print('[Inference] GPU load failed ($e) — falling back to the CPU');
+      final hive = _tryHive();
+      if (hive != null) {
+        try {
+          await hive.setSetting(AppConstants.gpuLoadFailedKey, true);
+        } catch (_) {}
+      }
+      await _controller!.dispose();
+      _controller = LlamaController();
+      await subscribeProgress();
+      gpuLayers = 0;
+      gpuNameStr = 'present, but it refused the model';
+      await loadWith(0);
+    }
     _hasLoadedModel = true;
 
     // ── Auto Fast micro-benchmark ──
@@ -1024,6 +1124,28 @@ class InferenceEngine {
     final lower = modelPath.toLowerCase();
     if (lower.endsWith('.litertlm')) return 'litert';
     return 'llama';
+  }
+
+  /// The Hive box, or null when it is not registered. `Get.find` throws, and a
+  /// load must not fail because a storage service is missing — the caller
+  /// degrades to "no verdict remembered" rather than to an error.
+  HiveService? _tryHive() {
+    try {
+      return Get.find<HiveService>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Synchronous on purpose: the probe gate above runs before any await, and
+  /// making it async would mean restructuring the branch into a FutureBuilder
+  /// for one boolean.
+  bool _readBoolSetting(String key) {
+    try {
+      return _tryHive()?.getSetting<bool>(key) ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   List<LiteLmMessage> _buildLiteRtInitialMessages(

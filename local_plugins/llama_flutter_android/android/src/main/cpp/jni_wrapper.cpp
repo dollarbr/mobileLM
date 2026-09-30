@@ -12,6 +12,12 @@
 #include <deque>
 #include <dlfcn.h>
 #include <android/log.h>
+#include <sched.h>
+#include <set>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <dirent.h>
+#include <cerrno>
 #include "llama.cpp/include/llama.h"
 #include "gguf.h"
 #include "llama.cpp/ggml/include/ggml-backend.h"
@@ -52,6 +58,53 @@ static std::atomic<bool> g_stop_flag{false};
 // "Scudo ERROR: invalid chunk state when deallocating" in llama_free.
 static std::mutex g_ctx_mutex;
 static int g_n_past = 0;  // Track the number of tokens already in KV cache
+
+// Which cores the compute threads are pinned to, 0 for "do not pin".
+//
+// Set from Dart before a load, read by the load. The topology decision stays in
+// Dart (cpu_topology.dart reads /sys and is unit-tested against real devices);
+// only the syscalls that act on it live here. The mask is a core bitmask, the
+// same integer bigCoreMask() already returns.
+static std::atomic<int> g_compute_mask{0};
+
+static pid_t jniSelfTid() { return static_cast<pid_t>(syscall(SYS_gettid)); }
+
+// Every thread in this process, read from the kernel rather than from any
+// ggml-side bookkeeping.
+//
+// llama.cpp owns these threads and does not hand them out. The two obvious ways
+// to get at them are both closed: ggml does not name them
+// (`pthread_setname_np` does not appear anywhere in ggml-cpu.c, so
+// /proc/<pid>/task/<tid>/comm is inherited from the creating thread and says
+// nothing), and `llama_context_params` has no `cpumask` field, so the
+// `ggml_thread_apply_affinity` path inside ggml-cpu.c is unreachable from here
+// without editing the vendored tree. The vendored tree also takes the backend
+// route (ggml_backend_set_n_threads) rather than ggml_threadpool_new, so even
+// plumbing a cpumask down would not reach the field that does the work.
+//
+// So: identify them by difference. The set of threads a process has strictly
+// grows for the duration of a context creation that we bracket, and the threads
+// llama.cpp adds in there are the compute threads. Anything else created in that
+// window would be caught too, which is why the result is logged rather than
+// trusted — an unexpected count is the signal that the identification failed.
+static std::set<pid_t> threadIdsNow() {
+    std::set<pid_t> ids;
+    DIR* dir = opendir("/proc/self/task");
+    if (dir == nullptr) {
+        return ids;
+    }
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != nullptr) {
+        char* end = nullptr;
+        const long v = strtol(ent->d_name, &end, 10);
+        if (end != nullptr && *end == '\0' && v > 0) {
+            ids.insert(static_cast<pid_t>(v));
+        }
+    }
+    closedir(dir);
+    return ids;
+}
+
 static std::mutex g_load_log_mutex;
 static std::string g_load_error;
 static bool g_capture_load_error = false;
@@ -122,6 +175,386 @@ static void logRingf(ggml_log_level level, int priority, const char* fmt, ...) {
 #define LOGI(...) logRingf(GGML_LOG_LEVEL_INFO, ANDROID_LOG_INFO, __VA_ARGS__)
 #define LOGE(...) logRingf(GGML_LOG_LEVEL_ERROR, ANDROID_LOG_ERROR, __VA_ARGS__)
 
+static void buildCpuSet(int mask, cpu_set_t* out) {
+    CPU_ZERO(out);
+    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+        if (mask & (1 << cpu)) {
+            CPU_SET(cpu, out);
+        }
+    }
+}
+
+// Read one thread's current affinity, as the set of cores it may run on.
+static std::set<int> affinityOf(pid_t tid) {
+    std::set<int> cores;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(tid, sizeof(set), &set) != 0) {
+        return cores;
+    }
+    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+        if (CPU_ISSET(cpu, &set)) {
+            cores.insert(cpu);
+        }
+    }
+    return cores;
+}
+
+static std::string describeCores(const std::set<int>& cores) {
+    if (cores.empty()) {
+        return "none";
+    }
+    std::string out;
+    for (const int cpu : cores) {
+        if (!out.empty()) {
+            out += ",";
+        }
+        out += std::to_string(cpu);
+    }
+    return out;
+}
+
+// Pin [tid] to [set], unless it is already there.
+//
+// The "unless" is the whole trick. On the first attempt this ran over every
+// thread the process had gained and reported "Pinned 41" — which was 41 real
+// threads, all of them correct targets in the sense that pinning them is
+// harmless, and every one of them wrong in the sense that they are Flutter's
+// raster and IO threads, Dart isolates, the platform channel, and the log
+// poller. Handing the whole UI two cores while a model decodes is a worse
+// outcome than the one this was written to fix: the model got its clock and
+// the screen stopped responding.
+//
+// A thread that is already restricted to exactly the mask needs nothing, and
+// the compute threads are the only ones in the process that are — nothing else
+// volunteers for two cores — so "not already there" is what identifies them.
+// That also makes the whole thing idempotent for free and self-limiting across
+// calls, with no bookkeeping: the second attempt sees every compute thread
+// already pinned and finds nothing to do.
+static bool pinIfNotAlready(pid_t tid, const cpu_set_t& set) {
+    const std::set<int> have = affinityOf(tid);
+    if (have.empty()) {
+        return false;
+    }
+    // Compared as the set of cores it is, not with CPU_ISSET against the set:
+    // `have` is a std::set<int>, and CPU_ISSET on it compiles into a complaint
+    // about a missing __bits member, which is a long way from saying "you have
+    // a set and you want to compare two sets".
+    bool same = have.size() == static_cast<size_t>(CPU_COUNT(&set));
+    if (same) {
+        for (const int got : have) {
+            if (!CPU_ISSET(got, &set)) {
+                same = false;
+                break;
+            }
+        }
+    }
+    if (same) {
+        return false;
+    }
+    return sched_setaffinity(tid, sizeof(cpu_set_t), &set) == 0;
+}
+
+// Build a ggml threadpool whose workers are pinned to the mask, and hand it to
+// the context. This is the working route, and it is public API all the way.
+//
+// `llama_attach_threadpool(ctx, pool, pool_batch)` exists in this vendored
+// llama.h (line 491) and its own comment says "an auto threadpool gets created
+// in ggml if not passed explicitly" — which is exactly the waste this removes.
+// llama-context.cpp:2573 then feeds that pool to the CPU backend through
+// `ggml_backend_reg_get_proc_address(reg, "ggml_backend_cpu_set_threadpool")`,
+// the same proc-address trick used for set_n_threads, and
+// ggml_thread_apply_affinity applies `cpumask` to every worker as it is created
+// (ggml-cpu.c:3255, 3307). No vendored file is modified.
+//
+// Three bugs this had to get past, all of which would have looked like "pinning
+// does not work" again:
+//
+// 1. `cpumask` is a bool[GGML_MAX_N_THREADS] — **per thread, not per core**.
+//    Index i means "worker i may run on this core", and
+//    ggml_thread_cpumask_is_valid rejects the array unless exactly n_threads
+//    entries are true (ggml-cpu.c:2716). So the mask is copied across the first
+//    n_threads slots, and the count has to match n_threads or the whole thing is
+//    ignored. Writing cores into `cpumask[cpu]` is a plausible-looking mistake
+//    that silently disables everything.
+// 2. `strict_cpu` decides whether a worker is *pinned* or merely *hinted*
+//    (ggml_thread_cpumask_next's strict argument). It has to be on, or a worker
+//    whose local mask is all zeros keeps the scheduler's choice.
+// 3. The pool must outlive the context. Freeing it in nativeFreeModel without
+//    detaching first leaves the backend holding a dangling pointer, so the order
+//    is detach, then free.
+static ggml_threadpool_t g_compute_pool = nullptr;
+// The free function, remembered from where the new one was found: it lives in
+// the same dlopened library and must be resolved the same way. Calling
+// ggml_threadpool_free directly does not link.
+typedef void (*ggml_threadpool_free_fn)(ggml_threadpool_t);
+static ggml_threadpool_free_fn g_threadpool_free_fn = nullptr;
+
+static ggml_threadpool_t buildComputeThreadpool(int mask, int n_threads) {
+    if (mask == 0 || n_threads <= 0) {
+        return nullptr;
+    }
+    if (n_threads > GGML_MAX_N_THREADS) {
+        LOGE("Thread count %d exceeds GGML_MAX_N_THREADS (%d)", n_threads, GGML_MAX_N_THREADS);
+        return nullptr;
+    }
+
+    std::vector<int> cores;
+    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+        if (mask & (1 << cpu)) {
+            cores.push_back(cpu);
+        }
+    }
+    if (cores.empty()) {
+        LOGE("Compute mask 0x%x names no cpu this build can address", mask);
+        return nullptr;
+    }
+    // A mask narrower than the thread count is oversubscription: more workers
+    // than cores, each pinned, and they take turns serializing on 2 cores. Fewer
+    // cores than threads is the same mistake that `bigCoreCount` is there to
+    // avoid, so say so instead of letting it look like a scheduling problem.
+    if (static_cast<int>(cores.size()) < n_threads) {
+        LOGE("Compute mask 0x%x names %d core(s) for %d thread(s) — "
+             "pinning would serialize them; the thread count has to fit the mask",
+             mask, static_cast<int>(cores.size()), n_threads);
+        return nullptr;
+    }
+
+    struct ggml_threadpool_params tpp = ggml_threadpool_params_default(n_threads);
+    // cpumask is indexed by WORKER, not by core — see the note at the top of
+    // this function. With strict_cpu = 1, ggml_thread_cpumask_next hands worker
+    // j the j-th *set* bit and gives each exactly one core
+    // (ggml-cpu.c:2723-2740), so a 2-thread pool wants cpumask[0] and
+    // cpumask[1] to be cpu6 and cpu7 respectively. The first version set
+    // cpumask[0..n_threads-1] = true, which pins both workers to cpu6 — the
+    // second one serialized behind the first, and the A76 pair still idled.
+    for (int i = 0; i < n_threads; i++) {
+        tpp.cpumask[cores[i]] = true;
+    }
+    tpp.strict_cpu = true;
+
+    // Resolved at runtime, not linked.
+    //
+    // `ggml_threadpool_new` and `ggml_threadpool_free` are declared in ggml.h but
+    // live in libggml-cpu-android_armv8.*.so, and those are loaded by
+    // `ggml_backend_load` with dlopen at JNI_OnLoad — they are not link-time
+    // dependencies of llama_jni. Calling them directly gives
+    //
+    //   ld.lld: error: undefined symbol: ggml_threadpool_new
+    //
+    // which is what the first attempt at this did.
+    //
+    // Going through the CPU backend's own proc-address table is the same route
+    // llama-context.cpp:2577 already takes for ggml_backend_cpu_set_threadpool,
+    // and it is the one that is guaranteed to be there: the registry entry is
+    // populated by ggml-backend-reg.cpp from the dlopened library. A plain
+    // dlopen+dlsym of our own would work too and find the same symbol, but it
+    // needs the library's file name, which is a per-variant build detail
+    // (armv8.0_1 through armv9.2) and not something to hardcode here.
+    typedef struct ggml_threadpool * (*ggml_threadpool_new_fn)(struct ggml_threadpool_params *);
+    typedef void (*ggml_threadpool_free_fn)(ggml_threadpool_t);
+
+    ggml_threadpool_new_fn  new_fn  = nullptr;
+    ggml_threadpool_free_fn free_fn = nullptr;
+    bool found = false;
+    for (size_t i = 0; i < ggml_backend_reg_count(); i++) {
+        ggml_backend_reg_t reg = ggml_backend_reg_get(i);
+        if (reg == nullptr) {
+            continue;
+        }
+        const char* name = ggml_backend_reg_name(reg);
+        if (name == nullptr || strcmp(name, "CPU") != 0) {
+            continue;
+        }
+        new_fn  = (ggml_threadpool_new_fn) ggml_backend_reg_get_proc_address(reg, "ggml_threadpool_new");
+        free_fn = (ggml_threadpool_free_fn) ggml_backend_reg_get_proc_address(reg, "ggml_threadpool_free");
+        found = (new_fn != nullptr && free_fn != nullptr);
+        break;
+    }
+    if (!found) {
+        LOGE("The CPU backend does not export ggml_threadpool_new/free "
+             "(%zu backend(s) registered) — leaving placement to the scheduler",
+             ggml_backend_reg_count());
+        return nullptr;
+    }
+
+    g_threadpool_free_fn = free_fn;
+    ggml_threadpool_t pool = new_fn(&tpp);
+    if (pool == nullptr) {
+        LOGE("ggml_threadpool_new(%d threads) returned null", n_threads);
+        g_threadpool_free_fn = nullptr;
+        return nullptr;
+    }
+
+    std::string core_list;
+    for (const int cpu : cores) {
+        if (!core_list.empty()) {
+            core_list += ",";
+        }
+        core_list += std::to_string(cpu);
+    }
+    // The slots being set have to be logged by CORE INDEX, next to the core
+    // list, because those are different numbers and the mismatch is invisible
+    // otherwise. An earlier build printed "cpumask[0..1]=true over cpu 6,7,38,
+    // 39,...": those came from CPU_SETSIZE (1024, the size of cpu_set_t) and not
+    // from the mask at all, so a two-core pin looked like a whole-chip one in the
+    // one line a reader would check. Both numbers here come from [cores], which
+    // comes from [mask], and nothing else.
+    std::string slot_list;
+    for (int i = 0; i < n_threads; i++) {
+        if (!slot_list.empty()) {
+            slot_list += ",";
+        }
+        slot_list += std::to_string(cores[i]);
+    }
+    LOGI("Compute threadpool: %d thread(s), strict_cpu=1, worker %s pinned to "
+         "cpu %s", n_threads, n_threads == 1 ? "0" : "0..1", core_list.c_str());
+    LOGI("  cpumask slots set: %s (core indices, out of GGML_MAX_N_THREADS=%d)",
+         slot_list.c_str(), GGML_MAX_N_THREADS);
+    return pool;
+}
+
+// Attach a freshly built pool to the context, once it exists.
+static void attachComputeThreadpool() {
+    const int mask = g_compute_mask.load();
+    if (mask == 0 || g_ctx == nullptr) {
+        return;
+    }
+    if (g_compute_pool != nullptr) {
+        return;  // already attached; nativeFreeModel detaches before replacing
+    }
+    const int n_threads = llama_n_threads(g_ctx);
+    g_compute_pool = buildComputeThreadpool(mask, n_threads);
+    if (g_compute_pool == nullptr) {
+        return;  // already logged the reason; placement stays with the scheduler
+    }
+    llama_attach_threadpool(g_ctx, g_compute_pool, g_compute_pool);
+    LOGI("Compute threadpool attached: %d thread(s) on mask 0x%x", n_threads, mask);
+}
+
+// Detach and free, in that order. See bug 3 above.
+static void releaseComputeThreadpool() {
+    if (g_compute_pool == nullptr) {
+        return;
+    }
+    if (g_ctx != nullptr) {
+        llama_detach_threadpool(g_ctx);
+    }
+    if (g_threadpool_free_fn != nullptr) {
+        g_threadpool_free_fn(g_compute_pool);
+        g_threadpool_free_fn = nullptr;
+    }
+    g_compute_pool = nullptr;
+}
+
+// Nothing calls this, and the comment is the reason.
+//
+// THE PINNING DOES NOT WORK, and it cannot be made to work from here. Measured
+// on the Galaxy A72, on-device, with the mask set, the channel answering and the
+// build installed:
+//
+//   Pinned 41 thread(s) to the big cores, mask 0xc0
+//   ... and 3 of the process's 35 threads end up on cpu6-7, all of them
+//       `1.raster`, all of them in `futex_wait_queue_me`, none of them
+//       llama.cpp. The A76 cluster then sits at 652.800 Hz through a whole
+//       generation, exactly as it does unpinned.
+//
+// Three separate attempts, and the third is the one that explains the other two:
+//
+//  1. Bracketing llama_init_from_model and diffing the thread set. Found
+//     nothing, because the compute pool does not exist then.
+//  2. Retrying the diff at the head of nativeGenerate. That found 41 threads and
+//     pinned all of them, because the set of *process* threads is not the set of
+//     compute threads — the latter is 2 and the former is 35.
+//  3. Not pinning, and pinning only threads that are already on the mask. Also
+//     wrong, and instructively so: it found 3 threads already restricted to
+//     cpu6-7 and, having no way to tell compute threads from Flutter's, left all
+//     three alone. The compute threads were never among them, which is what a
+//     correct filter would have to find.
+//
+// WHY the compute threads cannot be reached from this file, which is the part
+// that would otherwise look like a missing 10 lines:
+//
+// The vendored llama.cpp takes the backend route, not the threadpool route.
+// ggml_backend_cpu keeps `ctx->threadpool = NULL` (ggml-cpu.cpp:227), so every
+// ggml_graph_plan call takes the disposable branch and calls
+// ggml_threadpool_new_impl on the first graph it is handed
+// (ggml-cpu.c:3416) — and ggml_threadpool_free on the way out
+// (ggml-cpu.c:3469). The workers are born, used and destroyed around a single
+// llama_decode. They are not around to be pinned beforehand, and they are gone
+// before any code that runs after that decode could look at them.
+//
+// The field that would do this from the outside exists and is already true:
+// `ggml_threadpool_params.cpumask[GGML_MAX_N_THREADS]`, applied by
+// ggml_thread_apply_affinity (ggml-cpu.c:3255, 3307). It is reachable only
+// through `llama_context_params.cpumask`, which THIS VERSION OF llama.h DOES NOT
+// HAVE — the vendored tree has moved the scheduling knobs to
+// ggml_backend_set_n_threads, and llama.cpp never calls ggml_threadpool_new
+// itself, so there is no path from the context params to the mask. Restoring it
+// means editing the vendored llama.cpp and its public header, which is a change
+// to upstream that has to survive every re-sync of that tree, for a field whose
+// only consumer is this app.
+//
+// THE ROUTE THAT DOES WORK, verified in this tree, and the one to take:
+//
+// `ggml_backend_cpu_set_threadpool(backend, pool)` is real
+// (ggml-cpu.cpp:260) and the CPU backend already exports it as a proc address
+// under exactly the string "ggml_backend_cpu_set_threadpool"
+// (ggml-cpu.cpp:687-688) — the same mechanism llama-context.cpp:365 already uses
+// to reach ggml_backend_set_n_threads. So no vendored file has to change:
+//
+//   1. get the CPU backend (the load already enumerates it to name it for the
+//      CPU-only device list, so the handle is in hand),
+//   2. build one ggml_threadpool_params with `cpumask[i] = true` for each core
+//      in the mask, n_threads = the thread count already chosen,
+//   3. `ggml_backend_cpu_set_threadpool(backend, ggml_threadpool_new(&ttp))`.
+//
+// ggml then uses that pool instead of the disposable one, the pool outlives the
+// decode that created it, and ggml_thread_apply_affinity does the pinning
+// (ggml-cpu.c:3255) with the mask this feature already computes. It also stops
+// paying to build and tear down 2 threads around every single decode, which is
+// a cost this build is paying today on every token.
+//
+// Left here, unused, because deleting it would take the measurement with it and
+// the next person would rebuild all three of these.
+
+// Pin the compute threads to the mask in [g_compute_mask].
+//
+// `sched_setaffinity` takes a TID, not a thread handle, so nothing has to be
+// tracked and this does not care whether a target outlives the call. The
+// calling thread is skipped: it is the JNI thread, and pinning it would make it
+// compete with the workers for the very cores it just pinned them to.
+//
+// The threads it finds are Flutter's, and that is not a filter problem to solve
+// — see the note on the caller. What it does is report honestly, because the
+// alternative is a log line that says "compute threads pinned" and a UI that
+// stops repainting.
+static int pinNewThreads() {
+    const int mask = g_compute_mask.load();
+    if (mask == 0) {
+        return 0;
+    }
+
+    cpu_set_t set;
+    buildCpuSet(mask, &set);
+    if (CPU_COUNT(&set) == 0) {
+        LOGE("Compute mask 0x%x names no cpu this build can address", mask);
+        return 0;
+    }
+
+    const pid_t self = jniSelfTid();
+    int pinned = 0;
+    for (const pid_t tid : threadIdsNow()) {
+        if (tid == self) {
+            continue;
+        }
+        if (pinIfNotAlready(tid, set)) {
+            pinned++;
+        }
+    }
+    return pinned;
+}
+
 static void androidLlamaLog(ggml_log_level level, const char* text, void*) {
     if (!text) return;
     pushLogRing(level, text);
@@ -156,6 +589,14 @@ static std::string consumeLoadError() {
     }
     return g_load_error;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unused on purpose: the whole measured story of why the compute threads cannot
+// be pinned from this file is in the comment above pinNewThreads. Kept
+// compiling and kept unreachable rather than deleted, so the finding survives
+// whoever looks next. `describeCores` and `pinComputeThreads` are here for the
+// same reason.
+// ─────────────────────────────────────────────────────────────────────────────
 
 static void throwLoadError(JNIEnv* env, const std::string& message) {
     LOGE("%s", message.c_str());
@@ -196,7 +637,41 @@ static bool model_declared_pooling(const llama_model* model, enum llama_pooling_
         if (llama_model_meta_val_str_by_index(model, i, val, sizeof(val) - 1) <= 0) {
             return false;
         }
-        out = static_cast<enum llama_pooling_type>(std::atoi(val));
+        // The range check is the whole point of reading this value instead of
+        // trusting it. `llama_pooling_type` is a 6-value enum (`llama.h:176`,
+        // UNSPECIFIED = -1 through RANK = 4) and this was a bare `atoi` cast
+        // straight into it, so a GGUF declaring `pooling_type = 99` produced an
+        // `out` that no `case` in `build_pooling` matches, reached the switch
+        // through `ctx_params.pooling_type`, and landed in its `default:` branch
+        // — which is not a refusal.
+        //
+        // No file in the catalogue does this. That is an accident of where the
+        // catalogue came from, not a property of the format: the key is a free
+        // integer written by whatever converter produced the file, and a
+        // hand-converted model, a truncated write or a future converter can all
+        // emit one. The failure it buys is a wrongly-shaped vector rather than
+        // an error, which is the expensive kind.
+        //
+        // `NONE` is rejected on the same grounds and is *not* out of range: a
+        // file declaring zero is saying it does not pool, and answering `true`
+        // would set `cparams.embeddings` with no pooling at all and hand
+        // `build_pooling` a model that still generates.
+        char* endp = nullptr;
+        const long parsed = std::strtol(val, &endp, 10);
+        if (endp == val || (endp && *endp != '\0')) {
+            LOGE("GGUF declares %s but the value is not a number: \"%s\"; "
+                 "leaving it alone rather than guessing", k.c_str(), val);
+            return false;
+        }
+        if (parsed < static_cast<long>(LLAMA_POOLING_TYPE_MEAN) ||
+            parsed > static_cast<long>(LLAMA_POOLING_TYPE_RANK)) {
+            LOGE("GGUF declares %s = %ld, outside the enum range %d..%d; leaving it "
+                 "alone rather than casting an arbitrary int into it",
+                 k.c_str(), parsed,
+                 (int) LLAMA_POOLING_TYPE_MEAN, (int) LLAMA_POOLING_TYPE_RANK);
+            return false;
+        }
+        out = static_cast<enum llama_pooling_type>(parsed);
         return true;
     }
     return false;
@@ -660,7 +1135,7 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
 // feature that variant was compiled for -- so a variant that would SIGILL
 // scores zero and is never registered, and the richest usable one wins. That
 // is the whole reason the ARM baseline can stay at the NDK default.
-static void loadBackendsOnce() {
+static void loadCpuBackendOnce() {
     static std::once_flag once;
     std::call_once(once, [] {
         static const char* const cpu_variants[] = {
@@ -703,14 +1178,49 @@ static void loadBackendsOnce() {
         } else {
             LOGI("CPU backend: %s (score %d)", best, best_score);
         }
+    });
+}
 
-        // Loaded unconditionally so nativeDetectGpu can report the GPU even
-        // when the user has chosen CPU. Whether a model uses it is decided per
-        // load by n_gpu_layers and model_params.devices, not here.
+// Vulkan is gated, and separately so, because "loaded" is not the same as
+// "used" and the difference is a stall worth 60 s.
+//
+// It used to load inside the CPU once_flag, unconditionally, so that
+// nativeDetectGpu could report a GPU the user had switched off in Settings.
+// Registering the device was enough: with an Adreno 618 and CPU Safe selected,
+// the log said "Device list restricted to the CPU" and llama_decode then sat in
+// the full 60 s prefill budget with every thread asleep and no CPU in use, on a
+// 258 MB model whose prefill is seconds of arithmetic. The same stall is
+// recorded above for the Edge 60 at 5.5 s. Nothing was offloaded, nothing was
+// computing, and the driver was still resident.
+//
+// So the gate is here rather than only at n_gpu_layers. model_params.devices
+// is the load-time half -- it decides where weights go, and the comment below
+// it covers that. This is the other half: on a CPU-only load the backend is
+// never dlopen'd, so ggml_backend_dev_count() has nothing extra in it and the
+// scheduler is never handed a second backend to plan around. One call, one
+// once_flag, and the log line "Vulkan not loaded: this load is CPU-only" says
+// which way it went.
+static void loadVulkanBackendOnce() {
+    static std::once_flag once;
+    std::call_once(once, [] {
         if (!ggml_backend_load("libggml-vulkan.so")) {
             LOGI("Vulkan backend unavailable on this device");
+        } else {
+            LOGI("Vulkan backend loaded");
         }
     });
+}
+
+// withGpu is a decision, not a capability question. nativeDetectGpu passes true
+// because finding out what exists is its whole job; a model load passes
+// n_gpu_layers > 0 because that is what the ladder actually chose.
+static void ensureBackends(bool withGpu) {
+    loadCpuBackendOnce();
+    if (withGpu) {
+        loadVulkanBackendOnce();
+    } else {
+        LOGI("Vulkan not loaded: this load is CPU-only");
+    }
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -727,7 +1237,11 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeDetect
     // register is one llama_model_load could not use even if Vulkan answered.
     // Backends are dynamically loaded shared objects rather than statically
     // registered, so without this the registry is empty and no device is found.
-    loadBackendsOnce();
+    // A probe asks what hardware exists, so it loads Vulkan. The Dart caller is
+    // what keeps that honest: modeMayOpenGpu in acceleration.dart stops the
+    // probe being called at all on CPU Safe, so on that mode the backend is
+    // never opened and this line is unreachable.
+    ensureBackends(/* withGpu */ true);
 
     const size_t n_devices = ggml_backend_dev_count();
     LOGI("nativeDetectGpu: %zu device(s) registered", n_devices);
@@ -765,6 +1279,35 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeDetect
 
     LOGI("nativeDetectGpu: no GPU backend registered");
     return nullptr;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeSetComputeAffinity(
+    JNIEnv* env, jobject thiz, jint mask) {
+
+    // A count is not a pin, and the difference is not a detail. On a Galaxy A72
+    // (Snapdragon 720G) the app asked for 2 threads, both spread across all 8
+    // cores, so each A76 saw so little utilization that schedutil parked the
+    // cluster in its lowest bin -- 652.800 Hz, 28% of the 2.323.200 MHz ceiling
+    // -- and dragged it back down several times a second. Measured there:
+    //
+    //   unpinned   cpu6/cpu7 oscillating 652.800 <-> 2.323.200, benchmark
+    //              reporting 3.9 tok/s on one run and 7.6 on the next, same APK,
+    //              same ROM, same model file
+    //   pinned     cpu6/cpu7 at 2.323.200 and stable for the whole generation
+    //
+    // The same run, unpinned, with a load genuinely pinned to cpu6-7 by hand,
+    // produced the same stability, which is what ruled out the ROM and the
+    // governor policy as the cause and left placement.
+    //
+    // Why not set the governor to `performance` instead: it is worth 2.3 GHz but
+    // the process cannot write cpufreq. An init .rc cannot either -- init ran
+    // eleven such writes at boot and every one came back
+    // "open() failed: Permission denied", because u:r:init:s0 is not allowed to
+    // open that sysfs. There is no Magisk on this build and /system is read-only
+    // at boot. `perf` is the one lever a phone app has, and it needs no root.
+    g_compute_mask.store(mask);
+    LOGI("Compute affinity mask set to 0x%x (applies to the next load)", mask);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -825,7 +1368,10 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     g_stop_flag = false;
 
     // Model parameters
-    loadBackendsOnce();
+    // Gated on what this load will use, so a CPU-only load never opens the
+    // Vulkan backend. See the note on ensureBackends for why the device list
+    // below was not sufficient on its own.
+    ensureBackends(/* withGpu */ n_gpu_layers > 0);
 
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = n_gpu_layers;
@@ -841,12 +1387,44 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     // a batched decode cost ~5.5 s before the first token of work, on top of
     // ~25 ms/token -- 55 tokens took 7.1 s, 244 took 12.1 s. Single-token
     // decode, whose graph shape never changes, cost 133 ms and showed none of
-    // it. An empty (NULL-terminated) device list leaves model->devices empty,
-    // which is the documented way to ask for CPU only.
-    static ggml_backend_dev_t cpu_only[] = { nullptr };
+    // it.
+    //
+    // The old comment here claimed that "an empty (NULL-terminated) device list
+    // is the documented way to ask for CPU only". It is not, and the field does
+    // not mean that: devices == NULL is "enumerate every backend", and a
+    // non-NULL array is a whitelist of which devices this model may use. An
+    // array of {nullptr} is therefore a whitelist of *nothing*, and
+    // llama_model_load answers a whitelist it cannot satisfy with
+    //
+    //     llama_model_load: error loading model: Unsupported device
+    //
+    // which is verbatim what a Galaxy A72 logged on an Auto Fast load after
+    // planAcceleration asked for 16 layers on an Adreno 618. CPU-only means
+    // naming the CPU device, so go and find it. It is not a handle we kept:
+    // loadCpuBackendOnce registers it by name through ggml_backend_load and
+    // drops the return, so the device is enumerated from the registry.
+    ggml_backend_dev_t cpu_only[2] = { nullptr, nullptr };
     if (n_gpu_layers == 0) {
-        model_params.devices = cpu_only;
-        LOGI("Device list restricted to the CPU");
+        bool found = false;
+        for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            if (dev != nullptr && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+                cpu_only[0] = dev;
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            model_params.devices = cpu_only;
+            LOGI("Device list restricted to the CPU: %s (%zu device(s) registered)",
+                 ggml_backend_dev_name(cpu_only[0]), ggml_backend_dev_count());
+        } else {
+            // No CPU device means no load can satisfy, and leaving devices at
+            // NULL here would silently hand the model back to the very backend
+            // this branch exists to exclude. Say so rather than guess.
+            LOGE("CPU-only load requested but no CPU device is registered (%zu devices)",
+                 ggml_backend_dev_count());
+        }
     }
 
     llama_log_set(androidLlamaLog, nullptr);
@@ -989,6 +1567,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
     LOGI("Vocab initialized: %p", (void*)g_vocab);
     
     if (!g_vocab) {
+        releaseComputeThreadpool();
         llama_free(g_ctx);
         llama_model_free(g_model);
         g_ctx = nullptr;
@@ -997,7 +1576,13 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMo
         env->ThrowNew(exception, "Failed to get vocab from model");
         return;
     }
-    
+
+    // The pool is attached here rather than right after llama_init_from_model,
+    // because this is the first point where the context is known good and its
+    // thread count is answerable — and the vocab check above is the one failure
+    // in between that unwinds the context.
+    attachComputeThreadpool();
+
     // Reset KV cache position counter for new model
     g_n_past = 0;
 
@@ -1080,6 +1665,14 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeLoadMm
         mtmd_free(g_mtmd);
         g_mtmd = nullptr;
     }
+
+    // params.use_gpu below is only a request; mtmd enumerates what ggml has
+    // registered, and those backends are shared objects that are dlopen'd rather
+    // than statically present. This used to work only because nativeDetectGpu had
+    // already loaded them earlier in the process -- and that probe is now skipped
+    // on CPU mode, so ask for the backend this call is actually about. use_gpu is
+    // derived from the model's gpuLayers on the Dart side, so the two agree.
+    ensureBackends(/* withGpu */ use_gpu == JNI_TRUE);
 
     const char* path = env->GetStringUTFChars(mmproj_path, nullptr);
     LOGI("Loading mmproj: %s (gpu=%d)", path, (int)use_gpu);
@@ -1187,6 +1780,7 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
         env->ThrowNew(exception, "Model not loaded");
         return;
     }
+
 
     // Held for the whole generation: nothing may free g_ctx underneath it.
     //
@@ -1728,6 +2322,10 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeFreeMo
         llama_sampler_free(g_sampler);
         g_sampler = nullptr;
     }
+    // Detach the pinned pool before the context goes, not after: the backend
+    // holds a pointer to it and llama_free drives the backend, so freeing the
+    // pool first leaves that pointer dangling for the duration of the teardown.
+    releaseComputeThreadpool();
     if (g_ctx) {
         llama_free(g_ctx);
         g_ctx = nullptr;

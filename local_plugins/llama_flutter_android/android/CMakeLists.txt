@@ -27,6 +27,19 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size
 # AT_HWCAP and returns 0 for any variant the silicon cannot run, so the best
 # usable one wins and an unusable one is never registered. The global -march
 # stays at the NDK default; each variant target sets its own.
+#
+# This was measured OFF, on a Galaxy A72 (SM-A725M, Snapdragon 720G: 2x A76 +
+# 6x A55, dotprod but no i8mm), to find out why the LFM2.5-230M in its official
+# QAD-Q4_0 file emitted 24 consecutive token id 0 -- "<|pad|>", the GGUF's
+# padding_token_id, not its EOS. With OFF there is one backend at the NDK's
+# default armv8-a, so has_dotprod() folds to a compile-time false, Q4_0 leaves
+# the repack (repack.cpp:4985) and runs the same ordinary kernels Q4_K already
+# used -- and it still emitted padding. The repack was innocent. Cost of finding
+# that out: 0.4 tok/s and a 35 s first token against 3.9 tok/s and 2.6 s here.
+#
+# The file is at fault, not the build. The same model as a plain Q4_0, from the
+# same official repo, 128 bytes apart in metadata, produces real text. See the
+# QAT/QAD note in AGENTS.md before adding another entry from that family.
 set(GGML_BACKEND_DL ON CACHE BOOL "Load ggml backends as shared objects" FORCE)
 set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "Build one CPU backend per feature set" FORCE)
 

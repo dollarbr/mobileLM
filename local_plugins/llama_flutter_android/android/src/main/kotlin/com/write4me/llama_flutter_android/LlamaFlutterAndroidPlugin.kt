@@ -28,11 +28,18 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
     // and queueing media is a small, self-contained surface anyway.
     private var mtmdChannel: MethodChannel? = null
     private var metaChannel: MethodChannel? = null
+    // Not a Pigeon call either, and for a different reason: this has to arrive
+    // BEFORE the load that it steers, and the Pigeon load takes its arguments
+    // positionally in one message, so there is nowhere to put a "and also do
+    // this first" without changing the generated schema -- which is not in the
+    // repository. One integer, one call, one ordering requirement.
+    private var affinityChannel: MethodChannel? = null
 
     companion object {
         private const val TAG = "LlamaFlutterPlugin"
         private const val MTMD_CHANNEL = "llama_flutter_android/mtmd"
         private const val META_CHANNEL = "llama_flutter_android/model_meta"
+        private const val AFFINITY_CHANNEL = "llama_flutter_android/affinity"
     }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -44,6 +51,9 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
             it.setMethodCallHandler(this)
         }
         metaChannel = MethodChannel(binding.binaryMessenger, META_CHANNEL).also {
+            it.setMethodCallHandler(this)
+        }
+        affinityChannel = MethodChannel(binding.binaryMessenger, AFFINITY_CHANNEL).also {
             it.setMethodCallHandler(this)
         }
     }
@@ -67,10 +77,32 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
         mtmdChannel = null
         metaChannel?.setMethodCallHandler(null)
         metaChannel = null
+        affinityChannel?.setMethodCallHandler(null)
+        affinityChannel = null
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            // Which cores the next load's compute threads get. 0 means leave them
+            // where the scheduler puts them, which is the honest answer when the
+            // topology could not be read -- better than a guessed mask that pins
+            // work to the wrong cores.
+            //
+            // Deliberately not gated on the native library being loaded: this has
+            // to be set before the load, and demanding the .so first would make
+            // the ordering a cycle.
+            "setComputeAffinity" -> {
+                val mask = call.argument<Int>("mask") ?: 0
+                if (ensureNativeLoaded() != null) {
+                    // The load itself will fail the same way, with a message the
+                    // user can act on. Not an error here.
+                    result.success(null)
+                } else {
+                    nativeSetComputeAffinity(mask)
+                    result.success(null)
+                }
+            }
+
             "getMeta" -> {
                 ensureNativeLoaded()?.let {
                     result.error("NATIVE_LOAD", it.message, null); return
@@ -602,6 +634,8 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
     }
 
     // Native methods
+    private external fun nativeSetComputeAffinity(mask: Int)
+
     private external fun nativeLoadModel(
         path: String,
         nThreads: Long,

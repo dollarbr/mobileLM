@@ -24,6 +24,33 @@ class AccelerationPlan {
   String get backendName => tier.name;
 }
 
+/// Whether this mode is allowed to *open* the GPU at all.
+///
+/// Separate from [planAcceleration] on purpose, and the reason is a device.
+///
+/// `planAcceleration` answers "how many layers go on the GPU", and for
+/// `cpu_safe` the answer has always been zero. That was not enough: asking the
+/// question still calls the native probe, and the probe is what
+/// `ggml_backend_load("libggml-vulkan.so")` — so choosing CPU Safe loaded the
+/// Vulkan backend and registered the GPU, and the driver was resident for the
+/// life of the process.
+///
+/// Setting `model_params.devices` to a CPU-only list stops the *weights* going
+/// across, which is why the Edge 60's numbers improved when that was added
+/// (`jni_wrapper.cpp`, the note on "CPU" in Settings). It does not unregister the
+/// device. Measured on a Galaxy A72 with an Adreno 618: `cpu_safe` selected,
+/// `Device list restricted to the CPU` logged, and then `llama_decode` blocked
+/// with every thread asleep and no CPU in use for the full 60 s prefill budget,
+/// on a 258 MB model whose 191-token prefill should take seconds. The same
+/// comment records the same stall on the Edge 60 costing 5,5 s before the first
+/// token. Driver present, CPU idle: the stall is the driver being touched, not
+/// arithmetic.
+///
+/// So the question is no longer "how many layers" but "may we open it", and the
+/// honest answer for `cpu_safe` is no. `auto_fast` is allowed to probe, because
+/// probing is how the ladder finds out what it has; `gpu_fast` obviously is.
+bool modeMayOpenGpu(String mode) => mode != 'cpu_safe';
+
 /// Pick a tier for this load.
 ///
 /// [mode] is the user's setting: `cpu_safe` and `gpu_fast` are explicit
