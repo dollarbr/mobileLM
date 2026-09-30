@@ -954,15 +954,21 @@ tokens são três minutos de um request que nunca seria uma decisão. Oito dá c
 da resposta compatível e falha rápido na incompatível, que é o caso que o chamador
 mais precisa ouvir.
 
-**A decisão tem prazo, e sem ele um evento perdido derrubava a API.** O loop
-nativo pode terminar limpo — seis tokens, EOS, "Generation loop finished" no log —
-e o stream do Dart nunca entregar `onDone`, então `generate()` não retorna, o
-`finally` não roda e `_busy` fica verdadeiro: **todo request posterior responde
-429 pelo resto da vida do app**. Isso foi medido. O `.timeout(60s)` devolve 504 e
-libera o `_busy`, então um evento de conclusão perdido custa um request em vez
-do endpoint. **A causa raiz não foi corrigida** — o `onDone` perdido é um bug do
-caminho de conclusão do Dart, e ele afeta `/v1/chat/completions` do mesmo jeito;
-está anotado aqui para não ser esquecido.
+**A decisão tem prazo, porque uma geração lenta não pode derrubar a API.** Um
+504 em 60 s é melhor do que um request pendurado. O `.timeout()` também garante
+o `finally`, que é o que libera o `_busy` — sem ele, uma geração abandonada
+deixaria o endpoint em 429 para todo request posterior.
+
+**A hipótese que motiveu esse timeout estava errada, e a medição é o motivo de
+saber.** Escrevi aqui que o `onDone` se perdia — "o loop nativo termina limpo e o
+stream do Dart não entrega `onDone`" — e não era verdade. `onDone` é chamado em
+`LlamaFlutterAndroidPlugin.kt:334` e `:459`, `isStopping` é resetado no início de
+cada `generate` (linhas 299 e 403), e a contabilidade no log de seis gerações
+seguidas deu `Generation loop finished` = 5, `Stream onDone` = 5, `Idle timeout` =
+0, `Stream error` = 0. **O `onDone` chega sempre.** O que produzia 51 s por request
+era outra coisa, e está na seção do KV cache abaixo. O timeout de 60 s ficou
+porque é correto por si — uma decisão que não veio em um minuto não é uma
+decisão — mas a razão que eu dei para ele estava errada.
 
 **Prosa é falha, não fallback.** Pegar a primeira letra de uma frase, ou
 devolver a primeira opção como padrão, é o que transforma um decision model numa
@@ -971,6 +977,51 @@ a resposta sai 422 com o texto bruto e as opções esperadas. O `<think>` é rem
 antes, porque uma letra dentro da deliberação do modelo não é a resposta dele — o
 Tev1 escreve `<think>\n\n</think>\n\nB` e um parser de primeira letra devolve
 `t`.
+
+## O KV cache nunca era limpo — `g_n_past` crescia para sempre
+
+O comentário na linha 1839 de `jni_wrapper.cpp` dizia *"Clear memory from previous
+generation to start fresh"* e **não havia clear**. O único `llama_memory_clear` do
+arquivo estava na função de encoder. Então `g_n_past` subia ~183 por geração e
+nunca voltava, e o prompt seguinte era decodificado **por cima** do anterior.
+
+Seis pedidos consecutivos para `/v1/chat/completions`, prompt de 165 tokens:
+
+```
+Sampling token 1, g_n_past=165    prefill 306 tok/s     1,0 s
+Sampling token 1, g_n_past=348    prefill  47,9 tok/s  55,1 s
+Sampling token 1, g_n_past=531    prefill 275 tok/s     1,1 s
+Sampling token 1, g_n_past=714    prefill  44,4 tok/s  55,4 s
+```
+
+São **dois** defeitosnelas quatro linhas, e só o lento aparece:
+
+**1. Respostas erradas.** `batch.pos[...] = g_n_past + tokens_processed + i` —
+as posições do prompt começam em `g_n_past`, não em 0. Então os tokens 0-182 do
+contexto consultado são o **pedido anterior, sem relação nenhuma**. As seis
+respostas saíram byte-idênticas com prompts diferentes: mar, montanha e cidade
+deram o mesmo texto. O motor estava respondendo condicionado a uma conversa que
+nunca recebeu.
+
+**2. Devagar.** 44 tok/s contra 306, alternando a cada dois pedidos.
+
+**O que foi descartado nunca foi cache.** Os dois chamadores fazem prefill do
+prompt **inteiro** a cada turno — o chat do app reenvia o histórico completo, e o
+servidor manda um pedido só — então nenhum token é pulado por já estar no cache.
+As chaves velhas eram peso morto para a atenção mastigar.
+
+A janela deslizante de `make_room_for` **fica**: dentro de uma única geração um
+prompt longo mais 512 tokens ainda pode estourar `n_ctx`, e é o caso para o qual
+ela foi escrita. O conserto zera no começo de cada `nativeGenerate`.
+
+Depois, no mesmo aparelho, `g_n_past` volta a 165/167/164 em toda geração, o log
+passa a dizer `Resetting KV cache: discarding 188 stale positions`, e **mar,
+montanha e cidade dão respostas diferentes**. A variação de 50 tok/s contra
+367 tok/s que sobrou é o governor de sempre, não o bug.
+
+**Como isso só apareceu agora:** a medição do catálogo usava um prompt só, então
+os pedidos eram idênticos e a resposta byte-idêntica parecia ser o modelo
+funcionando. A divergência apareceu com três prompts diferentes no mesmo lote.
 
 ## Notas de build
 

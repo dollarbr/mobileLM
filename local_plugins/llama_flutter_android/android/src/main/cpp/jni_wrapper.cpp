@@ -1836,10 +1836,46 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeGenera
     }
     LOGI("nativeGenerate: context acquired");
 
-    // Clear memory from previous generation to start fresh
+    // **Start from an empty cache, every time.** The comment here used to say
+    // "Clear memory from previous generation to start fresh" and there was no
+    // clear: the only `llama_memory_clear` in this file was inside the encoder
+    // function. So `g_n_past` grew by ~183 per generation and never came back
+    // down, and the next prompt was decoded *on top of* the previous one.
+    //
+    // Measured on the A72, six consecutive requests to `/v1/chat/completions`
+    // with a 165-token prompt:
+    //
+    //   Sampling token 1, g_n_past=165    prefill 306 tok/s    1,0 s
+    //   Sampling token 1, g_n_past=348    prefill  47,9 tok/s  55,1 s
+    //   Sampling token 1, g_n_past=531    prefill 275 tok/s    1,1 s
+    //   Sampling token 1, g_n_past=714    prefill  44,4 tok/s  55,4 s
+    //
+    // Two separate failures in those four lines, and only the slow one is
+    // visible:
+    //
+    // 1. **Wrong answers.** The prompt's positions start at `g_n_past`, not 0
+    //    (see `batch.pos[...] = g_n_past + tokens_processed + i`), so tokens
+    //    0-182 of the attended context are the *previous, unrelated* request.
+    //    All six responses came back byte-identical. The engine was answering
+    //    conditioned on a conversation it was never given.
+    // 2. **Slow.** 44 tok/s against 306, alternating every second request.
+    //
+    // The carry-over was never a cache in the first place. Both callers
+    // prefill the *whole* prompt every turn — the app's chat re-sends the full
+    // history, and the server sends one request — so no token is ever skipped
+    // for already being in the cache. The stale keys were pure weight for the
+    // attention to chew on. The sliding window in `make_room_for` stays: within
+    // a single generation a long prompt plus 512 tokens can still exceed n_ctx,
+    // and that is the case it was written for.
+    if (g_n_past != 0) {
+        LOGI("Resetting KV cache: discarding %d stale positions", g_n_past);
+        llama_memory_clear(llama_get_memory(g_ctx), true);
+        g_n_past = 0;
+    }
+
     const char* prompt_str = env->GetStringUTFChars(prompt, nullptr);
     g_stop_flag = false;
-    
+
     const int prompt_len = strlen(prompt_str);
     LOGI("Tokenizing prompt: '%s' (length: %d)", prompt_str, prompt_len);
     LOGI("Vocab pointer: %p, Model pointer: %p", (void*)g_vocab, (void*)g_model);

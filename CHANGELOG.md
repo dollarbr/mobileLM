@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### fix: o KV cache nunca era limpo entre gerações
+
+O comentário no `jni_wrapper.cpp` dizia "Clear memory from previous generation to
+start fresh" e não havia clear: o único `llama_memory_clear` do arquivo estava na
+função de encoder. `g_n_past` crescia ~183 por geração e nunca voltava, e o prompt
+seguinte era decodificado por cima do anterior.
+
+Seis pedidos consecutivos para `/v1/chat/completions`, prompt de 165 tokens:
+
+```
+Sampling token 1, g_n_past=165    prefill 306 tok/s     1,0 s
+Sampling token 1, g_n_past=348    prefill  47,9 tok/s  55,1 s
+Sampling token 1, g_n_past=531    prefill 275 tok/s     1,1 s
+Sampling token 1, g_n_past=714    prefill  44,4 tok/s  55,4 s
+```
+
+**Respostas erradas, que é o defeito que importa.** As posições do prompt começam
+em `g_n_past` e não em 0, então os tokens 0-182 do contexto consultado eram o
+pedido anterior. As seis respostas saíram byte-idênticas com prompts diferentes.
+Depois do conserto, mar, montanha e cidade dão respostas diferentes.
+
+**O carry-over nunca foi cache.** Os dois chamadores fazem prefill do prompt inteiro
+a cada turno — o chat do app reenvia o histórico completo, e o servidor manda um
+pedido só — então nenhum token era pulado por já estar no cache. A janela
+deslizante de `make_room_for` fica, porque dentro de uma geração um prompt longo
+mais 512 tokens ainda estouraria `n_ctx`.
+
+Só apareceu com a medição do catálogo porque ela usava um prompt só: com pedidos
+idênticos, uma resposta byte-idêntica parece o modelo funcionando.
+
+### O `onDone` não se perdia — a hipótese que motivou o timeout de 60 s estava errada
+
+A seção da superfície de decisão dizia que o `onDone` podia ser perdido e que
+isso derrubava a API. Contabilidade no log de seis gerações seguidas, no A72:
+
+```
+Generation loop finished     5
+Stream onDone                5
+Idle timeout                 0
+Stream error                 0
+```
+
+`onDone` é chamado em `LlamaFlutterAndroidPlugin.kt:334` e `:459`, e `isStopping` é
+resetado no início de cada `generate` (linhas 299 e 403). O que produzia 51 s por
+request era o KV cache acima. **O timeout de 60 s fica**, porque é correto por si
+— uma decisão que não veio em um minuto não é uma decisão, e o `.timeout()`
+garante o `finally` que libera o `_busy` — mas a razão registrada estava errada e
+foi corrigida.
+
+
 ### feat: `/v1/classify` aceita decision models, com a resposta honesta
 
 Tev1-0.8B e Bespoke-Nimble são classificadores fine-tuned para emitirem **uma
