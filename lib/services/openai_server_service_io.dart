@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
+import '../utils/logistic.dart';
 import 'encoder_settings_service.dart';
 import 'inference_service.dart';
 
@@ -33,7 +34,7 @@ class OpenAiServerService {
   static const int maxDecodedAttachmentBytes = 12 * 1024 * 1024;
 
   Future<void> start({
-    int port = 8080,
+    int port = AppConstants.defaultServerPort,
     String? apiKey,
     void Function(String)? onLog,
   }) async {
@@ -518,7 +519,7 @@ class OpenAiServerService {
           'relevance_score': out.values.isEmpty ? 0.0 : out.values.first,
           if (saved.rerankSigmoid.value)
             'relevance_score_probability':
-                _sigmoid(out.values.isEmpty ? 0.0 : out.values.first),
+                sigmoid(out.values.isEmpty ? 0.0 : out.values.first),
           if (saved.rerankReturnDocuments.value) 'document': documents[i],
         });
       }
@@ -568,26 +569,6 @@ class OpenAiServerService {
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
         .toList();
-  }
-
-  static double _sigmoid(double x) {
-    if (x >= 0) return 1 / (1 + _exp(-x));
-    final e = _exp(x);
-    return e / (1 + e);
-  }
-
-  static double _exp(double x) {
-    // Bounded because `exp` overflows to infinity well inside the range a logit
-    // can reach, and a JSON payload carrying `Infinity` is not valid JSON — the
-    // client would see a parse error instead of a score.
-    if (x > 700) return double.infinity;
-    if (x < -700) return 0;
-    var sum = 1.0, term = 1.0;
-    for (var i = 1; i < 24; i++) {
-      term *= x / i;
-      sum += term;
-    }
-    return sum;
   }
 
   /// `POST /v1/classify` — this app's own shape, because there is no standard

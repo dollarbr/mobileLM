@@ -14,11 +14,28 @@ and tensor directory are both at the front of the file — the directory is
 descriptors, not data — so a few hundred KB is enough. A range request is the
 whole trick.
 
-The decision mirrors `jni_wrapper.cpp` exactly, and the architecture list is
+The decision mirrors `jni_wrapper.cpp`, and the architecture list is
 *read out of the vendored llama.cpp* rather than typed here, so this cannot
 drift from the binary it is screening for. A model this approves and the app
 still refuses means the app changed, not the model, and that is worth finding
 out here rather than on a phone.
+
+What "mirrors" does and does not mean, because it used to overclaim and I
+believed it. The gate in the app is two steps, in this order: a declared
+`<arch>.pooling_type` is honoured first for *any* architecture, and only a
+file that declares nothing falls through to the inference, which is where the
+architecture veto, the head requirement and the BOS/SEP boundary check live.
+This script reaches the same verdicts, but it does not re-run the boundary
+check (it reads no vocabulary) and it does not reject `pooling_type = 0`.
+
+It was right about `qwen3` and I was wrong about it. It approved
+`Qwen3-Embedding-0.6B` and `Qwen3-Reranker-4B`, and I read
+`arch_is_encoder` in `jni_wrapper.cpp` — the *inference* path — and concluded
+one line refused the whole family. The declared-pooling path runs first and
+never consults that list, so those files work today. The one thing this
+script got genuinely wrong was the opposite: it warned that
+`Qwen3-Reranker-4B` was missing a pooler projection, which is the jina/BERT
+heuristic applied to an architecture that has no pooler by design.
 
     python3 tool/gguf-screen.py openjev/openjev-GGUF OpenJev-Q8_0.gguf
     python3 tool/gguf-screen.py --local model/gte-reranker-modernbert-base-Q8_0.gguf
@@ -269,6 +286,13 @@ def remote_size(url, timeout=60):
 
 
 # ── the verdict ───────────────────────────────────────────────────────────────
+# Architectures that carry `cls.output` and are scored on their last token, so a
+# `pooler.dense` is not part of their reference implementation and its absence is
+# not a defect. Read out of `src/models/` in the vendored llama.cpp: qwen3.cpp and
+# qwen3vl.cpp call `create_tensor(LLM_TENSOR_CLS_OUT, ...)` and never touch
+# `LLM_TENSOR_CLS`, where bert.cpp, modern-bert.cpp and neo-bert.cpp load both.
+NO_POOLER_ARCHS = {"qwen3", "qwen3vl"}
+
 POOLING = {0: "none", 1: "mean", 2: "cls", 3: "last", 4: "rank"}
 
 
@@ -283,11 +307,28 @@ def decide(info, arches):
         )
     if info["has_head"]:
         shape = "x".join(str(d) for d in info["head_dims"]) or "?"
-        extra = "" if info["has_pooler"] else (
-            "  The head is there but the pooler projection is not, so the vector "
-            "reaching it is not the one it was trained on — this is the case that "
-            "produces a number in (-1, 1) that ranks plausibly."
-        )
+        # The pooler caveat is only true for some of the architectures that carry
+        # `cls.output`. llama.cpp loads `cls_out` for five model classes
+        # (`src/models/{bert,modern-bert,neo-bert,qwen3,qwen3vl}.cpp`) but a
+        # *pooler* (`cls` / `cls_b`, the `[n_embd, n_embd]` projection) only for
+        # the encoder-shaped ones. qwen3 and qwen3vl load `cls_out` and nothing
+        # else, because a Qwen3 reranker is a causal model scored on its last
+        # token — `Qwen/Qwen3-Reranker-4B` is `Qwen3ForCausalLM` with no pooler
+        # in its config at all. Flagging its absent pooler as a problem is the
+        # jina heuristic carried over one family too far, and it did exactly
+        # that: it told me the one 4B reranker that works was the one producing
+        # a meaningless number in (-1,1).
+        if info["has_pooler"] or arch in NO_POOLER_ARCHS:
+            extra = ""
+            if arch in NO_POOLER_ARCHS:
+                extra = ("  No pooler, and this architecture is scored on its last "
+                         "token, so there is nothing missing here.")
+        else:
+            extra = (
+                "  The head is there but the pooler projection is not, so the vector "
+                "reaching it is not the one it was trained on — this is the case that "
+                "produces a number in (-1, 1) that ranks plausibly."
+            )
         if info["declared_pooling"] is None:
             return "RERANK", (
                 "cls.output.weight [%s] is present and llama.cpp infers RANK for an "

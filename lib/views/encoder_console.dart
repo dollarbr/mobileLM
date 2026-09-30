@@ -72,7 +72,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
     // the hard way: the button looked dead with a server running and reachable.
     //
     // `localUrl` is watched alongside `isRunning` because the port is not
-    // fixed. Ask for 8080 and get 8083, and the URL the console must call
+    // fixed. Ask for 8091 and get 8094, and the URL the console must call
     // changes without `isRunning` ever going false.
     final server = Get.find<ServerController>();
     _serverWorkers = [
@@ -227,8 +227,8 @@ class _EncoderConsoleState extends State<EncoderConsole> {
   /// them together would mean re-querying the JNI on every server toggle.
   Future<void> _probeServer() async {
     // The port comes from the server controller, which is what actually
-    // negotiates it: the user can ask for 8080 and get 8083 if 8080 was taken,
-    // so a hardcoded 8080 probes a port nothing is listening on and the console
+    // negotiates it: the user can ask for 8091 and get 8094 if 8091 was taken,
+    // so a hardcoded port probes a port nothing is listening on and the console
     // says "server not running" while the server is running fine.
     final url = Get.find<ServerController>().baseUrl;
     final up = await _probe(url);

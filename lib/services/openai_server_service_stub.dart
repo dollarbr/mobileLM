@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import '../core/constants.dart';
+
 class OpenAiServerService {
   bool get isRunning => false;
   String? get localUrl => null;
 
   Future<void> start({
-    int port = 8080,
+    int port = AppConstants.defaultServerPort,
     String? apiKey,
     void Function(String)? onLog,
   }) async {

@@ -68,6 +68,41 @@ void main() {
     });
   });
 
+  group('modeMayOpenGpu', () {
+    test('cpu_safe is the only mode that may not open the GPU', () {
+      expect(modeMayOpenGpu('cpu_safe'), isFalse);
+      expect(modeMayOpenGpu('auto_fast'), isTrue);
+      expect(modeMayOpenGpu('gpu_fast'), isTrue);
+    });
+
+    test('a closed GPU still plans as CPU, with the same reason', () {
+      // The point of the gate is that it costs nothing in behaviour: the probe
+      // is skipped, not the decision. Both calls must land on the same plan, or
+      // a model would load differently depending on whether we looked first.
+      final probed = planAcceleration(
+        mode: 'cpu_safe',
+        vulkanSupported: true,
+        recommendedGpuLayers: 99,
+      );
+      final unprobed = planAcceleration(
+        mode: 'cpu_safe',
+        vulkanSupported: false,
+        recommendedGpuLayers: 0,
+      );
+      expect(unprobed.tier, probed.tier);
+      expect(unprobed.gpuLayers, probed.gpuLayers);
+      expect(unprobed.reason, probed.reason);
+      expect(unprobed.gpuLayers, 0);
+    });
+
+    test('the gate is a deny, so an unknown mode may still open the GPU', () {
+      // A setting read from Hive that is not one of the three should degrade to
+      // the ladder rather than silently pinning the user to the CPU.
+      expect(modeMayOpenGpu(''), isTrue);
+      expect(modeMayOpenGpu('cpu-safe'), isTrue);
+    });
+  });
+
   group('planLiteRtTier', () {
     test('NPU only when a dispatch driver is actually bundled', () {
       expect(planLiteRtTier(mode: 'auto_fast', npuAvailable: true), AccelTier.npu);

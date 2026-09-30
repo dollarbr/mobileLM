@@ -129,9 +129,9 @@ class ServerView extends GetView<ServerController> {
                   padding: const EdgeInsets.all(14),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(
-                        'Port the server listens on. Default is 8080; if '
-                        'occupied the app will fall back to the next free '
-                        'port and notify you.',
+                        'Port the server listens on. Default is '
+                        '${AppConstants.defaultServerPort}; if occupied the app '
+                        'will fall back to the next free port and notify you.',
                         style: GoogleFonts.inter(
                             fontSize: 13,
                             color: isDark
@@ -154,10 +154,16 @@ class ServerView extends GetView<ServerController> {
                             }
                           },
                           onSubmitted: (_) => controller.saveSettings(),
-                          decoration: const InputDecoration(
+                          // Not `const`: the hint has to come from the constant
+                          // so it cannot go stale, and calling `.toString()` on
+                          // it is not a constant expression. A hardcoded '8080'
+                          // here was the third copy of the default, in the one
+                          // place a person actually reads it.
+                          decoration: InputDecoration(
                             labelText: 'Port',
-                            hintText: '8080',
-                            prefixIcon: Icon(Icons.portrait, size: 18),
+                            hintText:
+                                AppConstants.defaultServerPort.toString(),
+                            prefixIcon: const Icon(Icons.portrait, size: 18),
                           ),
                         ),
                       ),

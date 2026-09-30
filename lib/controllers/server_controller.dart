@@ -49,14 +49,22 @@ class ServerController extends GetxController {
     return 'encoder';
   }
 
-  /// User-configured port (default 8080). May be overridden at start time
-  /// if the user's choice is already in use.
-  final serverPort = RxInt(8080);
+  /// The port the server is on. Whatever the user chose, or
+  /// [AppConstants.defaultServerPort] if they never chose one.
+  final serverPort = RxInt(AppConstants.defaultServerPort);
 
   late final TextEditingController portCtrl;
   late final TextEditingController apiKeyCtrl;
 
-  static const int _defaultPort = 8080;
+  /// Read from [AppConstants] rather than written out here.
+  ///
+  /// These were two copies of the same number — `defaultServerPort` in
+  /// `AppConstants` and `_defaultPort` here — and the one that actually decides
+  /// what a fresh install listens on is this one, so editing the other looked
+  /// like it worked and did nothing. That is the same failure as the version
+  /// number this repo once kept in three places in prose, and it is fixed the
+  /// same way: one place, referenced.
+  static const int _defaultPort = AppConstants.defaultServerPort;
   static const int _maxPortProbe = 9000;
 
   @override

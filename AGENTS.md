@@ -393,17 +393,101 @@ rede contra alguém um dia fazer `git add -f` de um secret.
 Debug APK continua com chave de debug — é o correto, elas não são distribuídas e
 precisam instalar por cima de qualquer build.
 
+## Aparelhos de teste
+
+| Aparelho | Papel | Regra |
+|---|---|---|
+| **Galaxy A72** (SM-A725M, Snapdragon 720G / SM7125, Android 14, 5,6 GB) | **debug** — é onde tudo é medido | recebe debug à vontade. A tela dele **estraga**: a imagem aparece mas o touch não responde, então tudo é feito por comando adb, nunca por toque. Não é quebra do aparelho e não é reparável aqui. |
+| **Motorola Edge 60** (Dimensity 7300, Mali-G615) | **só release** | nunca instalar debug. Instalar debug sobre uma release significa trocar a assinatura → desinstalar → perde modelos, histórico e workspace. É por isso que a 0.4.0 ficou um ciclo inteiro sem conseguir testar no Edge 60. |
+
+Medir no A72 é a escolha certa mesmo sendo mais fraco: um número que sai dele é um
+piso, não uma média.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
   `gradle.properties` — nunca sature todos os núcleos.
+- **Threads: o default é o número de núcleos *grandes*, não metade dos núcleos.**
+  Motivo medido, e é o oposto do que parece certo. No A72 (Snapdragon 720G)
+  cpu0-5 são A55 a 1804 MHz e cpu6-7 são A76 a 2323 MHz — "metade de 8" = 4, e
+  as quatro iam **todas** em A55. O default antigo dava 4 e o modelo travava.
+  `lib/utils/cpu_topology.dart` lê `cpuinfo_max_freq` de cada core; o Edge 60
+  (4×A78+4×A55) dá 4, que é o número que este guia já recomendava — por
+  coincidência, não por ser a mesma fórmula.
 - Threads: 4 é o ótimo no Edge 60 (4×A78+4×A55); 8 regressa porque A55 trava A78.
 - R8 está desligado (`isMinifyEnabled = false`). Não adicione regras ProGuard por
   precaução — elas não fazem efeito e podem mascarar problemas reais.
 - **Plugins locais com `dependency_overrides` podem não ser detectados pelo Flutter plugin discovery.** Se `dart_plugin_registrant.dart` não inclui, registrar manualmente no `MainActivity`.
-- Modelo pequeno (<2B) prefere CPU no prefill: GPU (Vulkan) tem overhead de shader
+- Modelo pequeno (<2B) prefere CPU no prefill: GPU (Vulkan) ter overhead de shader
   que domina até ~2B parâmetros. `n_gpu_layers==0` deve zerar a lista de dispositivos,
   não apenas pular offload — senão ggml sched offloads ops pro Vulkan (`op_offload`).
+- **CPU Safe tem que *não abrir* o backend Vulkan, e não só não usá-lo.** As duas
+  metades são separadas de propósito, porque só a segunda não bastava.
+  `model_params.devices = cpu_only` (o conserto do Edge 60, ~5,5 s) resolve onde os
+  **pesos** vão. O que ele não faz é **desregistrar o device**: o
+  `ggml_backend_load("libggml-vulkan.so")` acontecia dentro do mesmo `once_flag` do
+  backend CPU, incondicionalmente, para o `nativeDetectGpu` poder reportar a GPU.
+  Medido no A72 com CPU Safe ligado, Adreno 618: o log dizia
+  `Device list restricted to the CPU` e mesmo assim o `llama_decode` passou os 60 s
+  inteiros do `prefillBudget` com **todas as threads dormindo e zero CPU em uso**,
+  num modelo de 258 MB cujo prefill são segundos de aritmética. Driver presente,
+  CPU ociosa: o travamento é o driver sendo tocado, não o cálculo. E o comentário
+  do `n_gpu_layers == 0` no Edge 60 descreve **o mesmo ponto**, 10× mais barato.
+  Por isso `ensureBackends(withGpu)` no `jni_wrapper.cpp` carrega o Vulkan só quando
+  a carga realmente vai usá-lo, e `modeMayOpenGpu()` em `acceleration.dart` impede
+  a sondagem — que é o que *carrega* o backend — de rodar em CPU Safe. São dois
+  portões porque o Kotlin passa `n_gpu_layers` mas a sondagem é um caminho
+  separado. **O `prefillBudget` de 60 s é o sintoma, não a causa** — ver o bloco
+  logo abaixo, porque a hipótese do Vulkan **foi testada e está errada**.
+- **O segundo portão é o `SD_JNI`, e ele não passa por nenhum desses dois.**
+  `SdFlutterAndroid.detectGpuVendor()` é **EGL**, e no A72 o EGL traz o driver
+  inteiro do Adreno para dentro do processo — `libvulkan.so` e tudo — só para
+  devolver uma string de duas letras que decide entre OpenCL e Vulkan no Stable
+  Diffusion. Rodava em `_detectImageGpu()`, no `onInit` do
+  `settings_controller.dart`, ou seja **no boot, antes de o usuário abrir as
+  configurações de imagem**, e independente do modo do acelerador. Hoje só roda se
+  `!imageGenForceCpu`, e `setImageBackendMode(true)` passou a dispará-la — o
+  usuário pedindo a GPU é o opt-in. **Ao procurar "por que o driver está no
+  processo", procure também fora do llama.cpp:** o sintoma é idêntico, e este
+  culpado quase passou batido porque o logcat mostra `AdrenoVK` e não a linha
+  `Vulkan backend loaded` que se procurava.
+
+### O `prefillBudget` de 60 s no A72 — hipótese errada, e o que é verdade
+
+**A causa NÃO é o backend Vulkan.** Isto foi medido, não suposto: com os dois
+portões acima fechados, `cpu_safe`, o driver fora do processo (zero linhas
+`LlamaJNI` e zero `AdrenoVK` vindas do nosso código no boot) e `libggml-vulkan.so`
+**não mapeado**, o `llama_decode` **continua estourando os 60 s** do
+`prefillBudget`. O que muda é o sintoma, e é por isso que a confusão durou tanto:
+
+| | antes | depois dos portões |
+|---|---|---|
+| thread de geração | `wchan` sem nada, **0% em R**,aparentando travada | **100% de um core, sem parar** |
+| consumo | 0% CPU durante os 60 s | ~204% (2 núcleos), `utime` subindo 1 s por 1 s |
+| desfecho | "Model did not respond" | "Model did not respond" (o mesmo) |
+
+Ou seja: **antes ela estava ociosa e agora ela está computando**, e mesmo assim não
+termina no orçamento. Isso é aritmética, não espera: um prefill de 545 tokens num
+llama 360M tem ~2 × 0,36 B × 545 ≈ 390 MFLOP, e num A76 a ~1,5 GFLOP/s efetivo
+(isso é ggml single-stream com Q4_K_M, não um FLOPS de GPU) dá **minutos**. O
+número 2.0K de contexto na UI é o que o modelo aceita; o `Context size: 2048` que o
+log imprime é o teto real do nativo, e o **system prompt do agente com o catálogo
+de 24 tools é ~500 tokens sozinho** — o prefill nunca foi pequeno.
+
+O que está **errado** aqui, e vale mais que a teoria antiga: `prefillBudget =
+60 + 240 * mediaCount` foi escrito para um aparelho que faz prefill em segundos.
+No A72 ele não é um timeout de rede, é **o tempo do cálculo**. As saídas são
+subir o budget (a resposta está chegando, só devagar), reduzir o system prompt
+quando não há tools habilitadas, ou escolher um modelo menor. **Não é bug do
+engine e não é o driver.** E o `wchan` vazio com 0% de CPU — que parecia deadlock
+— era só o `llama_decode` esperando o fim do batch, sem trabalho para fazer.
+
+**O que continua sem explicação:** por que 0% antes e 100% depois, se o Vulkan não
+estava mais carregado nos dois casos? A medição do "antes" foi feita com o
+`SD_JNI` ainda pulling o driver no boot, então os dois estados não eram
+comparáveis. Para comparar de verdade é preciso um build com os dois portões e
+rodar em modo `cpu_safe` desde o boot — que é o próximo passo, e é o motivo de o
+gate existir mesmo sem ter resolvido isto.
 
 ## Cloud features (0.3.0)
 ## Tradução (PT-BR)

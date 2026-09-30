@@ -45,7 +45,7 @@ scheduled tasks that keep running with the app closed.
   posts the result as a notification and into the chat.
 - **Image generation** — Stable Diffusion in a background isolate, CPU or GPU,
   with the quantisation selectable.
-- **A local OpenAI-compatible server** on port 8080, so other apps on the same
+- **A local OpenAI-compatible server** on port 8091, so other apps on the same
   network can talk to the model running on your phone.
 - **Thinking toggle** — `<think>` blocks parsed and rendered separately, with
   auto/on/off.

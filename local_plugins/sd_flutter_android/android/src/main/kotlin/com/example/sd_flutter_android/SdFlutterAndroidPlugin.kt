@@ -73,8 +73,48 @@ class SdFlutterAndroidPlugin: FlutterPlugin, MethodCallHandler {
     }
   }
 
-  init {
-    System.loadLibrary("sd_jni")
+  // ── Native load: lazy, and it used to be the single worst thing in the APK ──
+  //
+  // This was `init { System.loadLibrary("sd_jni") }` — the plugin constructor,
+  // so it ran on every cold start whether or not the user ever generated an
+  // image. The chain from there, all measured on a Galaxy A72 (SM-A725M, /e/OS)
+  // by reading /proc/<pid>/maps with the app open and no model loaded:
+  //
+  //   loadLibrary("sd_jni")
+  //     -> INIT_ARRAY (64 bytes, 8 pointers) runs at dlopen, before any call
+  //       -> ggml's backend registry dlopen()s every backend it was built with
+  //         -> libsd_jni_vulkan.so, 54 MB, NEEDED libvulkan.so
+  //           -> vkEnumeratePhysicalDevices, during registration
+  //             -> vulkan.adreno.so, libEGL_adreno.so, libvulkan.so, resident
+  //
+  // The consequence was not about images at all. Every llama.cpp thread in the
+  // process ended up in futex_wait_queue_me at 0% CPU while llama_decode burned
+  // its prefill budget, which is the exact signature llama.cpp's own history
+  // records for "the driver is in the process and is being touched".
+  //
+  // Note what did *not* cause it: `defaultImageGenForceCpu` is already true, and
+  // settings_controller's guard `if (!imageGenForceCpu.value) _detectImageGpu()`
+  // therefore does not fire at boot. The Dart-side gate was working. The load
+  // was below the gate, in a constructor, and no setting could reach it.
+  //
+  // So the load moves behind the first call that actually needs it. Nothing in a
+  // text-only session touches these natives, so nothing loads, and the 54 MB
+  // stays a file on disk instead of 54 MB of mapped driver.
+  @Volatile
+  private var nativeLoaded = false
+
+  @Synchronized
+  private fun ensureNative(): Boolean {
+    if (nativeLoaded) return true
+    return try {
+      System.loadLibrary("sd_jni")
+      nativeLoaded = true
+      true
+    } catch (e: UnsatisfiedLinkError) {
+      // A device that cannot load this at all is not an error to crash on; the
+      // Dart side treats a failed call as "image gen unavailable here".
+      false
+    }
   }
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -88,16 +128,9 @@ class SdFlutterAndroidPlugin: FlutterPlugin, MethodCallHandler {
       "getPlatformVersion" -> {
         result.success("Android ${android.os.Build.VERSION.RELEASE}")
       }
-      "detectGpuVendor" -> {
-        scope.launch {
-          try {
-            val vendor = detectGpuVendor()
-            withContext(Dispatchers.Main) { result.success(vendor) }
-          } catch (e: Exception) {
-            withContext(Dispatchers.Main) { result.error("DETECT_FAILED", e.message, null) }
-          }
-        }
-      }
+      // Memory is answered without touching the natives, deliberately: these two
+      // are the calls a settings screen or a download dialog makes, and they
+      // must never be the thing that loads a 54 MB backend.
       "getDeviceMemory" -> {
         scope.launch {
           try {
@@ -124,7 +157,27 @@ class SdFlutterAndroidPlugin: FlutterPlugin, MethodCallHandler {
           }
         }
       }
+      // Everything below here is a real image-gen call, and each one is the
+      // first moment this process needs the natives. Fail loudly and only here.
+      "detectGpuVendor" -> {
+        if (!ensureNative()) {
+          result.error("NATIVE_UNAVAILABLE", "sd_jni could not be loaded on this device", null)
+          return
+        }
+        scope.launch {
+          try {
+            val vendor = detectGpuVendor()
+            withContext(Dispatchers.Main) { result.success(vendor) }
+          } catch (e: Exception) {
+            withContext(Dispatchers.Main) { result.error("DETECT_FAILED", e.message, null) }
+          }
+        }
+      }
       "initModel" -> {
+        if (!ensureNative()) {
+          result.error("NATIVE_UNAVAILABLE", "sd_jni could not be loaded on this device", null)
+          return
+        }
         val path = call.argument<String>("path")
         val useGpu = call.argument<Boolean>("useGpu") ?: true
         if (path != null) {
@@ -141,6 +194,10 @@ class SdFlutterAndroidPlugin: FlutterPlugin, MethodCallHandler {
         }
       }
       "generateImage" -> {
+        if (!ensureNative()) {
+          result.error("NATIVE_UNAVAILABLE", "sd_jni could not be loaded on this device", null)
+          return
+        }
         val prompt = call.argument<String>("prompt")
         val steps = call.argument<Int>("steps") ?: 20
         if (prompt != null) {
@@ -166,6 +223,13 @@ class SdFlutterAndroidPlugin: FlutterPlugin, MethodCallHandler {
         }
       }
       "unloadModel" -> {
+        // Not an error if the natives were never loaded. Unloading something
+        // that was never loaded is a no-op, and making it one keeps the
+        // lazy-load from needing a "was it ever used" flag on the Dart side.
+        if (!nativeLoaded) {
+          result.success(null)
+          return
+        }
         scope.launch {
           try {
             unloadModel()
