@@ -126,6 +126,12 @@ class InferenceEngine {
           mode: liteRtPerformanceMode,
           vulkanSupported: gpu.vulkanSupported,
           recommendedGpuLayers: gpu.recommendedGpuLayers.toInt(),
+          // The file on disk, not the catalogue's declared size. The probe
+          // above has already answered "how many layers fit", which is a
+          // question about memory; this is the question about speed that the
+          // probe cannot answer, because it never saw the model. See
+          // kSmallGgufCpuWinsBytes for the two measurements behind the number.
+          modelBytes: _fileSizeOrZero(modelPath),
         );
         gpuLayers = plan.gpuLayers;
         print('[Inference] ${plan.reason}');
@@ -139,6 +145,7 @@ class InferenceEngine {
         mode: liteRtPerformanceMode,
         vulkanSupported: false,
         recommendedGpuLayers: 0,
+        modelBytes: _fileSizeOrZero(modelPath),
       );
       gpuNameStr = 'not initialised (CPU mode)';
       print('[Inference] CPU mode: not probing, so the Vulkan backend is never '
@@ -1467,5 +1474,22 @@ class InferenceEngine {
     buf.write(
         '<|start_header_id|>user<|end_header_id|>\n\n$msg<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n');
     return buf.toString();
+  }
+}
+
+/// Size of [path] on disk, or 0 if it cannot be read.
+///
+/// 0 means "unknown", and unknown is not a reason to pick a tier: the ladder
+/// treats 0 as "no opinion about size" and falls back to the capability answer
+/// it gave before this parameter existed. A model whose file is unreadable is
+/// about to fail the load anyway, and a wrong size here would be a guess
+/// presented as a measurement.
+int _fileSizeOrZero(String path) {
+  try {
+    final f = File(path);
+    if (!f.existsSync()) return 0;
+    return f.lengthSync();
+  } catch (_) {
+    return 0;
   }
 }

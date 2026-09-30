@@ -175,10 +175,25 @@ static void logRingf(ggml_log_level level, int priority, const char* fmt, ...) {
 #define LOGI(...) logRingf(GGML_LOG_LEVEL_INFO, ANDROID_LOG_INFO, __VA_ARGS__)
 #define LOGE(...) logRingf(GGML_LOG_LEVEL_ERROR, ANDROID_LOG_ERROR, __VA_ARGS__)
 
-static void buildCpuSet(int mask, cpu_set_t* out) {
+// Bounded by the width of the mask, never by CPU_SETSIZE.
+//
+// `cpu_set_t` on Android is 1024 bits wide, and a `mask` is a Dart `int`, which
+// is 64. Iterating to CPU_SETSIZE with `1 << cpu` is undefined behaviour twice
+// over: the shift wraps at 32 on an `int` and at 64 on a 64-bit type, so a mask
+// of 0xC0 — two cores — reports cores 6, 38, 70, 102, ... as members of a
+// two-core set. That is not cosmetic here: CPU_SET-ing eighteen cores is a
+// permission to run on eighteen, which is the opposite of pinning.
+//
+// Measured on the A72 with the bug: a 2-thread pin logged
+// "pinned to cpu 6,7,38,39,70,71,102,103,134,..." and the second log line
+// correctly said "cpumask slots set: 6,7". The pin itself was still right, but
+// only because the caller takes the first `n_threads` entries and the real
+// cores sort first. Everything that reads `cores.size()`, or the set itself,
+// was reading the phantoms.
+static void buildCpuSet(int64_t mask, cpu_set_t* out) {
     CPU_ZERO(out);
-    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-        if (mask & (1 << cpu)) {
+    for (int cpu = 0; cpu < 64; cpu++) {
+        if (((uint64_t) mask) & (1ULL << cpu)) {
             CPU_SET(cpu, out);
         }
     }
@@ -290,7 +305,7 @@ static ggml_threadpool_t g_compute_pool = nullptr;
 typedef void (*ggml_threadpool_free_fn)(ggml_threadpool_t);
 static ggml_threadpool_free_fn g_threadpool_free_fn = nullptr;
 
-static ggml_threadpool_t buildComputeThreadpool(int mask, int n_threads) {
+static ggml_threadpool_t buildComputeThreadpool(int64_t mask, int n_threads) {
     if (mask == 0 || n_threads <= 0) {
         return nullptr;
     }
@@ -300,8 +315,34 @@ static ggml_threadpool_t buildComputeThreadpool(int mask, int n_threads) {
     }
 
     std::vector<int> cores;
-    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-        if (mask & (1 << cpu)) {
+    for (int cpu = 0; cpu < 64; cpu++) {
+        // `1ULL` and a 64-wide loop, not `1` and CPU_SETSIZE. Both halves were
+        // wrong, and the log is how it showed up: the A72 has exactly two big
+        // cores (6 and 7, mask 0xC0) and the line read
+        // "pinned to cpu 6,7,38,39,70,71,102,103,134,...".
+        //
+        // The period of the phantoms is the tell. `1 << 38` on a 32-bit int is
+        // `1 << 6` in practice, so a 32-wide `int` shift produces 6, 38, 70,
+        // 102... — period 32. Making the shift 64-bit moved the period to 64
+        // and did not fix it, because `1ULL << 70` is *also* undefined: the
+        // count exceeds the width, and the hardware keeps the low six bits, so
+        // it is `1ULL << 6` again. Nothing about the type fixes this. Only
+        // bounding the loop by the width of the mask does.
+        //
+        // `mask` is a Dart `int`, so it is 64-bit and `int64_t` says so on this
+        // side of the channel; `cpu_set_t` is wider than that, which is why the
+        // two must not be conflated in either direction.
+        //
+        // The pinning itself was right by luck rather than by correctness: the
+        // loop runs upwards, so the real cores sort first and `n_threads` is
+        // satisfied before any phantom at 64, 128, 192... is reached. Two live
+        // consequences did follow, and both are fixed by the same change:
+        //
+        //   * `cores.size()` counted the phantoms, so the "mask names fewer
+        //     cores than threads" guard below could never fire, and
+        //   * `buildCpuSet` CPU_SET eighteen cores, which is a permission to
+        //     run on eighteen — the opposite of pinning.
+        if (((uint64_t) mask) & (1ULL << cpu)) {
             cores.push_back(cpu);
         }
     }
