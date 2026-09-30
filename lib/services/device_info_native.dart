@@ -184,3 +184,26 @@ Future<Map<String, dynamic>> getDeviceInfo() async {
     'socHardware': hardware,
   };
 }
+
+/// `/proc/meminfo` as read right now, or null where there is no such file.
+///
+/// The raw text, deliberately. It used to parse here and return a map of bytes,
+/// which then had to be turned back into text for `readMeminfo` to parse
+/// again — one pointless step in the middle, on the hot path of a two-second
+/// timer. Fetching the file is the platform's job; deciding what the numbers
+/// mean is `memory_readout.dart`'s, and it is the half that is tested.
+///
+/// iOS has no `/proc`, and the plugin's `deviceLocalMemoryBytes` is the
+/// device-local heap rather than physical RAM. Reporting it as "total" would be
+/// a lie the readout could not detect later, so iOS returns null and the card
+/// simply does not appear.
+Future<String?> getMeminfo() async {
+  try {
+    if (Platform.isAndroid || Platform.isLinux) {
+      return await File('/proc/meminfo').readAsString();
+    }
+  } catch (_) {
+    // A vendor /proc mount can refuse, and a readout is not worth a crash.
+  }
+  return null;
+}

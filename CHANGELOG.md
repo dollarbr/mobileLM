@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: memória do aparelho na tela de Modelos, ao vivo
+
+Um card na tela de Modelos mostra quanto o telefone pode entregar agora, e
+quantos pesos estão caindo em disco enquanto isso. Fica ali, e não em
+Configurações, porque é a tela onde um modelo é baixado e onde um modelo é
+carregado — os dois momentos em que a memória decide o resultado. A escada de
+aceleração pergunta ao probe quantas camadas cabem, e um aparelho 400 MB mais
+curto responde diferente de um que não está.
+
+**`MemAvailable`, não `MemFree`, e no aparelho de teste isso muda a resposta:**
+
+| A72, `/proc/meminfo` real | lido como "livre" |
+|---|---|
+| `MemFree: 641.596 kB` | **12,8%** → "modelo grande vai falhar" |
+| `MemAvailable: 2.430.788 kB` | **48,5%** → folgado |
+
+`MemFree` exclui cache reclamável, então num telefone ocioso lê baixo com
+memória de sobra. Usá-lo faria o card avisar que um modelo não carrega num
+aparelho com 2,4 GB disponíveis — aviso falso, que é pior do que nenhum,
+porque o usuário troca de modelo à toa.
+
+A barra é `MemTotal - MemAvailable`, que é o que o low-memory killer do próprio
+Android raciocina, e o limiar de 15% é onde um modelo de 1-2 GB deixa de caber
+e a carga **falha** em vez de ficar lenta. Um aviso em 15% ainda dá tempo de
+escolher um modelo menor, que é a única remédio nesse ponto.
+
+O poll liga e desliga com o que está acontecendo, não fica rodando. E ele mora
+no `State` do widget, não no `build`: iniciar timer de dentro de `build` é o
+mesmo erro do `setState() during build` que o `ChatController.onInit` causava,
+só que falha mais quieto — vaza um timer por rebuild em vez de lançar.
+
+A aritmética é pura e testada (17 testes) pelo mesmo motivo de
+`acceleration.dart` ser pura: as três afirmações que podem estar erradas em
+silêncio — legível, apertado, qual fração — ficam fora do alcance de um
+aparelho. iOS e web não mostram o card, porque não têm RAM física para relatar.
+
+### fix: as ações do card de benchmark estouravam a tela inteira
+
+Três `TextButton` lado a lado numa `Row` sem `Expanded` nem `Wrap`: "Hide the
+local model list", "Show it anyway" e "Keep models anyway". A combinação mais
+longa são três frases numa linha sem nada limitando nenhuma delas, num card no
+meio da lista de modelos — então o overflow horizontal **leva o catálogo
+inteiro**, o mesmo formato de dois outros casos já registrados.
+
+`Wrap` é a correção certa e não só a que não estoura: são alternativas, e
+empilhá-las diz isso de um jeito que três botões deitados não dizem.
+
+O teste fixa o caso a 360 dp com texto a 2×, mais estreito que os ~393 dp do
+A72, e o último dos cinco **prova que o harness é hostil**: ele afirma que a
+`Row` estoura. Se ele um dia passar, as larguras deixaram de ser hostis e os
+outros três deixaram de provar nada.
+
+
 ## [0.5.1+2008] - 2026-09-30
 
 Patch. A 0.5.0 entregou o pinning e o benchmark; a 0.5.1 conserta a coisa que a

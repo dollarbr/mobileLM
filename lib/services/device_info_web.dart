@@ -8,3 +8,9 @@ Future<Map<String, dynamic>> getDeviceInfo() async {
     'socHardware': '',
   };
 }
+
+/// Web has no memory to report, so there is no `/proc/meminfo` to hand over.
+///
+/// Null rather than a zeroed string: `readMeminfo('')` is already "nothing to
+/// read", and a fabricated total would show a bar that means nothing.
+Future<String?> getMeminfo() async => null;

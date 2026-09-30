@@ -10,6 +10,8 @@ import '../core/colors.dart';
 import '../models/ai_model.dart';
 import '../services/cpu_self_test.dart';
 import '../services/cpu_self_test_service.dart';
+import '../services/device_info_service.dart';
+import '../services/memory_readout.dart';
 import '../services/download_service.dart';
 import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
@@ -75,6 +77,18 @@ class ModelView extends GetView<ModelController> {
                   _buildImportingProgress(context),
                   _buildEncoderMenu(context),
                   _buildCpuSelfTestCard(context),
+                  _DeviceLoadCard(
+                    controller: controller,
+                    // Busy = something that can move the numbers. Reading the
+                    // observables here is what makes the whole card rebuild
+                    // when a download starts or a load starts.
+                    busy: controller.isImporting.value ||
+                        controller.activeDownloads.isNotEmpty ||
+                        Get.find<InferenceService>()
+                                .modelLoadProgress
+                                .value >
+                            0,
+                  ),
                   const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -435,7 +449,17 @@ class ModelView extends GetView<ModelController> {
         // measurement.
         if (suggestsCloud && !ignored) ...[
           const SizedBox(height: 4),
-          Row(
+          // Wrap, not Row. These are three actions, and the longest
+          // combination — "Local list hidden" + "Show it anyway" + "Keep
+          // models anyway" — is three English phrases on one line with nothing
+          // bounding any of them. A Row of unbounded children overflows
+          // horizontally the moment the screen narrows or the text scale goes
+          // up, and this card sits on the Models screen, so the overflow takes
+          // the catalogue with it. Wrapping onto a second line is also the
+          // better read: they are alternatives, and stacking them says so in a
+          // way that three buttons abreast does not.
+          Wrap(
+            spacing: 2,
             children: [
               TextButton(
                 onPressed: () => controller.setLocalCatalogueHidden(true),
@@ -3197,7 +3221,7 @@ class ModelView extends GetView<ModelController> {
     return Obx(() {
       final percent = dp.progress.value * 100;
       final totalLabel = dp.totalBytes.value > 0
-          ? DownloadService.formatWholeMb(dp.totalBytes.value)
+          ? formatWholeMb(dp.totalBytes.value)
           : (totalFallback ?? '--');
       final remaining = dp.totalBytes.value <= 0
           ? 0
@@ -4085,5 +4109,181 @@ class _VisionToggle extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// RAM right now, and how many weights are landing on this phone.
+///
+/// Asked for, and the reason it belongs on the Models screen rather than in
+/// Settings is that this is where a model gets downloaded and where a model
+/// gets loaded. Both are the moments memory decides the outcome — the ladder
+/// asks the probe how many layers fit, and a phone 400 MB short answers
+/// differently from one that is not — so a number parked in a settings submenu
+/// is a number nobody looks at in time.
+///
+/// Statefulness here is for one reason: the memory poll has to be started and
+/// stopped, and a `build` must not have side effects. Starting a timer from
+/// `build` is the same mistake as the `setState() during build` that
+/// `ChatController.onInit` used to cause — it just fails quieter, leaking a
+/// timer per rebuild instead of throwing. So the widget reconciles the watch
+/// after the frame, from `didUpdateWidget` and from the first build.
+///
+/// The bar is `MemTotal - MemAvailable`, which is what Android's own low-memory
+/// killer reasons about. `MemFree` is used nowhere: it excludes reclaimable
+/// cache and reads low on a phone while plenty is actually available, which
+/// makes it useless for predicting whether a load will fail.
+class _DeviceLoadCard extends StatefulWidget {
+  const _DeviceLoadCard({required this.controller, required this.busy, super.key});
+
+  /// The download map is the only controller state this card reads reactively,
+  /// and it lives on the controller, so the controller comes along. A top-level
+  /// widget cannot see the view's `controller` field, and reaching for a global
+  /// `Get.find` would hide the dependency instead of passing it.
+  final ModelController controller;
+
+  /// Whether anything is happening that can move the numbers. Owned by the
+  /// parent so the decision of *what counts as busy* is visible where the
+  /// sources of busy-ness are.
+  final bool busy;
+
+  @override
+  State<_DeviceLoadCard> createState() => _DeviceLoadCardState();
+}
+
+class _DeviceLoadCardState extends State<_DeviceLoadCard> {
+  /// What the service is currently doing, so a rebuild that changes nothing
+  /// does not cancel and restart a two-second timer.
+  bool _watching = false;
+
+  void _sync(bool busy) {
+    if (busy == _watching) return;
+    _watching = busy;
+    // The service owns the decision (accelerator facts live in the service,
+    // never in the UI). This only reports the state it should watch, and does
+    // it after the frame so no build ever starts a timer.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (Get.isRegistered<DeviceInfoService>()) {
+        Get.find<DeviceInfoService>().watchMemory(on: busy);
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _sync(widget.busy);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DeviceLoadCard old) {
+    super.didUpdateWidget(old);
+    _sync(widget.busy);
+  }
+
+  @override
+  void dispose() {
+    // A screen that goes away must not leave a timer polling /proc for a card
+    // nobody is looking at.
+    if (_watching && Get.isRegistered<DeviceInfoService>()) {
+      Get.find<DeviceInfoService>().watchMemory(on: false);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final info = Get.find<DeviceInfoService>();
+      // The service hands over bytes; what they mean is decided in
+      // `memory_readout.dart`, which is pure and tested. Doing the arithmetic
+      // here instead would put the three claims that can be silently wrong —
+      // readable, tight, what fraction — outside the reach of a test.
+      final m = info.memory.value;
+
+      // Nothing readable here (web, iOS, or a failed read): no card. A bar at
+      // 0% would read as "the phone is out of memory", which is a different
+      // claim, and a worse one to make up.
+      if (!memoryIsReadable(m)) return const SizedBox.shrink();
+
+      final total = m.totalBytes;
+      final free = m.availableBytes;
+      final active = widget.controller.activeDownloads.length;
+      final accent = Theme.of(context).colorScheme.primary;
+      final tight = isMemoryTight(m);
+      final hint = Theme.of(context).hintColor;
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Material(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest
+              .withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.memory_rounded,
+                        size: 18, color: tight ? AppColors.warning : accent),
+                    const SizedBox(width: 8),
+                    Text('Memory',
+                        style: GoogleFonts.inter(
+                            fontSize: 14, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    // The reason a person watches this: enough left for the
+                    // model they are about to pick, not a percentage for its
+                    // own sake.
+                    Text(
+                      '${formatWholeMb(free)} free'
+                      ' of ${formatWholeMb(total)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: tight ? AppColors.warning : hint,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 9),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: memoryUsedFraction(m),
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: tight ? AppColors.warning : AppColors.secondary,
+                    minHeight: 5,
+                  ),
+                ),
+                if (tight) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Low memory — a large model will fail to load, not run slowly.',
+                    style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.warning),
+                  ),
+                ],
+                if (active > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    active == 1
+                        ? '1 download in progress · its own bar is on its card'
+                        : '$active downloads in progress · each own bar is on '
+                            'its card',
+                    style: GoogleFonts.inter(fontSize: 11.5, color: hint),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    });
   }
 }

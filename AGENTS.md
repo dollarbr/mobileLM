@@ -513,6 +513,76 @@ O que faria a frase "isto faz X, que antes não existia" sair verdadeira: hoje
 não há como saber qual backend o LiteRT deveria usar neste aparelho. Com o
 micro-benchmark, há — e ele é por aparelho e por modelo, não por tabela.
 
+## A memória mostrada é `MemAvailable`, e no A72 isso é 4×
+
+O card de memória na tela de Modelos mostra o que o telefone pode entregar
+agora. A escolha de `MemAvailable` em vez de `MemFree` não é preferência de
+estilo — no aparelho de teste ela muda a resposta:
+
+| | A72, `/proc/meminfo` real | lido como "livre" |
+|---|---|---|
+| `MemFree` | 641.596 kB | **12,8%** → "modelo grande vai falhar" |
+| `MemAvailable` | 2.430.788 kB | **48,5%** → folgado |
+
+`MemFree` exclui cache reclamável, então num telefone ocioso ele lê baixo com
+memória de sobra. Usá-lo faria o card avisar que um modelo não carrega num
+aparelho com 2,4 GB disponíveis — um aviso falso, que é pior do que nenhum,
+porque o usuário troca de modelo à toa. A barra é `MemTotal - MemAvailable`,
+que é o que o low-memory killer do próprio Android raciocina; o limiar de
+**15%** é onde um modelo de 1-2 GB deixa de caber e a carga falha de vez, em
+vez de ficar lenta.
+
+A aritmética é pura e testada em `lib/services/memory_readout.dart` (17 testes,
+`test/memory_readout_test.dart`), pelo mesmo motivo de `acceleration.dart` ser
+pura: as três afirmações que podem estar erradas em silêncio — legível, apertado,
+qual fração — ficam fora do alcance de um aparelho. O serviço só busca o texto;
+`getMeminfo()` devolve `/proc/meminfo` **cru** e o parser faz o resto. Uma
+versão anterior devolvia bytes já parseados e o serviço re-serializava para o
+parser ler de novo — um passo inútil no meio, no caminho quente de um timer de
+2 s.
+
+iOS e web **não têm o card**: não há `/proc`, e o `deviceLocalMemoryBytes` do
+plugin é o heap local do aparelho, não RAM física. Reportar como "total" seria
+uma mentira que o card não conseguiria detectar depois.
+
+O poll liga e desliga com o que está acontecendo, não fica rodando: é um
+leitor para assistir a uma carga, não um painel. E ele mora no `State` do
+widget, não no `build` — iniciar timer de dentro de `build` é o mesmo erro do
+`setState() during build`, só que falha mais quieto: vaza um timer por rebuild
+em vez de lançar.
+
+## O card do benchmark: `Wrap`, e por que o `Row` estourava
+
+As três ações do veredito ficavam lado a lado numa `Row` sem `Expanded` nem
+`Wrap`: "Hide the local model list", "Show it anyway" e "Keep models anyway".
+A combinação mais longa são três frases em inglês numa linha, sem nada
+limitando nenhuma delas, num card que fica no meio da lista de modelos — então
+o overflow horizontal **leva o catálogo inteiro**, o mesmo formato dos outros
+dois casos já registrados acima.
+
+`Wrap` é a correção certa e não só a que não estoura: são alternativas, e
+empilhá-las diz isso de um jeito que três botões deitados não dizem.
+
+`test/benchmark_card_layout_test.dart` fixa o caso a **360 dp com texto a 2×**,
+mais estreito que os ~393 dp do A72, e o último teste é o que **prova que o
+harness é hostil o bastante**: ele afirma que a `Row` *estoura*. Se ele um dia
+passar, as larguras deixaram de ser hostis e os outros três testes deixaram de
+provar nada.
+
+Duas armadilhas do próprio teste, que custaram um run cada e valem para
+qualquer teste de layout aqui:
+
+- **`ListView` é lazy.** Com uma dúzia de linhas antes do card ele nunca é
+  construído, toda asserção passa no vazio e o teste do `Row` falha porque nada
+  renderizou. Card no topo — que é a ordem real da tela.
+- **Escala de texto vai pelo `platformDispatcher`, não por um `MediaQuery` na
+  mão.** Um `MediaQueryData(textScaler: ...)` novo zera todos os outros campos,
+  tamanho incluído, e a subárvore leia contra uma viewport de tamanho zero. O
+  sintoma é "os botões sumiram". E `textScaleFactorTestValue` conflita com os
+  overrides de `tester.view` usados para o tamanho, deixando a árvore
+  não-construída. O caminho que funciona é `MaterialApp(builder:)` com
+  `MediaQuery.of(context).copyWith(...)`.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
