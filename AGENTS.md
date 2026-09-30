@@ -768,6 +768,104 @@ CPU — "o rampa do governor é medido em segundos de carga, não em tokens". A
 medida por request isolado que eu comecei a usar está errada por construção, e
 vale mais estar escrito aqui do que refazido.
 
+## Decision models (Tev1, Bespoke-Nimble) — o que é possível e o que não é
+
+Não são modelos de chat. São classificadores fine-tuned para emitirem **uma
+letra**, com uma interface de decisão: um system instruction, um `state`, uma
+`question` e 2–24 opções.
+
+**A análise de Laya e OpenJev não se aplica a eles, e vale dizer por quê** —
+porque "mesma categoria" costuma significar "mesmo motivo para estar de fora", e
+aqui não é. O que excluía Laya era específico: `general.architecture = "ggmlc"`,
+fora dos nomes que o llama.cpp vendorizado conhece, e **zero** tensores `cls.*` —
+a cabeça existe mas está em `ggmlc.graph_spec`, estruturalmente incompatível com
+o `mul_mat` que `llama-graph.cpp` faz. OpenJev era 28,6 GB em Q8_0. Tev1 é um
+`qwen35` comum, que emite uma letra como token seguinte. Categoria igual,
+mecanismo completamente diferente, e por isso ele **entra**.
+
+### Tev1-0.8B: funciona, medido no A72
+
+Fine-tune de `Qwen/Qwen3.5-0.8B` (Together AI). Conferido antes de baixar os
+774 MB, lendo o cabeçalho do GGUF por `Range` — `gguf_header.py` no
+`~/.cache/mobilelm-tools/`. A regra do catálogo é conferir a URL antes de
+entrar, e descobrir que a arch não é suportada depois de 774 MB é derrota:
+
+```
+architecture : qwen35          -> LLM_ARCH_QWEN35, existe no vendorizado
+qwen35.block_count 24 | embedding_length 1024 | heads 8 / kv 2
+```
+
+Carregado pela API no Galaxy A72:
+
+```
+POST /v1/models/load {"filename":"tev1-Q8_0.gguf","accept_risk":true}  -> 202
+backend=cpu  gpu_layers=0  gpu=Adreno (TM) 618
+```
+
+`gpu_layers=0` com a GPU presente é a regra de tamanho da 0.5.1 funcionando: 774 MB
+fica abaixo de 1280 MB, então a CPU — que a medição do Edge 60 diz ser 4× mais
+rápida nesse tamanho.
+
+Resposta à interface de decisão, três tickets, `max_tokens=12`, `temperature=0`:
+
+| entrada | esperado | saiu | |
+|---|---|---|---|
+| "checkout devolvendo 500 desde 9h" | B (bug) | **A** | errou |
+| "foi cobrado duas vezes pelo pedido #4417" | A (billing) | **A** | ok |
+| "esqueceu a senha e não entra na conta" | C (account) | **C** | ok |
+
+**1,1 s de primeiro token, 10,8–11,0 tok/s de decode**, com os núcleos no piso —
+o mesmo 652 MHz em que o SmolLM2 135M fazia 4,8 tok/s. A saída é sempre
+`<think>\n\n</think>\n\n<LETRA>`: um bloco de pensamento **vazio**, quatro
+tokens jogados fora, e a letra. O README pede `enable_thinking: false` e o app
+não envia; com o bloco vazio é inofensivo, mas são 4 tokens numa resposta que
+cabe em 1.
+
+O erro no 500 é do modelo, não da integração: um classificador de 0.8B
+experimental. O README avisa que o modelo pode estar errado e que o
+calibramento não foi avaliado.
+
+### Bespoke-Nimble-9B: não, e não por falta de teste
+
+`provenance.json` diz `artifact_type: "PEFT LoRA adapter"`, `peft_type: LORA`,
+r=16, 12 módulos alvo, sobre `Qwen/Qwen3.5-9B` numa revisão pinada. O repositório
+tem **165,2 MB de pesos** — é o adaptador, não um modelo. Para rodar é preciso
+mesclar o adaptador na base, e a base em Q4_K_M são ~5,5 GB antes de qualquer
+cache.
+
+O A72 tem 5,6 GB. A escada recusaria, com razão. O Edge 60 (até 12 GB) caberia,
+mas produzir isso é trabalho de mesa — baixar a base, mesclar, quantizar — e o
+app não tem suporte a adaptador: `loadModel` recebe um caminho de GGUF único.
+Não é entrada de catálogo; no máximo é "importar um GGUF já mesclado", e mesmo
+assim são 5,5 GB.
+
+### O que falta para o Tev1 ser usável de verdade
+
+O `/v1/classify` do app depende de `cls.output.weight` — a cabeça de encoder —
+que um modelo generativo não tem. Ele não serve o Tev1, e por isso afeature é uma
+**superfície de decisão**, não uma entrada de catálogo:
+
+1. montar o prompt (system instruction + `state`/`question`/opções),
+2. mandar `temperature: 0`, `max_tokens: 12` e o pensamento desligado,
+3. mapear a letra de volta para a etiqueta da opção,
+4. **e não inventar confiança.** O Tev1 devolve só a letra, então
+   `relevance_score` teria de ser nulo. O exemplo de Ollama do Nimble traz
+   probabilidades, mas elas vêm da camada de serviço do Nimble, não dos pesos —
+   trazê-las para o Tev1 seria fabricar um número.
+
+O caminho certo é estender `/v1/classify` com um caminho generativo, e não criar
+um endpoint novo: o contrato já existe e o `AGENTS.md` diz que o endpoint é o
+contrato.
+
+**Três coisas pendentes de decisão:** a licença do Tev1 diz "being finalized", o
+que impede colocar num app distribuído (não impede um build pessoal); não há Q4,
+só Q8_0 de 774 MB e f16 de 1,4 GB; e o GGUF vem de um repositório de comunidade
+com 0 downloads, então a conversão não foi verificada por terceiros.
+
+**O que a integração não precisou:** o app reconhece sozinho um `.gguf`
+desconhecido que apareça no diretório de modelos — `refreshDownloaded` o registrou
+como entrada 63, com o tamanho certo, sem nenhuma linha de código nova.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
