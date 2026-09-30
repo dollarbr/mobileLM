@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### fix: `stream: true` não fazia streaming
+
+O handler escrevia um chunk por token, via `onToken`, e o cliente recebia
+**uma** chunk e o `[DONE]`, ambos no mesmo instante — 25,86 s de espera e depois
+a resposta inteira. A causa é o buffer do `HttpResponse` do Dart: `write()`
+enfileira e o que vai para o socket sai no `close()`. `bufferOutput` nunca era
+mexido em lugar nenhum do arquivo. `response.bufferOutput = false` antes do
+primeiro `write` resolve; medido depois do conserto, os tokens chegam
+individualmente (8,00 / 8,12 / 8,41 / 8,62 … s).
+
+Importa por dois motivos: um cliente que usa streaming por latência percebida
+não recebia nada mais cedo, e não havia como medir TTFT pelo stream.
+
+### fix: o watchdog de 5 s entre tokens cortava a resposta em uma palavra
+
+O menor modelo do catálogo, **SmolLM2 135M**, respondia com exatamente uma
+palavra, sempre: `Sampled token 1` e 4,6 s depois `Idle timeout — 1 tokens`.
+
+Não era o modelo nem o engine. Os dois núcleos grandes estavam no piso —
+`652.800 Hz` de `2.323.200`, `schedutil`, `loadavg 0.00` — e no piso o segundo
+token leva mais de 5 s.
+
+**5 s parece generoso para "por token", e é.** O que o watchdog tenta distinguir
+é *engine travado* de *engine lento*: um travado não produz token **nunca**, um
+lento produz um a cada 8 s. Cinco segundos não sabe dizer as duas coisas, e
+escolher o lado errado corta a resposta do usuário. Subiu para **30 s** — um
+watchdog existe para pegar travamento, não para impor velocidade, e quem impõe
+velocidade é o `prefillBudget` de 60 s, que conta os tokens como um todo.
+
+Depois do conserto, mesmo aparelho e mesmas condições: **25 tokens**.
+
+### O tok/s que sai daqui depende do clock, e isso muda o protocolo
+
+| | A72, núcleo no piso | A72, núcleo rimado |
+|---|---|---|
+| SmolLM2 135M, decode | **4,8–5,0 tok/s** | — |
+| TTFT | 8 s | — |
+| LFM2.5 230M (sessão quente) | — | **18,0 tok/s** |
+
+Fator de quase 4× no mesmo aparelho e no mesmo modelo, sem mudança no código —
+só o clock. **Medir com pausas entre pedidos mede o governor, não o modelo**: o
+protocolo é pedidos consecutivos sem pausa e melhor de N, que é a mesma
+conclusão que o benchmark de CPU já carrega.
+
+
 ### feat: o servidor sobe sem modelo, e a gestão de modelo funciona por HTTP
 
 O toggle recusava subir sem modelo ("Load a local GGUF or LiteRT-LM model

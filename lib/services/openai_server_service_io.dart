@@ -1364,6 +1364,23 @@ class OpenAiServerService {
     response.headers.contentType =
         ContentType('text', 'event-stream', charset: 'utf-8');
     response.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+    // **`bufferOutput = false` é o que faz isto ser streaming.**
+    //
+    // O handler já escrevia um chunk por token, via `onToken`, e mesmo assim o
+    // cliente recebia uma chunk só, no fim. Medido: um pedido com
+    // `stream: true` no A72 devolveu **1 chunk e `[DONE]`, ambos aos 25,86 s** —
+    // 25 segundos de espera e depois a resposta inteira, que é o oposto de
+    // streaming.
+    //
+    // A causa é o buffer do `HttpResponse` do Dart: `write()` enfileira, e o
+    // que vai para o socket sai no `close()`. Com `bufferOutput` ligado (o
+    // padrão) os 48 chunks ficavam na fila até o fim. Desligando, cada
+    // `write` vai direto.
+    //
+    // Importa por dois motivos, e o segundo é o que a medicao do catálogo
+    // dependia: um cliente que usa streaming por latência percebida não recebe
+    // nada mais cedo, e **não há como medir TTFT pelo stream** enquanto isso.
+    response.bufferOutput = false;
     final id = 'chatcmpl-${_id()}';
     final created = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     var emitted = false;
@@ -1411,6 +1428,23 @@ class OpenAiServerService {
     response.headers.contentType =
         ContentType('text', 'event-stream', charset: 'utf-8');
     response.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+    // **`bufferOutput = false` é o que faz isto ser streaming.**
+    //
+    // O Handler já escrevia um chunk por token, via `onToken`, e mesmo assim o
+    // cliente recebia uma chunk só, no fim. Medido: um pedido com
+    // `stream: true` no A72 devolveu **1 chunk e `[DONE]`, ambos aos 25,86 s** —
+    // 25 segundos de espera e depois a resposta inteira, que é o oposto de
+    // streaming.
+    //
+    // A causa é o buffer do `HttpResponse` do Dart: `write()` enfileira, e o
+    // que vai para o socket sai no `close()`. Com `bufferOutput` ligado (o
+    // padrão) os 48 chunks ficavam na fila até o fim. Desligando, cada
+    // `write` vai direto.
+    //
+    // Importa por dois motivos, e o segundo é o que a medicao do catálogo
+    // dependia: um cliente que usa streaming por latência percebida não recebe
+    // nada mais cedo, e **não há como medir TTFT pelo stream** enquanto isso.
+    response.bufferOutput = false;
     final id = 'cmpl-${_id()}';
     final created = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     var emitted = false;

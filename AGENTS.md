@@ -694,6 +694,80 @@ assimetria que a seção do micro-benchmark do LiteRT descreve, agora vista de
 um jeito que a API torna reproduzível: `planLiteRtTier` sempre prefere GPU,
 `planAcceleration` mantém GGUF pequeno na CPU.
 
+## `stream: true` não fazia streaming, e o watchdog entre tokens cortava a resposta
+
+Dois defeitos que só apareceram quando a medição do catálogo passou a usar a
+API — e os dois se anunciam como "o modelo é lento", que é a conclusão errada.
+
+### `stream: true` devolvia a resposta inteira no fim
+
+O handler já escrevia um chunk por token, via `onToken`. O cliente recebia
+**uma** chunk e o `[DONE]`, ambos no mesmo instante:
+
+```
+t= 25.86s  data: {"id":"chatcmpl-...","choices":[...]}
+t= 25.86s  data: [DONE]
+```
+
+25 segundos de espera e depois a resposta inteira, que é o oposto de streaming.
+A causa é o buffer do `HttpResponse` do Dart: `write()` enfileira e o que vai
+para o socket sai no `close()`. Com `bufferOutput` no padrão — e ele nunca era
+ mexido em lugar nenhum do arquivo — os chunks ficavam na fila até o fim.
+`response.bufferOutput = false` antes do primeiro `write` resolve, e a medição
+depois do conserto:
+
+```
+t= 8.00  8.12  8.41  8.62  8.82  8.94  9.23  9.34  9.64  9.73   -> 25 tokens
+```
+
+Importa por dois motivos, e o segundo é o que a medição dependia: um cliente
+que usa streaming por latência percebida não recebia nada mais cedo, e **não
+havia como medir TTFT pelo stream** enquanto isso.
+
+### O watchdog de 5 s entre tokens truncava a resposta em 1 token
+
+O menor modelo do catálogo, **SmolLM2 135M**, respondia com exatamente uma
+palavra. Sempre. O log dizia `Sampled token 1` e 4,6 s depois
+`Idle timeout — 1 tokens`.
+
+Não era o modelo nem o engine. Os dois núcleos grandes estavam no **piso**:
+`652.800 Hz` de `2.323.200`, governor `schedutil`, `/proc/loadavg` em `0.00`.
+No piso o segundo token leva mais de 5 s, o watchdog dispara e a geração
+termina.
+
+O número estava errado de um jeito que não se vê no código: **5 s parece
+generoso para "por token", e é.** O que o watchdog tenta distinguir é *engine
+travado* de *engine lento*, e a diferença é que um engine travado não produz
+token **nunca**, enquanto um lento produz um a cada 8 s. Cinco segundos não sabe
+dizer as duas coisas, e escolher o lado errado corta a resposta do usuário.
+Subiu para **30 s**: um watchdog existe para pegar travamento, não para impor
+velocidade. Quem impõe velocidade é o `prefillBudget` de 60 s, que conta os
+tokens como um todo — e se um token leva 25 s neste aparelho, a resposta já foi
+declarada perdida há muito tempo, e aí o que importa é a mensagem de erro, que
+diz para escolher um modelo menor.
+
+Depois do conserto, no mesmo aparelho e nas mesmas condições: **25 tokens**.
+
+### O número de tok/s que sai daqui depende do clock, e isso não é detalhe
+
+| | A72, núcleo no piso | A72, núcleo rimado |
+|---|---|---|
+| SmolLM2 135M, decode | **4,8-5,0 tok/s** | — |
+| TTFT | 8 s | — |
+| LFM2.5 230M, medido antes em sessão quente | — | **18,0 tok/s** |
+
+Fator de quase 4× no mesmo aparelho, no mesmo modelo, sem nenhuma alteração no
+código — só o clock. `schedutil` decide frequência pela utilização *por núcleo*,
+e duas threads com uma pausa de alguns segundos entre pedidos não sustentam
+carga o bastante para rimar.
+
+**Consequência para a campanha: medir com pausas entre pedidos mede o governor,
+não o modelo.** O protocolo certo é pedidos **consecutivos sem pausa** e melhor
+de N, que é a mesma conclusão a que o `AGENTS.md` já chega para o benchmark de
+CPU — "o rampa do governor é medido em segundos de carga, não em tokens". A
+medida por request isolado que eu comecei a usar está errada por construção, e
+vale mais estar escrito aqui do que refazido.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no

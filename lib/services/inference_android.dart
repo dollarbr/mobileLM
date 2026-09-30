@@ -711,6 +711,33 @@ class InferenceEngine {
     final prefillBudget = Duration(seconds: 60 + 240 * mediaCount);
     final hardBudget = Duration(seconds: 180 + 240 * mediaCount);
 
+    // O watchdog entre tokens era de 5 s, e ele **truncava a resposta** num
+    // aparelho lento em vez de proteger contra um engine travado.
+    //
+    // Medido no Galaxy A72, que é o aparelho de teste: um SmolLM2 135M — o
+    // menor modelo do catálogo — respondia com **exatamente 1 token**, sempre.
+    // O log dizia `Sampled token 1` e quatro segundos e meio depois
+    // `Idle timeout — 1 tokens`. Não era o modelo nem o engine: os dois núcleos
+    // grandes estavam no piso, `652.800 Hz` de `2.323.200`, com `schedutil` e
+    // carga 0,00 — o estado que o `AGENTS.md` já descreve para este aparelho.
+    // No piso, o segundo token leva mais de 5 s, o watchdog dispara e a
+    // geração termina com uma palavra.
+    //
+    // O número estava errado de uma forma que não se vê no código: 5 s parece
+    // generoso para "por token", e é. O que ele tenta distinguir é *engine
+    // travado* de *engine lento*, e a diferença é que um engine travado não
+    // produz token **nunca**, enquanto um lento produz um a cada 8 s. Cinco
+    // segundos não sabe dizer as duas coisas, e escolher o lado errado corta a
+    // resposta do usuário.
+    //
+    // O valor é generoso de propósito: um watchdog existe para pegar um travamento,
+    // não para impor velocidade. Quem impõe velocidade é o orçamento de
+    // prefill acima, que é de 60 s e conta os tokens como um todo. Se um token
+    // individual leva 25 s neste aparelho, a resposta inteira já foi declarada
+    // perdida pelo `prefillBudget` há muito tempo — e aí o que importa é a
+    // mensagem de erro, que diz para escolher um modelo menor.
+    final kInterTokenIdleTimeout = Duration(seconds: 30);
+
     final completer = Completer<String>();
     final buffer = StringBuffer();
     bool completed = false;
@@ -784,7 +811,7 @@ class InferenceEngine {
         tokenCount++;
         onToken?.call(clean);
         _idleTimer?.cancel();
-        _idleTimer = Timer(const Duration(seconds: 5), () {
+        _idleTimer = Timer(kInterTokenIdleTimeout, () {
           print('[Inference] Idle timeout — $tokenCount tokens');
           finish(buffer.toString());
         });
