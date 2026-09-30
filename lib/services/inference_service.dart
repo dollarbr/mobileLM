@@ -280,6 +280,18 @@ class InferenceService extends GetxService {
     _sessionNativeRuntime = '';
   }
 
+  /// [temperatureOverride] and [maxTokensOverride] are for callers that are not
+  /// a conversation.
+  ///
+  /// A decision model (`/v1/classify` with a generative model) needs both, and
+  /// neither can come from Settings. Temperature 0 is what makes a decision
+  /// reproducible — the same ticket has to classify the same way every time, and
+  /// at the app's default 0.30 the same prompt produced different letters on
+  /// different runs. A tight token budget is what stops a model that was asked
+  /// for one letter from writing a paragraph, and from spending twenty seconds
+  /// doing it.
+  ///
+  /// `null` means "use the user's setting", which is every existing caller.
   Future<String> generate({
     required String prompt,
     String? systemPrompt,
@@ -287,6 +299,8 @@ class InferenceService extends GetxService {
     String? imagePath,
     String? audioPath,
     void Function(String token)? onToken,
+    double? temperatureOverride,
+    int? maxTokensOverride,
   }) async {
     if (!supportsLocalInference || _engine == null || !isModelLoaded.value) {
       return 'ERROR: No model loaded. Go to Models tab to download and load one.';
@@ -324,17 +338,22 @@ class InferenceService extends GetxService {
     }
 
     try {
-      final temperature = _hive.getSetting<double>(
-            AppConstants.keyTemperature,
-            defaultValue: AppConstants.defaultTemperature,
-          ) ??
-          AppConstants.defaultTemperature;
+      // The override wins over the stored value, and the stored value wins over
+      // the default — that order is what keeps a conversation's behaviour
+      // untouched when nothing passes an override.
+      final temperature = temperatureOverride ??
+          _hive.getSetting<double>(
+                AppConstants.keyTemperature,
+                defaultValue: AppConstants.defaultTemperature,
+              ) ??
+              AppConstants.defaultTemperature;
 
-      final maxTokens = _hive.getSetting<int>(
-            AppConstants.keyMaxTokens,
-            defaultValue: AppConstants.defaultMaxTokens,
-          ) ??
-          AppConstants.defaultMaxTokens;
+      final maxTokens = maxTokensOverride ??
+          _hive.getSetting<int>(
+                AppConstants.keyMaxTokens,
+                defaultValue: AppConstants.defaultMaxTokens,
+              ) ??
+              AppConstants.defaultMaxTokens;
 
       final result = await _engine!.generate(
         prompt: prompt,

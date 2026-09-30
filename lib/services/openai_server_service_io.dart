@@ -14,6 +14,7 @@ import '../core/constants.dart';
 import '../models/ai_model.dart';
 import '../utils/logistic.dart';
 import '../utils/server_auth.dart';
+import 'decision_model.dart';
 import 'encoder_settings_service.dart';
 import 'inference_service.dart';
 
@@ -1006,6 +1007,177 @@ class OpenAiServerService {
         .toList();
   }
 
+  /// How long a decision may take before the answer is treated as lost.
+  ///
+  /// Generous, because a phone whose cores are at the floor takes seconds per
+  /// token — measured 8,2 s for a 135M's first token — and short enough that a
+  /// dropped completion event costs one request instead of the endpoint.
+  static const Duration kDecisionTimeout = Duration(seconds: 60);
+
+  /// `/v1/classify` for a **decision model**: a plain language model that
+  /// answers with one letter.
+  ///
+  /// The contract is the same endpoint and deliberately a different body, because
+  /// the caller wants one thing — a class — and how the model gets there is the
+  /// app's business, not the caller's.
+  ///
+  /// **There is no score, and that is the honest answer.** A classifier with a
+  /// head produces a logit per class. A decision model produces a letter and
+  /// nothing else, so `relevance_score` is null and every entry in `scores` is
+  /// null. Bespoke-Nimble is served with per-class probabilities in Ollama, but
+  /// those come from that serving layer's own bookkeeping, not from the weights
+  /// — putting them here would be a number invented to fill a field, and a
+  /// client that rounds it into a percentage would be displaying a fiction.
+  ///
+  /// A model that answers with prose instead of a letter is a **failure, not a
+  /// fallback**. Guessing — taking the first letter of a sentence, defaulting to
+  /// the first option — is how a decision model becomes a coin flip that looks
+  /// stable in every metric, and the caller would have no way to tell.
+  Future<void> _handleClassifyGenerative(
+      HttpRequest request, Map<String, dynamic> body) async {
+    final inference = Get.find<InferenceService>();
+    final modelError = _localModelError(inference);
+    if (modelError != null) {
+      await _json(request, {'error': modelError},
+          status: HttpStatus.badRequest);
+      return;
+    }
+    if (_busy) {
+      await _json(request, {'error': 'Model is busy'}, status: 429);
+      return;
+    }
+
+    // `input` and `state` are the same thing, and accepting both is not
+    // generosity: the Bespoke payload calls it `state`, the OpenAI-ish shape
+    // calls it `input`, and a caller porting between them should not have to
+    // know which one this app picked.
+    final state = ((body['input'] ?? body['state']) as String?)?.trim() ?? '';
+    if (state.isEmpty) {
+      await _json(request, {
+        'error': "Missing 'input' (or 'state'): the text to classify.",
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    final choices = _decisionChoices(body);
+    if (choices == null) {
+      await _json(request, {
+        'error': "Missing 'choices': an object of letter to label, at least "
+            'two, at most twenty-four.',
+        'example': {'A': 'billing', 'B': 'bug', 'C': 'account'},
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    final task = DecisionTask(
+      state: state,
+      question: (body['question'] as String?) ?? '',
+      choices: choices,
+      instruction: (body['instruction'] as String?)?.isNotEmpty == true
+          ? body['instruction'] as String
+          : kDefaultDecisionInstruction,
+    );
+
+    _busy = true;
+    String raw;
+    try {
+      raw = await inference
+          .generate(
+            prompt: task.buildUserMessage(),
+            systemPrompt: task.buildSystemMessage(),
+            // **A decision is one letter, and the budget is sized for exactly
+            // that** — the empty `<think>` block plus the letter is about five
+            // tokens. It started at 24, and that was wrong twice over on the
+            // A72: a model that ignored the instruction and wrote prose could
+            // burn the whole budget, and it measured **8–9 s per token** with
+            // the cores at the floor, so 24 tokens is three minutes of a
+            // request that was never going to be a decision. Eight is enough
+            // for a compliant answer and fails fast on a non-compliant one —
+            // which is the case the caller most needs to hear about.
+            maxTokensOverride: 8,
+            temperatureOverride: 0.0,
+          )
+          // **A decision request must not hang.** Measured: the native loop can
+          // finish cleanly — six tokens, EOS, "Generation loop finished" in the
+          // log — and the Dart stream never delivers `onDone`, so `generate()`
+          // never returns. Without this the request hangs, `finally` never runs,
+          // and `_busy` stays true, so every later request to this endpoint and
+          // to `/v1/chat/completions` answers 429 for the rest of the app's
+          // life. One dropped completion event should not take the API down.
+          //
+          // The budget is generous on purpose: a phone at its floor clock
+          // measured 8,2 s just for the first token of a 135M, and this is a
+          // 0.8B. Sixty seconds is far past any answer worth having, and far
+          // under a client's own patience.
+          .timeout(kDecisionTimeout);
+    } on TimeoutException {
+      await _json(request, {
+        'error': 'The model did not finish the decision in time.',
+        'seconds': kDecisionTimeout.inSeconds,
+        'model': inference.loadedModelName.value,
+        'note': 'The engine may have finished without reporting it. Reload the '
+            'model before retrying — a stuck generation is not recovered by '
+            'waiting.',
+      }, status: HttpStatus.gatewayTimeout);
+      return;
+    } on Object catch (e) {
+      await _json(request, {'error': 'Generation failed: $e'},
+          status: HttpStatus.internalServerError);
+      return;
+    } finally {
+      _busy = false;
+    }
+
+    final answer = parseDecisionAnswer(raw, task.choices);
+    if (answer == null) {
+      await _json(request, {
+        'error': 'The model did not answer with one of the offered options. '
+            'A decision model has to be asked as a decision model — its own '
+            'model card says generic chat may produce prose.',
+        'model': inference.loadedModelName.value,
+        // The raw text, because "it said something else" is not debuggable
+        // without it and a decision model is exactly the case where that
+        // happens.
+        'raw': stripThinking(raw).trim().substring(
+            0, stripThinking(raw).trim().length.clamp(0, 200)),
+        'expected_one_of': task.choices.keys.toList(),
+      }, status: HttpStatus.unprocessableEntity);
+      return;
+    }
+
+    await _json(request, {
+      'object': 'classification',
+      'model': inference.loadedModelName.value,
+      'label': answer.label,
+      'choice': answer.letter,
+      // Null, with the reason, rather than a fabricated number.
+      'relevance_score': null,
+      'scores': {for (final e in task.choices.entries) e.value: null},
+      'why_no_scores':
+          'A decision model returns one letter, not a logit per class. The '
+          'probabilities you may have seen for Bespoke-Nimble come from its '
+          'serving layer, not from the weights.',
+    });
+  }
+
+  /// The options, as an ordered letter-to-label map.
+  ///
+  /// Returns null when the request cannot make a decision model answer: fewer
+  /// than two options is not a choice, and the Tev1 card says 2–24. A single
+  /// "option" would produce a model that always agrees, which is a decision
+  /// endpoint that cannot say no.
+  Map<String, String>? _decisionChoices(Map<String, dynamic> body) {
+    final raw = body['choices'] ?? body['options'] ?? body['labels'];
+    if (raw is! Map || raw.length < 2 || raw.length > 24) return null;
+    final out = <String, String>{};
+    raw.forEach((k, v) {
+      final key = '$k'.trim();
+      if (key.isEmpty) return;
+      out[key] = '$v';
+    });
+    return out.length >= 2 ? out : null;
+  }
+
   /// `POST /v1/classify` — this app's own shape, because there is no standard
   /// one. Takes a single `input` and returns one score per class, with the
   /// labels the GGUF carried.
@@ -1015,7 +1187,26 @@ class OpenAiServerService {
     // something malformed, but it is the pre-existing behaviour of every other
     // endpoint here and consistency beats a one-off difference nobody asked for.
     final body = await _readJson(request);
+
+    // Two kinds of model answer this endpoint, and they need different engines.
+    //
+    // A **classifier with a head** carries `cls.output.weight` and scores every
+    // class in one forward pass. That is the path below, and it is the one that
+    // exists.
+    //
+    // A **decision model** (Tev1, Bespoke-Nimble) is a plain language model
+    // fine-tuned to answer with one letter. It has no head, no logit, and no
+    // score — so asking the head path for one is asking for something the file
+    // does not contain. Measured on the A72: Tev1-0.8B loads as `qwen35` and
+    // answers the decision fine, and the head path says "no model loaded".
+    //
+    // Dispatching on the presence of the head is the honest test: it is a fact
+    // about the file, not a setting the user can get wrong.
     final info = await LlamaEncoder.info();
+    if (!info.isClassifier) {
+      await _handleClassifyGenerative(request, body);
+      return;
+    }
     final unavailable = await _encoderUnavailable(info, 'classify');
     if (unavailable != null) {
       await _json(request, {'error': unavailable},

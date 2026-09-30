@@ -866,6 +866,112 @@ com 0 downloads, então a conversão não foi verificada por terceiros.
 desconhecido que apareça no diretório de modelos — `refreshDownloaded` o registrou
 como entrada 63, com o tamanho certo, sem nenhuma linha de código nova.
 
+## O catálogo medido no A72 — seis modelos, e a curva não é de tamanho
+
+Galaxy A72 (SM-A725M, 2×A76 pinados, /e/OS e-4.3), melhor de 3, pedidos
+consecutivos **sem pausa** entre eles. Medido pela API, com streaming.
+
+| modelo | tamanho | backend | layers | TTFT | decode | amostras |
+|---|---|---|---|---|---|---|
+| LFM2.5 230M (Q4_0) | 0,14 GB | cpu | 0 | 0,18 s | **49,3** | 49,3 / 0,3 / 44,7 |
+| LFM2.5 350M (Q4_0) | 0,20 GB | cpu | 0 | 0,34 s | **31,9** | 0,3 / 31,9 / 0,3 |
+| Gemma 3 270M (QAT Q4_0) | 230 MB | cpu | 0 | 0,16 s | **31,1** | 31,1 / 0,2 / 1tok |
+| Tev1 0.8B (Q8_0) | 774 MB | cpu | 0 | 1,10 s | **11,0** | — |
+| SmolLM2 135M (Q4_K_M) | 0,10 GB | cpu | 0 | 8,24 s | **5,1** | 0,2 / 5,1 / 0,2 |
+| Qwen 3 0.6B (LiteRT-LM) | 586 MB | **gpu** | 1 | 3,00 s | **3,8** | 3,8 / 3,8 / 3,8 / 3,8 |
+
+Quatro coisas saem daqui que nenhuma delas diz sozinha:
+
+**1. A ordem por tamanho é falsa.** O **SmolLM2 135M é o mais lento de todos**,
+apesar de ser o menor arquivo, com 8,24 s de primeiro token — e a medição anterior
+do LFM2.5 230M em sessão quente era 18,0 tok/s. O 135M é `Q4_K_M` e os outros são
+`Q4_0`; a hipótese honesta é que a diferença é a quantização, não o tamanho, e
+**não foi testada**. O que é medido é que "escolha o menor modelo" é advice
+errado neste aparelho: o menor é o mais lento.
+
+**2. A GPU é 8× mais lenta que a CPU neste aparelho.** O único modelo que foi
+para a GPU é o LiteRT, e ele faz **3,8 tok/s contra 31–49** dos GGUFs. Isso
+responde a pergunta que estava aberta desde o começo desta linha de trabalho —
+"acredito que GPU seja melhor, mas vai saber". A resposta medida é: para este
+telefone e estes modelos, não. E a assimetria é de arquitetura, não de aparelho:
+`planLiteRtTier` **sempre** prefere GPU e nunca mediu, enquanto `planAcceleration`
+agora manda GGUF pequeno para a CPU.
+
+**3. As amostras da CPU variam 150×; as da GPU, não.** O LFM2.5 230M deu 49,3,
+0,3 e 44,7 em três pedidos seguidos; o LiteRT deu 3,8 quatro vezes. É o governor
+de novo: `schedutil` rimado no Sustained load, e a GPU não passa por isso. Por
+isso o número da GPU é reprodutível e o da CPU precisa de melhor-de-N — e por
+isso uma tabela de tok/s tirada de um request só é um número sobre o clock
+daquele instante.
+
+**4. Todos os GGUFs foram para a CPU com `layers=0`, com a GPU presente.** A
+regra de tamanho da 0.5.1 se sustenta em 774 MB, o maior deles, sem exceção.
+
+### Dois erros de medição meus, que custaram uma rodada cada
+
+**O script exigia dois tokens para ter taxa de decode, e o LFM2.5 350M
+respondeu `3`** — a resposta certa para "quantos andares o Hotel Eiffel tem", em
+um token. O script/reportou "nenhuma geração respondeu". Um número de tokens não
+é sinal de vida de um stream; o prompt agora exige duas frases.
+
+**O `adb install` imprimiu só a linha do `pm command`** e eu li como se tivesse
+instalado. O APK no aparelho era de 10:00 e a mudança era de 11:17, e foi por isso
+que o watchdog de 30 s "não funcionava" — nunca esteve instalado. Agora o
+resultado é conferido por palavra e o `lastUpdateTime` é lido.
+
+## A superfície de decisão: `/v1/classify` agora aceita decision models
+
+`decision_model.dart` é puro e tem 28 testes. O despacho é por um **fato sobre o
+arquivo**, não por configuração: se o modelo tem `cls.output.weight` o caminho
+antigo de cabeça serve; se não tem, o caminho generativo.
+
+Medido no A72 com Tev1-0.8B, `/no_think` ativo, temperatura 0, orçamento de 8
+tokens:
+
+| entrada | letra | etiqueta | |
+|---|---|---|---|
+| "checkout devolvendo 500 desde 9h" | B | bug | 2,2 s |
+| "cobrado duas vezes pelo #4417" | A | billing | 2,0 s |
+| "esqueceu a senha e não entra" | C | account | 50,7 s |
+| "assinatura mais cara que o anunciado" | A | billing | 2,1 s |
+| "app trava ao abrir a câmera" | B | bug | 51,1 s |
+
+**5 de 5.** Todos com `relevance_score: null`.
+
+Três decisões que os números impuseram:
+
+**`relevance_score` é null e `scores` mapeia tudo para null.** Um classificador
+com cabeça produz um logit por classe. Um decision model devolve uma letra, e só.
+O Bespoke-Nimble é servido com probabilidades no Ollama, mas elas vêm da camada
+de serviço dele, não dos pesos — colocá-las aqui seria inventar um número, e um
+cliente que arredonda para porcentagem exibiria uma ficção. A resposta traz
+`why_no_scores` dizendo isso.
+
+**O orçamento é 8 tokens, não 24.** Uma letra mais o bloco `<think>` vazio são
+uns cinco. Com 24, um modelo que ignorou a instrução e escreveu prosa queimava o
+orçamento inteiro, e no A72 isso são **8–9 s por token** com o núcleo no piso — 24
+tokens são três minutos de um request que nunca seria uma decisão. Oito dá conta
+da resposta compatível e falha rápido na incompatível, que é o caso que o chamador
+mais precisa ouvir.
+
+**A decisão tem prazo, e sem ele um evento perdido derrubava a API.** O loop
+nativo pode terminar limpo — seis tokens, EOS, "Generation loop finished" no log —
+e o stream do Dart nunca entregar `onDone`, então `generate()` não retorna, o
+`finally` não roda e `_busy` fica verdadeiro: **todo request posterior responde
+429 pelo resto da vida do app**. Isso foi medido. O `.timeout(60s)` devolve 504 e
+libera o `_busy`, então um evento de conclusão perdido custa um request em vez
+do endpoint. **A causa raiz não foi corrigida** — o `onDone` perdido é um bug do
+caminho de conclusão do Dart, e ele afeta `/v1/chat/completions` do mesmo jeito;
+está anotado aqui para não ser esquecido.
+
+**Prosa é falha, não fallback.** Pegar a primeira letra de uma frase, ou
+devolver a primeira opção como padrão, é o que transforma um decision model numa
+moeda que parece estável em toda métrica. O `parseDecisionAnswer` devolve null,
+a resposta sai 422 com o texto bruto e as opções esperadas. O `<think>` é removido
+antes, porque uma letra dentro da deliberação do modelo não é a resposta dele — o
+Tev1 escreve `<think>\n\n</think>\n\nB` e um parser de primeira letra devolve
+`t`.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no

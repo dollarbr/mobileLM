@@ -4,6 +4,70 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: `/v1/classify` aceita decision models, com a resposta honesta
+
+Tev1-0.8B e Bespoke-Nimble são classificadores fine-tuned para emitirem **uma
+letra**. O caminho antigo de `/v1/classify` exige `cls.output.weight` — a cabeça
+de encoder — que um modelo generativo não tem, então ele respondia "no model
+loaded" para um modelo que estava carregado e responderia bem.
+
+O despacho é por um **fato sobre o arquivo**, não por configuração: com a
+cabeça, o caminho antigo; sem ela, o generativo. `decision_model.dart` é puro e
+tem 28 testes.
+
+Medido no A72 com Tev1-0.8B: **5 de 5** decisões corretas (500 no checkout →
+bug, cobrança dupla → billing, senha esquecida → account, preço → billing,
+crash na câmera → bug), 2,0–2,2 s quando o contexto está livre.
+
+**`relevance_score` é `null`, e `scores` mapeia tudo para `null`.** Um
+classificador com cabeça produz um logit por classe; um decision model devolve
+uma letra. As probabilidades do Nimble vêm da camada de serviço dele, não dos
+pesos — trazê-las seria fabricar um número. A resposta traz `why_no_scores`.
+
+**O orçamento é 8 tokens.** Uma letra mais o `<think>` vazio são ~5. Com 24, um
+modelo que escreveu prosa queimava o orçamento inteiro, e no A72 isso são 8–9 s por
+token com o núcleo no piso: 24 tokens seriam três minutos de um request que nunca
+seria uma decisão.
+
+**A decisão tem prazo de 60 s.** O loop nativo pode terminar limpo e o stream do
+Dart não entregar `onDone`; aí `generate()` não retorna, o `finally` não roda e
+`_busy` fica verdadeiro — todo request posterior responde 429 pelo resto da vida
+do app. Medido. O timeout devolve 504 e libera o `_busy`. **A causa raiz não foi
+corrigida**: o `onDone` perdido é bug do caminho de conclusão do Dart e afeta
+`/v1/chat/completions` do mesmo jeito.
+
+**Prosa é falha, não fallback.** O parser devolve null e a resposta sai 422 com
+o texto bruto. Pegar a primeira letra de uma frase, ou devolver a primeira opção
+como padrão, é o que faz um decision model virar uma moeda que parece estável em
+toda métrica. O `<think>` é removido antes, porque uma letra dentro da
+deliberação do modelo não é a resposta dele.
+
+### O catálogo medido no A72
+
+Melhor de 3, pedidos consecutivos sem pausa, via API com streaming.
+
+| modelo | backend | layers | TTFT | decode |
+|---|---|---|---|---|
+| LFM2.5 230M (Q4_0) | cpu | 0 | 0,18 s | **49,3** |
+| LFM2.5 350M (Q4_0) | cpu | 0 | 0,34 s | **31,9** |
+| Gemma 3 270M (QAT Q4_0) | cpu | 0 | 0,16 s | **31,1** |
+| Tev1 0.8B (Q8_0) | cpu | 0 | 1,10 s | **11,0** |
+| SmolLM2 135M (Q4_K_M) | cpu | 0 | 8,24 s | **5,1** |
+| Qwen 3 0.6B (LiteRT-LM) | **gpu** | 1 | 3,00 s | **3,8** |
+
+- **A ordem por tamanho é falsa.** O SmolLM2 135M é o mais lento de todos, com
+  8,24 s de primeiro token, apesar do menor arquivo. "Escolha o menor modelo" é
+  advice errado neste aparelho. É o único `Q4_K_M` da lista e a hipótese é a
+  quantização — **não testada**.
+- **A GPU é 8× mais lenta que a CPU aqui.** O único modelo que foi para a GPU é
+  o LiteRT: 3,8 tok/s contra 31–49. É a resposta medida à pergunta que estava
+  aberta — `planLiteRtTier` sempre prefere GPU e nunca mediu.
+- **As amostras da CPU variam 150×; as da GPU não.** 49,3 / 0,3 / 44,7 para o
+  230M; 3,8 quatro vezes para o LiteRT. `schedutil` no Sustained load.
+- **Todos os GGUFs foram para a CPU com `layers=0`, com a GPU presente** — a
+  regra de tamanho da 0.5.1 se sustenta até 774 MB sem exceção.
+
+
 ### fix: `stream: true` não fazia streaming
 
 O handler escrevia um chunk por token, via `onToken`, e o cliente recebia
