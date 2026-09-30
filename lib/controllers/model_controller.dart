@@ -1322,7 +1322,20 @@ class ModelController extends GetxController {
     }
   }
 
-  Future<void> loadModel(String filename) async {
+  /// Load a model by file name.
+  ///
+  /// [acceptWarnings] is for callers that are not a person: the local API's
+  /// `POST /v1/models/load` cannot answer a dialog, and a `Get.dialog` that
+  /// nobody dismisses leaves the caller waiting forever — or, worse, leaves the
+  /// device with the old model freed and nothing loaded. Measured on the A72:
+  /// the endpoint answered 202, the model was freed, and nothing replaced it.
+  ///
+  /// It skips **only** the two confirmation dialogs, and only because the
+  /// caller said in so many words that it accepts the warning. Every real guard
+  /// still runs and still refuses: the incomplete-file check, the safetensors
+  /// header check, the LiteRT validity check, and the memory check before load.
+  /// Those are why the dialog exists; the dialog is just how a human is asked.
+  Future<void> loadModel(String filename, {bool acceptWarnings = false}) async {
     if (_inference.isLoadingModel.value) {
       Get.snackbar('Model Loading', 'Another model is already loading.',
           snackPosition: SnackPosition.BOTTOM);
@@ -1393,11 +1406,17 @@ class ModelController extends GetxController {
       );
       return;
     }
-    final loadAction = await _confirmModelLoadSafety(
-      filename: filename,
-      fileBytes: fileBytes,
-      isLiteRt: isLiteRt,
-    );
+    final loadAction = acceptWarnings
+        // Straight to "load", not "unload". The caller asked to swap models,
+        // and answering a swap by freeing the old one and loading nothing is
+        // the one outcome nobody wanted — it is what the first version of this
+        // endpoint did, measured.
+        ? _ModelLoadAction.continueLoad
+        : await _confirmModelLoadSafety(
+            filename: filename,
+            fileBytes: fileBytes,
+            isLiteRt: isLiteRt,
+          );
     if (loadAction == _ModelLoadAction.cancel) return;
     if (loadAction == _ModelLoadAction.unload) {
       await unloadModel();
@@ -1411,7 +1430,13 @@ class ModelController extends GetxController {
       contextSize: contextSize,
     );
     if (!hasMemory) return;
-    if (isLiteRt && !await _confirmLiteRtGpuWarning()) return;
+    // Same shape as the dialog above: a warning, and the caller already said it
+    // accepts warnings. The LiteRT NPU path is unproven on this SoC, which is
+    // why the warning exists for a human — but the risk is a crash with a
+    // fallback, not a wrong answer.
+    if (isLiteRt && !acceptWarnings && !await _confirmLiteRtGpuWarning()) {
+      return;
+    }
 
     if (isImageModel(model ??
         AiModel(

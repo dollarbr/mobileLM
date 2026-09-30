@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +11,7 @@ import '../services/app_log_service.dart';
 import '../services/hive_service.dart';
 import '../services/inference_service.dart';
 import '../services/openai_server_service.dart';
+import '../utils/server_auth.dart';
 
 class ServerController extends GetxController {
   final HiveService _hive = Get.find<HiveService>();
@@ -70,9 +70,7 @@ class ServerController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    useApiKey.value =
-        _hive.getSetting<bool>(AppConstants.keyServerUseApiKey) ?? false;
-    apiKey.value = _hive.getSetting<String>(AppConstants.keyServerApiKey) ?? '';
+    _applyAuthDecision();
     serverPort.value =
         _hive.getSetting<int>(AppConstants.keyServerPort) ?? _defaultPort;
 
@@ -86,6 +84,36 @@ class ServerController extends GetxController {
     // again on every rebuild of the examples list.
     ever(inference.loadedModelName, (_) => refreshEncoder());
     refreshEncoder();
+  }
+
+  /// Decide the auth state from storage, and write it back if a key was made.
+  ///
+  /// The rule itself lives in `utils/server_auth.dart` and is pure, because it
+  /// is a migration: get it backwards and the server comes up on every
+  /// interface with no key and nothing reports it. A test can pin the three
+  /// cases; a test cannot pin this method, which is why the decision was moved
+  /// out and only the storage is left here.
+  ///
+  /// Persisting the generated key before the server can start is the load-
+  /// bearing part. A key that exists in memory but not in Hive is a key that
+  /// silently changes on the next cold start, and a client with the old one
+  /// starts getting 401s for no stated reason.
+  void _applyAuthDecision() {
+    final decision = decideServerAuth(
+      storedKey: _hive.getSetting<String>(AppConstants.keyServerApiKey),
+      storedUseKey: _hive.getSetting<bool>(AppConstants.keyServerUseApiKey),
+    );
+    apiKey.value = decision.apiKey;
+    useApiKey.value = decision.requireKey;
+    if (decision.generated) {
+      unawaited(saveSettings());
+      // Logged once, at boot, and deliberately without the key itself. A
+      // support log is the first place someone looks when a client gets 401s,
+      // and a credential in there is a credential on disk somewhere else.
+      Get.find<AppLogService>().info('Server API key generated; the local API '
+          'now requires it. Find it in Settings, or send it as: '
+          '-H "Authorization: Bearer <key>"');
+    }
   }
 
   /// Re-reads the encoder surface of the loaded model.
@@ -217,12 +245,25 @@ class ServerController extends GetxController {
   }
 
   Future<void> generateApiKey() async {
-    final random = Random.secure();
-    final bytes = List<int>.generate(24, (_) => random.nextInt(256));
-    apiKey.value =
-        'aichat_${bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}';
+    // The same generator the boot path uses, so a key made by tapping the
+    // wand and a key made by the migration are indistinguishable in length,
+    // alphabet and entropy. Two key formats in one app is one more thing to
+    // be wrong about later.
+    apiKey.value = generateServerApiKey();
     useApiKey.value = true;
     await saveSettings();
+  }
+
+  /// Roll a new key, invalidating the old one.
+  ///
+  /// Separate from [generateApiKey] only in intent, not in behaviour: this one
+  /// is what a person reaches for after the key has been in a shell history, a
+  /// screenshot, or a chat, and it must turn the requirement back on even if
+  /// they had turned it off.
+  Future<void> regenerateApiKey() async {
+    await generateApiKey();
+    Get.find<AppLogService>()
+        .info('Server API key regenerated; the previous key no longer works.');
   }
 
   Future<void> copyText(String text, String label) async {

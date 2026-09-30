@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: a API local controla os modelos, e a chave passa a ser exigida
+
+`GET /v1/models/local`, `POST /v1/models/{download,load,unload}` — listar,
+baixar, carregar e descarregar por HTTP, com chave.
+
+**Por que isso é feature e não ferramenta.** O `AGENTS.md` exige que um
+modelo só entre no catálogo curado *depois de medido*, e medir significa baixar
+nove modelos, carregar cada um e consultar cada um — cada passo com um diálogo
+que só uma pessoa responde. A campanha inteira é isso repetido nove vezes.
+
+`/v1/models` segue **exatamente** o contrato OpenAI, só o modelo carregado: um
+cliente que encontrasse as 62 entradas do catálogo ali tentaria usá-las todas e
+tomaria 404 na primeira geração.
+
+**A chave de API é gerada e exigida por padrão.** O servidor faz bind em
+`anyIPv4` — todas as interfaces, não só loopback — e sempre esteve alcançável
+pela rede local. Até aqui isso era menor do que parece, porque o pior que um
+chamador sem chave podia fazer era gastar CPU pedindo tokens. Os endpoints de
+gestão de modelo mudam a resposta: `download` escreve gigabytes no aparelho,
+`load` e `unload` mudam o que todo outro cliente da rede está usando, e
+`local` lista o que está no telefone. Um servidor aberto num Wi-Fi de café foi
+de "gasta bateria" para "usa o celular como armazenamento e muda o estado dele",
+e um default de `off` deixa de ser defensável.
+
+- **32 caracteres de um alfabeto de 32** (`a-z2-9`, sem `0`/`O`/`1`/`l`/`I`) =
+  160 bits. O alfabeto existe porque a chave vai parar digitada num header
+  `curl` em outra máquina, e uma chave errada volta como `401` sem dizer qual
+  caractere estava errado.
+- **Comparação em tempo constante**, e o esquema do header em qualquer caixa,
+  porque `bearer` é um nome registrado e o token do scheme não é.
+- **Um install que nunca teve chave ganha uma e passa a exigir.** Um que já
+  tinha e estava **desligado de propósito continua desligado** — reativar por
+  cima seria o app sobrescrevendo uma decisão de segurança tomada conscientemente, e depois não há como distinguir isso de um bug.
+- **Desligar a chave agora pergunta**, com os endpoints nomeados — baixar
+  gigabytes, descarregar o modelo sob os pés de qualquer outro cliente, listar o
+  que está no aparelho, e usar o telefone para inferência. O botão seguro é a
+  ação padrão do diálogo.
+- A regra de migração é pura e tem 20 testes, porque uma regra de migração
+  errada abre o servidor em silêncio e um teste de aparelho não pega isso.
+
+**`load` exige `accept_risk`.** `loadModel` mostra um diálogo de memória;
+ninguém o responde por HTTP, e deixar `loadModel` correr sem decisão **libera
+o modelo antigo e não carrega nada** — foi o que a primeira versão fez, com 202
+e um aparelho sem modelo. O flag pula **só os diálogos**; arquivo incompleto,
+safetensors inválido, LiteRT inválido e memória insuficiente continuam recusando.
+
+**`unload` é recusado, de propósito.** `unloadModel` derruba o servidor junto,
+porque sem isso os endpoints respondem 200 sem nada atrás. Responder antes de
+parar não salva: o socket fecha antes do flush. Carregar **mantém** o servidor
+no ar, então é `load` que troca modelo.
+
+**A resposta vai antes da operação.** `unawaited(loadModel(...))` seguido de
+escrever o 202 prende o isolate do Dart na chamada JNI antes de o socket ter
+algo para enviar. Medido: `000` em toda requisição que disparava operação real,
+enquanto o 409 — que responde antes de fazer qualquer coisa — funcionava.
+
+
 ### feat: memória do aparelho na tela de Modelos, ao vivo
 
 Um card na tela de Modelos mostra quanto o telefone pode entregar agora, e

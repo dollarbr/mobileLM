@@ -583,6 +583,61 @@ qualquer teste de layout aqui:
   não-construída. O caminho que funciona é `MaterialApp(builder:)` com
   `MediaQuery.of(context).copyWith(...)`.
 
+## A API local também controla os modelos — e três coisas que só o aparelho mostrou
+
+`GET /v1/models/local`, `POST /v1/models/{download,load,unload}`. A superfície
+existe porque **medir o catálogo é a parte lenta**: nove modelos para baixar,
+carregar e interrogar, cada um com um diálogo de confirmação que só um humano
+pode responder. Tudo isso vira `curl`.
+
+`/v1/models` continua **exatamente** o contrato OpenAI — só o modelo carregado.
+Um cliente que encontrasse as 62 entradas do catálogo ali tentaria usar todas e
+tomaria 404 na primeira geração.
+
+**Nada bloqueia.** Download de 2 GB são minutos; uma carga no A72 mediu 25 s de
+primeiro token e 60 s de orçamento de prefill. Um request que pendura esse
+tempo é um timeout no cliente, e timeout é indistinguível de queda. Tudo
+responde `202` e se acompanha em `GET /v1/models/local`. **Conflito é recusado,
+nunca enfileirado**: carregar durante uma geração chega ao engine como duas
+coisas ao mesmo tempo e o sintoma é um modelo que responde besteira.
+
+O relatório traz `backend`, que é o **real** — `loadedBackend`, não o tier
+pedido. LiteRT cai NPU → GPU → CPU no nativo, então "pediu GPU" e "rodou na GPU"
+são coisas diferentes, e relatar o pedido seria relatar um desejo.
+
+### `load` exige `accept_risk`, e `unload` é recusado
+
+`loadModel` mostra um diálogo de memória. Ninguém o responde por HTTP, e as duas
+respostas erradas são ruins: deixar o diálogo em pé prende o cliente para sempre,
+e deixar `loadModel` correr sem decisão **libera o modelo antigo e não carrega
+nada** — foi o que a primeira versão fez, respondendo 202 num aparelho que ficou
+sem modelo. Agora `POST /v1/models/load` sem `accept_risk` devolve `409`
+explicando, e com ele pula **só os dois diálogos**; todos os guardas continuam
+rodando e continuam recusando (arquivo incompleto, safetensors inválido, LiteRT
+inválido, memória insuficiente). O flag representa o toque em "Load", que é a
+única coisa que se pedia a uma pessoa.
+
+`unload` é `409` **de propósito**: `ModelController.unloadModel()` chama
+`_stopServerForMissingModel()`, porque sem isso os endpoints continuam
+respondendo 200 sem nada atrás e `capabilities` continua dizendo
+`running: true`. Responder antes de parar não salva — o socket fecha antes do
+flush e o cliente vê `Empty reply from server`, sem código HTTP nenhum, que é
+por que o `curl` daqui reportava `000`. A assimetria é real e intencional:
+**carregar mantém o servidor no ar** (`InferenceService.unloadModel` é o
+primeiro passo de toda carga e não toca no servidor), então é `load` que troca
+modelo — e é nele que a campanha inteira roda.
+
+### A resposta vai antes da operação
+
+Chamar `unawaited(controller.loadModel(...))` e **depois** escrever o 202 prende
+o isolate do Dart — é uma chamada JNI síncrona — antes de o socket ter algo
+para enviar. Medido: `000` em toda requisição que disparava operação real
+(`load` com `accept_risk`, `unload`), enquanto o `409` — que responde e só então
+descobre que o corpo está errado — funcionava. Isso isola a causa: não era o
+POST, nem o forward, nem o servidor; era a ordem. `GET` respondia o tempo todo
+porque nada bloqueava. Agora é resposta, um turno do event loop, e só então a
+operação.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no

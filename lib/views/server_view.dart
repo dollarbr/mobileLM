@@ -188,10 +188,8 @@ class ServerView extends GetView<ServerController> {
               _switchTile(isDark,
                   title: 'Require API key',
                   subtitle: 'Authorization: Bearer <key>',
-                  value: controller.useApiKey.value, onChanged: (v) {
-                controller.useApiKey.value = v;
-                controller.saveSettings();
-              }),
+                  value: controller.useApiKey.value,
+                  onChanged: (v) => _onRequireKeyChanged(context, v)),
               Divider(
                   height: 0.5,
                   indent: 16,
@@ -206,8 +204,16 @@ class ServerView extends GetView<ServerController> {
                       controller: controller.apiKeyCtrl,
                       onChanged: (v) => controller.apiKey.value = v,
                       onSubmitted: (_) => controller.saveSettings(),
-                      decoration: const InputDecoration(
-                          labelText: 'API key', hintText: 'Optional'),
+                      decoration: InputDecoration(
+                          labelText: 'API key',
+                          // Not "Optional" any more. The requirement is on by
+                          // default and a key is generated at first boot, so
+                          // the field is never empty in practice — and a hint
+                          // saying it is optional is what makes a person
+                          // believe the field can be left alone.
+                          hintText: controller.apiKey.value.isEmpty
+                              ? 'Generated on first run'
+                              : 'Required by the toggle above'),
                     )),
                     const SizedBox(width: 6),
                     IconButton(
@@ -375,6 +381,144 @@ class ServerView extends GetView<ServerController> {
               fontSize: 13,
               fontWeight: FontWeight.w400,
               color: Theme.of(context).hintColor)),
+    );
+  }
+
+  /// Turning the key OFF asks first, and the question is the specific one.
+  ///
+  /// Not a generic "are you sure". The consequences of no key are concrete and
+  /// the user cannot see them from a switch: the server listens on all
+  /// interfaces, so it is reachable from every device on the same network, and
+  /// since the model-management endpoints landed, an unauthenticated caller can
+  /// write gigabytes to the phone, unload whatever is loaded under every other
+  /// client, and list what is on it. That is a different risk from the one this
+  /// setting was invented for, which is why a switch that used to be a harmless
+  /// toggle now needs a confirmation that says all of it.
+  ///
+  /// The switch is left where it was if the person backs out — the tap is
+  /// undone, not just ignored, because a switch that snaps back on its own
+  /// after a cancel reads as the app having changed its mind.
+  Future<void> _onRequireKeyChanged(BuildContext context, bool required) async {
+    final controller = Get.find<ServerController>();
+
+    if (required) {
+      // Turning it ON is never questioned. It cannot lose anyone access.
+      if (!controller.apiKey.value.trim().isEmpty) {
+        controller.useApiKey.value = true;
+        await controller.saveSettings();
+        return;
+      }
+      // No key to require yet, which is the one case where the switch is
+      // asking for something that does not exist. Generate rather than
+      // refusing: an empty requirement is the state this whole change exists to
+      // remove.
+      await controller.generateApiKey();
+      return;
+    }
+
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Turn off the API key?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Anyone on this network will be able to use the app\'s server '
+              'without a key. The server listens on all interfaces, not just '
+              'this phone.',
+              style: GoogleFonts.inter(fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            // Named, because "it gets worse" is not something a person can
+            // weigh. Each line is an endpoint that exists today.
+            _consequence(context, 'Download models to this phone',
+                'POST /v1/models/download — writes gigabytes here'),
+            _consequence(context, 'Unload or replace the running model',
+                'POST /v1/models/load, /v1/models/unload — every other client '
+                    'on the network changes model too'),
+            _consequence(context, 'List what is on the phone',
+                'GET /v1/models/local — model names, sizes, what is loaded'),
+            _consequence(context, 'Use the phone for inference',
+                '/v1/chat/completions and /v1/completions — spends battery and '
+                    'data'),
+            const SizedBox(height: 12),
+            Text(
+              'Turning it back on generates a new key, and anything using the '
+              'old one stops working.',
+              style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  height: 1.4,
+                  color: Theme.of(context).hintColor),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep the key'),
+          ),
+          // The safe answer is the default action, so Enter and the visual
+          // order both point at not doing it.
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Turn off anyway'),
+          ),
+        ],
+      ),
+    );
+
+    if (go != true) {
+      // Put the switch back where it was.
+      controller.useApiKey.value = true;
+      return;
+    }
+    controller.useApiKey.value = false;
+    await controller.saveSettings();
+    Get.snackbar(
+      'API key off',
+      'Anyone on this network can use this server.',
+      snackPosition: SnackPosition.BOTTOM,
+      duration: const Duration(seconds: 6),
+    );
+  }
+
+  /// One line of the consequences list: what, and the endpoint that makes it
+  /// true. The endpoint is the part that stops this being a warning the user
+  /// has to take on faith.
+  Widget _consequence(BuildContext context, String what, String how) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2, right: 8),
+            child: Icon(Icons.arrow_right_rounded,
+                size: 15, color: AppColors.error),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(what,
+                    style: GoogleFonts.inter(
+                        fontSize: 13.5, fontWeight: FontWeight.w600)),
+                Text(how,
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: Theme.of(context).hintColor)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

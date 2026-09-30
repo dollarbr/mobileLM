@@ -8,9 +8,12 @@ import 'package:get/get.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../controllers/model_controller.dart';
 import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
+import '../models/ai_model.dart';
 import '../utils/logistic.dart';
+import '../utils/server_auth.dart';
 import 'encoder_settings_service.dart';
 import 'inference_service.dart';
 
@@ -86,6 +89,27 @@ class OpenAiServerService {
         await _handleModels(request);
         return;
       }
+      // Local model management. Deliberately *not* folded into /v1/models:
+      // that one is the OpenAI contract, where `data` is the models the
+      // endpoint can serve, and a client that finds 46 catalogue entries there
+      // will try to use them all and get a 404 on the first generation. The
+      // OpenAI shape stays exactly as it was.
+      if (request.method == 'GET' && path == '/v1/models/local') {
+        await _handleLocalModels(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/models/download') {
+        await _handleModelDownload(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/models/load') {
+        await _handleModelLoad(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/models/unload') {
+        await _handleModelUnload(request);
+        return;
+      }
       if (request.method == 'GET' && path == '/v1/server/capabilities') {
         await _handleCapabilities(request);
         return;
@@ -126,11 +150,23 @@ class OpenAiServerService {
     }
   }
 
+  /// Whether this request may proceed.
+  ///
+  /// An absent key means the requirement is off, and the server says so rather
+  /// than refusing everything — the toggle in Settings is a real choice, not a
+  /// broken state. It is also a choice the UI now asks about, because the
+  /// server binds all interfaces and these endpoints can write to the device.
+  ///
+  /// The comparison is constant-time and the scheme match is case-insensitive,
+  /// both in `server_auth.dart` with the reasoning there. The short form here
+  /// (`header.trim() == 'Bearer $key'`) is what this replaced.
   bool _isAuthorized(HttpRequest request) {
     final key = _apiKey;
     if (key == null || key.isEmpty) return true;
-    final header = request.headers.value(HttpHeaders.authorizationHeader) ?? '';
-    return header.trim() == 'Bearer $key';
+    return authorizationMatches(
+      request.headers.value(HttpHeaders.authorizationHeader),
+      key,
+    );
   }
 
   Future<void> _handleModels(HttpRequest request) async {
@@ -149,6 +185,375 @@ class OpenAiServerService {
       ],
     });
   }
+
+  // ── Local model management ───────────────────────────────────────────
+  //
+  // The four endpoints below exist because driving the app by hand is the
+  // slow part of measuring it. Curating a catalogue means downloading nine
+  // models, loading each one, and sending the same prompt to each — and on a
+  // phone whose touchscreen does not respond that is nine rounds of `adb`
+  // taps against a panel that fails intermittently, where a mistyped
+  // coordinate is indistinguishable from a successful one. Driving the same
+  // sequence over HTTP makes each step confirm itself.
+  //
+  // Two decisions worth stating, because both were the other way round first:
+  //
+  // **Nothing here blocks.** A 2 GB download is minutes and a model load on a
+  // weak phone measured 25 s of first token and 60 s of prefill budget. An
+  // HTTP request that hangs that long reads to the client as a timeout, and a
+  // timeout is indistinguishable from a crash — so the operation is started,
+  // answered 202, and watched on `GET /v1/models/local`. The alternative, a
+  // synchronous load, works right up until the phone is the slow one.
+  //
+  // **Refused, never queued.** Loading while a generation is running would
+  // reach the engine as two things at once, and the symptom of that is a
+  // model that answers with garbage rather than an error. So a conflict is a
+  // 409 with the reason, and the client decides.
+
+  /// One row of the inventory. Built from a catalogue entry plus whatever the
+  /// download and inference services currently know about it.
+  Map<String, dynamic> _localModelRow(
+    AiModel model,
+    Set<String> downloaded,
+    InferenceService inference,
+    ModelController controller,
+  ) {
+    final filename = model.filename as String;
+    final dp = controller.getDownloadProgress(filename);
+    final isDownloaded = downloaded.contains(filename);
+    final isLoaded = inference.isModelLoaded.value &&
+        inference.loadedModelName.value == filename;
+
+    // One word, not a set of booleans. A client polling this has to branch on
+    // a combination otherwise, and the combinations are where the bugs are:
+    // "downloaded but not idle" and "downloading and loaded at once" are both
+    // states a boolean soup describes ambiguously.
+    final state = isLoaded
+        ? 'loaded'
+        : dp != null
+            ? (dp.isPaused.value ? 'paused' : 'downloading')
+            : isDownloaded
+                ? 'downloaded'
+                : 'available';
+
+    return {
+      'filename': filename,
+      'name': model.name,
+      'size': model.size,
+      'runtime': model.runtime,
+      if (model.needsMmproj) 'needs_projector': true,
+      'state': state,
+      'downloaded': isDownloaded,
+      'is_custom': model.isCustom,
+      if (model.isBenchmark) 'is_benchmark': true,
+      if (dp != null) ...{
+        'downloaded_bytes': dp.downloadedBytes.value,
+        'total_bytes': dp.totalBytes.value,
+        'progress': (dp.progress.value * 100).clamp(0, 100).toStringAsFixed(1),
+        'bytes_per_second': dp.bytesPerSecond.value.round(),
+      },
+    };
+  }
+
+  Future<void> _handleLocalModels(HttpRequest request) async {
+    final inference = Get.find<InferenceService>();
+    final controller = Get.find<ModelController>();
+    final downloaded = controller.downloadedFiles.toSet();
+
+    // Catalogue and custom entries in one list, because "what can I load" is
+    // one question and the answer is the union. Custom entries (imported by
+    // URL, or added from Hugging Face search) are not in `availableModels`, and
+    // a load endpoint that refused them would be refusing half the models on
+    // the device.
+    final rows = <Map<String, dynamic>>[
+      for (final m in controller.availableModels)
+        _localModelRow(m, downloaded, inference, controller),
+      for (final m in controller.customModels)
+        _localModelRow(m, downloaded, inference, controller),
+    ];
+    rows.sort((a, b) => (a['state'] == b['state']
+        ? (a['filename'] as String).compareTo(b['filename'] as String)
+        : _stateRank(a['state'] as String).compareTo(_stateRank(b['state'] as String))));
+
+    await _json(request, {
+      'object': 'list',
+      // The loaded model, with the backend it is *actually* on.
+      //
+      // `loadedBackend` rather than the tier that was asked for, and the
+      // difference is the whole point: LiteRT falls back NPU → GPU → CPU
+      // natively, so a request for a tier and the tier that ran are two
+      // different things. Reporting the request would be reporting a wish.
+      'loaded': inference.isModelLoaded.value
+          ? {
+              'filename': inference.loadedModelName.value,
+              'runtime': inference.loadedModelRuntime.value,
+              // The real one, not the requested one.
+              'backend': inference.loadedBackend.value,
+              'gpu': inference.gpuName.value,
+              'gpu_layers': inference.gpuLayersUsed.value,
+              'accelerated': inference.isGpuAccelerated.value,
+              'vision': inference.isVisionLoaded.value,
+            }
+          : null,
+      'loading': inference.modelLoadProgress.value > 0 &&
+              inference.modelLoadProgress.value < 1
+          ? inference.modelLoadProgress.value
+          : null,
+      'transfers_in_progress': controller.activeDownloads.length,
+      'data': rows,
+    });
+  }
+
+  /// Loaded first, then mid-transfer, then downloaded, then merely available —
+  /// so a client listing "what can I use right now" can stop reading at the
+  /// first group it cares about.
+  static int _stateRank(String state) => switch (state) {
+        'loaded' => 0,
+        'downloading' || 'paused' => 1,
+        'downloaded' => 2,
+        _ => 3,
+      };
+
+  /// `_readJson` but a body problem is `null` rather than an exception.
+  ///
+  /// The existing reader throws on an empty or non-object body, which is right
+  /// for the seven generation handlers that cannot do anything without one.
+  /// These three can: an empty body means "you forgot `filename`", and the
+  /// answer to that is a 400 with a sentence, not a 500 from a parse error
+  /// three frames down. The first version of this used `_readJson` directly
+  /// and the device answered `500` to `curl -X POST` with no body — measured,
+  /// not predicted.
+  Future<Map<String, dynamic>?> _readJsonOrNull(HttpRequest request) async {
+    try {
+      return await _readJson(request);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Find a model by filename across catalogue and custom entries.
+  ///
+  /// Returns null rather than throwing so both callers can answer with a 404
+  /// that lists what does exist. That list is the point: a wrong filename
+  /// otherwise fails at download time with nothing to compare against, which
+  /// is the same failure the catalogue's URL rule exists to prevent.
+  AiModel? _findModel(ModelController controller, String filename) {
+    for (final m in controller.availableModels) {
+      if (m.filename == filename) return m;
+    }
+    for (final m in controller.customModels) {
+      if (m.filename == filename) return m;
+    }
+    return null;
+  }
+
+  List<String> _knownFilenames(ModelController controller) => [
+        ...controller.availableModels.map((m) => m.filename),
+        ...controller.customModels.map((m) => m.filename),
+      ];
+
+  Future<void> _handleModelDownload(HttpRequest request) async {
+    final controller = Get.find<ModelController>();
+    final body = await _readJsonOrNull(request);
+    final filename = (body?['filename'] as String?)?.trim() ?? '';
+    if (filename.isEmpty) {
+      await _json(request, {
+        'error': "Missing 'filename'. Expected one of the filenames from "
+            'GET /v1/models/local.'
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    final model = _findModel(controller, filename);
+    if (model == null) {
+      await _json(request, {
+        'error': 'No such model: $filename',
+        'known': _knownFilenames(controller),
+      }, status: HttpStatus.notFound);
+      return;
+    }
+    if (controller.downloadedFiles.contains(filename)) {
+      await _json(request, {
+        'error': 'Already downloaded',
+        'state': 'downloaded',
+        'filename': filename,
+      }, status: HttpStatus.conflict);
+      return;
+    }
+    if (controller.getDownloadProgress(filename) != null) {
+      await _json(request, {
+        'error': 'Download already in progress',
+        'state': 'downloading',
+        'filename': filename,
+      }, status: HttpStatus.conflict);
+      return;
+    }
+
+    // Started, not awaited. See the class-level note on why nothing here
+    // blocks: the 202 means "accepted", and the progress lives on
+    // GET /v1/models/local. `unawaited` is explicit so a future reader does not
+    // take the missing `await` for an oversight and "fix" it into a request
+    // that hangs for the length of a 2 GB download.
+    // Mesma ordem das outras duas operações: resposta antes de começar.
+    await _json(request, {
+      'accepted': true,
+      'filename': filename,
+      'name': model.name,
+      'size': model.size,
+      'watch': 'GET /v1/models/local',
+    }, status: HttpStatus.accepted);
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    unawaited(controller.downloadModel(model));
+  }
+
+  Future<void> _handleModelLoad(HttpRequest request) async {
+    final inference = Get.find<InferenceService>();
+    final controller = Get.find<ModelController>();
+    final body = await _readJsonOrNull(request);
+    final filename = (body?['filename'] as String?)?.trim() ?? '';
+    if (filename.isEmpty) {
+      await _json(request, {
+        'error': "Missing 'filename'. Expected one of the filenames from "
+            'GET /v1/models/local.'
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    if (!controller.downloadedFiles.contains(filename)) {
+      final known = _knownFilenames(controller);
+      // Two different mistakes, and saying which one it is saves the caller a
+      // round trip. Measured: with a single "Not downloaded" for both, a typo
+      // in a filename and a model that simply has not been fetched yet look
+      // identical, and the fix for one of them (download it) is nonsense for
+      // the other (it does not exist).
+      final exists = known.contains(filename);
+      await _json(request, {
+        'error': exists ? 'Not downloaded: $filename' : 'No such model: $filename',
+        'known': known,
+        'hint': exists
+            ? 'POST /v1/models/download first, then poll GET /v1/models/local '
+                'until its state is "downloaded".'
+            : 'No catalogue entry has that filename, and no such file is on '
+                'the device. A model imported from a URL appears under its file '
+                'name on disk; compare against "known" above.',
+      }, status: HttpStatus.notFound);
+      return;
+    }
+    if (inference.isModelLoaded.value &&
+        inference.loadedModelName.value == filename) {
+      await _json(request, {
+        'error': 'Already loaded',
+        'filename': filename,
+        'backend': inference.loadedBackend.value,
+      }, status: HttpStatus.conflict);
+      return;
+    }
+    // Refused, not queued. See the class note: the engine cannot generate and
+    // load at the same time, and doing it anyway surfaces as a model that
+    // answers with nonsense rather than as an error.
+    if (_busy) {
+      await _json(request, {
+        'error': 'A generation is in progress',
+        'hint': 'Wait for it to finish, then POST again.',
+      }, status: HttpStatus.conflict);
+      return;
+    }
+
+    // The load shows a memory-safety dialog. There is nobody to answer it over
+    // HTTP, and the two wrong answers are both bad: leaving it up blocks the
+    // caller forever, and letting `loadModel` run without a decision frees the
+    // old model and loads nothing — which is exactly what the first version did
+    // on the A72, answering 202 and leaving the device with no model.
+    //
+    // So the caller has to say it accepts the warning. Not a flag that skips
+    // the checks — those are the guards, and they run either way. It stands for
+    // the tap on "Load", which is the only thing a person was ever being asked.
+    final accept = body?['accept_risk'] == true;
+    if (!accept) {
+      await _json(request, {
+        'error': 'Loading a model shows a memory-safety confirmation.',
+        'filename': filename,
+        'file_size': controller.fileSizes[filename]?.toString() ?? null,
+        'hint': 'Re-send with {"filename": "...", "accept_risk": true} to '
+            'confirm you accept the warning. The file and memory checks still '
+            'run and can still refuse.',
+      }, status: HttpStatus.conflict);
+      return;
+    }
+
+    final previous = inference.isModelLoaded.value
+        ? inference.loadedModelName.value
+        : null;
+
+    // **A resposta vai antes da operação.** Isso é uma correção medida, e não uma
+    // preferência de leitura.
+    //
+    // A primeira versão chamava `unawaited(controller.loadModel(...))` e só
+    // depois escrevia o 202. Uma carga de modelo bloqueia o isolate do Dart —
+    // é uma chamada JNI síncrona que segura a thread — e como o `unawaited`
+    // começava na linha de cima, o isolate era preso antes de o socket ter
+    // algo para enviar. O sintoma no host era `curl` devolvendo `000`, sem
+    // código HTTP, em toda requisição que disparava uma operação real:
+    // `/v1/models/load` com `accept_risk` e `/v1/models/unload`. E o
+    // `409` — que responde e só então descobre que o corpo está errado —
+    // funcionava, o que isola a causa: não era o POST, nem o forward, nem o
+    // servidor; era a ordem.
+    //
+    // `GET` continuava respondendo o tempo todo, porque nada bloqueava.
+    await _json(request, {
+      'accepted': true,
+      'filename': filename,
+      // Null when nothing was loaded, which is different from loading into an
+      // empty slot: the old model is being freed and that costs time too.
+      'replaced': previous,
+      'watch': 'GET /v1/models/local',
+    }, status: HttpStatus.accepted);
+
+    // Um turno do event loop para o socket realmente sair. `close()` enfileira
+    // a escrita; sem este `await` o isolate é preso no JNI antes do flush, e o
+    // `202` continua não chegando. Centésimos de segundo, uma vez por troca de
+    // modelo, em troca de um endpoint que responde.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    unawaited(controller.loadModel(filename, acceptWarnings: true));
+  }
+
+  /// `POST /v1/models/unload` — refused, on purpose.
+  ///
+  /// The first version called `ModelController.unloadModel()` and the exact
+  /// failure is worth recording, because "the endpoint does not work" would be
+  /// the wrong conclusion. `unloadModel` calls
+  /// `_stopServerForMissingModel()`: unloading takes **this server** down with
+  /// it, by design, because otherwise every endpoint keeps answering `200` with
+  /// nothing behind it and `/v1/server/capabilities` keeps reporting
+  /// `running: true` on an empty model. Writing the response before the stop
+  /// does not rescue it — the socket closes before the body is flushed and the
+  /// client sees `Empty reply from server` with no HTTP code at all. Measured on
+  /// the A72, twice, and it is why `curl` reports `000` rather than a status.
+  ///
+  /// So this is a `409` that names the situation and gives the way out, rather
+  /// than an endpoint that half-works. The asymmetry is real and intended:
+  /// **loading** keeps the server up, because `InferenceService.unloadModel` is
+  /// the first step of every load and deliberately does not touch the server.
+  /// So `POST /v1/models/load` is how you swap models, and the whole
+  /// measurement campaign runs on it. To get to no model, stop the server —
+  /// which is what the app's own toggle does.
+  Future<void> _handleModelUnload(HttpRequest request) async {
+    final inference = Get.find<InferenceService>();
+    if (!inference.isModelLoaded.value) {
+      await _json(request, {'error': 'Nothing is loaded'},
+          status: HttpStatus.conflict);
+      return;
+    }
+    await _json(request, {
+      'error': 'Unloading also takes the local server down, so it cannot be '
+          'done over the API.',
+      'unloaded_would_be': inference.loadedModelName.value,
+      'hint': 'POST /v1/models/load with another filename instead — loading '
+          'keeps the server running. Or turn the server off from its own screen '
+          'when you want no model at all.',
+    }, status: HttpStatus.conflict);
+  }
+
 
   Future<void> _handleCapabilities(HttpRequest request) async {
     final inference = Get.find<InferenceService>();
