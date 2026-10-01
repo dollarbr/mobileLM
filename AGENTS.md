@@ -1524,6 +1524,20 @@ e o teste unitário passava porque alimentava a forma que eu tinha imaginado. Os
 dois payloads dos testes agora são **copiados do A72** — `laya_en_act_head_fp32.tflite`,
 `feats [1,4]` **antes** de `pooled_cls [1,1024]`, saída `act_logits [1,2]`.
 
+**A janela pergunta três endpoints, porque as três fontes não se sobrepõem.**
+`/v1/models/local` diz o nome e o runtime da **GGUF** — e o campo `loaded` dele é
+**só GGUF**, então com uma cabeça `.tflite` carregada ele devolve `null`.
+`/v1/server/capabilities` → `capabilities.classify` é o **único** lugar que sabe
+se aquela GGUF classifica. `/v1/litert/status` é o único que sabe de um `.tflite`.
+Ler `loaded['classifier']` foi o que eu fiz, e **a chave não existe** — um campo
+inexistente se lê como um campo falso, então toda GGUF saía como decision model.
+Cada sondagem tem seu próprio `try`: um só descartaria as duas respostas que
+chegaram.
+
+E **não existe `POST /v1/litert/unload`** — as rotas LiteRT são `screen`, `load`,
+`status`, `run`. Uma cabeça só é trocada carregando outra, e o estado "nada
+carregado" da janela fica inalcançável depois da primeira carga. Vale uma rota.
+
 Medido no A72: a tela de decisão acerta **3 de 3** com Tev1-0.8B usando o corpo
 que ela própria monta, `relevance_score: null` e `scores` todo nulo; a tela da
 cabeça renderiza e lê 1024/4/2 do `GET /v1/litert/status` real; `compile_ms` 5–7.

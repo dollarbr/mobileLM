@@ -224,47 +224,87 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       _base = url;
       _serverUp = true;
     });
-    // Three questions, three calls, and none of them able to silence the others.
-    // The first version of the `.tflite` console fired its screen from inside
-    // the status call's success path, so a status failure took the screen with
-    // it — and because the status failure was a swallowed exception, the console
-    // sat there saying "not screened yet" with nothing anywhere saying that
-    // anything had failed.
-    await Future.wait([
-      _localModels(),
-      if (widget.filename != null) _headContract(),
-    ]);
+    // **Three probes, three independent failures.** The rule the sibling console
+    // established: a poll that another one cannot silence is what makes a blank
+    // panel read as "the phone has not answered yet".
+    //
+    // Three calls and not one because the three sources do not overlap, and each
+    // knows something the other two do not:
+    //
+    //   /v1/models/local         -> the GGUF's name and runtime
+    //   /v1/server/capabilities  -> whether that GGUF classifies (the ONLY place)
+    //   /v1/litert/status        -> the .tflite, a different runtime entirely
+    //
+    // The `.tflite` probe used to be conditional on the card having named a file,
+    // so a window opened from the server screen never asked about the LiteRT
+    // runtime at all — and `/v1/models/local` reports a **GGUF-only** `loaded`, so
+    // with a head loaded and no GGUF the window said "nothing loaded". That is a
+    // falsehood, and the head's own contract was on the next screen.
+    await _deviceState();
+    if (mounted && _needsHead) await _headContract();
   }
 
-  /// What is loaded, and which shape the loaded GGUF is.
-  Future<void> _localModels() async {
-    try {
-      final json = await _request('GET', '/v1/models/local');
-      if (!mounted) return;
-      final loaded = json['loaded'];
-      final name = loaded is Map ? '${loaded['filename'] ?? ''}' : '';
-      final runtime = loaded is Map ? '${loaded['runtime'] ?? ''}' : '';
-      // `cls.output.weight` is what the head path needs, and the server is the
-      // only place that knows it without loading the file. It is reported in
-      // `capabilities` as whether the loaded model classifies; the console does
-      // not guess a GGUF's shape from its name, which is the rule that keeps
-      // this class open.
-      final hasHead = loaded is Map && loaded['classifier'] == true;
-      setState(() {
-        _loadedName = name;
-        _loadedRuntime = runtime;
-        if (widget.shape == SystemOneShape.unknown && name.isNotEmpty) {
-          _resolvedShape = hasHead
-              ? SystemOneShape.ggufHead
-              : SystemOneShape.decision;
+  /// Whether the head probe is worth making.
+  bool get _needsHead =>
+      widget.filename != null ||
+      _device.hasTflite ||
+      _shapeOrNull == SystemOneShape.tfliteHead;
+
+  /// What the three endpoints said, which is the only place a `.tflite` shows up.
+  DeviceState _device = const DeviceState();
+
+  /// The `.tflite` to name, which may be the one that is loaded rather than the
+  /// one the card named.
+  String? _headFilename;
+
+  /// What the phone has loaded, across all three runtimes.
+
+  Future<void> _deviceState() async {
+        Map<String, dynamic>? local;
+        Map<String, dynamic>? caps;
+        Map<String, dynamic>? litert;
+        final failures = <String>[];
+
+        // **Three `try`s, not one.** A single try would discard the two answers
+        // that did arrive because the third one failed, and the window would go on
+        // saying "nothing loaded" because the LiteRT probe refused.
+        Future<void> probe(
+        String what,
+        String path,
+        void Function(Map<String, dynamic>) into,
+        ) async {
+        try {
+          into(await _request('GET', path));
+        } on Object catch (e) {
+          // Written, not swallowed: a poll that fails in silence is what makes a
+          // blank panel read as "the phone has not answered yet".
+          failures.add('$what: $e');
         }
-      });
-    } on Object catch (e) {
-      // Written, not swallowed. A poll that fails in silence is what makes a
-      // blank panel read as "the phone has not answered yet".
-      if (mounted) setState(() => _error = 'local models: $e');
+        }
+
+        await probe('local models', '/v1/models/local', (j) => local = j);
+        await probe('capabilities', '/v1/server/capabilities', (j) => caps = j);
+        await probe('litert status', '/v1/litert/status', (j) => litert = j);
+        if (!mounted) return;
+
+        final device = DeviceState.fromResponses(
+        local: local,
+        capabilities: caps,
+        litertStatus: litert,
+        );
+        setState(() {
+        _device = device;
+        _loadedName = device.ggufName;
+        _loadedRuntime = device.ggufRuntime;
+        _resolvedShape = resolveSystemOneShape(device, given: widget.shape);
+        _headFilename =
+            resolveSystemOneHeadFilename(device, fromCard: widget.filename);
+        _error = failures.isEmpty
+            ? null
+            : 'could not read '
+                '${failures.map((f) => f.split(':').first).join(', ')}';
+        });
     }
-  }
 
   /// What the head wants, read from what the server reports about it.
   ///
@@ -281,7 +321,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// reported no wanted count and would have let the user paste four numbers
   /// into a head that wants 1024. Measured on the device, not reasoned about.
   Future<void> _headContract() async {
-    final name = widget.filename;
+    final name = _headFilename;
     if (name == null) return;
     HeadContract? contract;
     try {
@@ -437,7 +477,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       setState(() => _error = problem ?? 'No feature vector.');
       return;
     }
-    final name = widget.filename;
+    final name = _headFilename;
     if (name == null) {
       setState(() => _error = 'No .tflite named.');
       return;
@@ -558,9 +598,11 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                               Text(
                                 'Load one and tap re-probe, or from a client: '
                                 'POST /v1/models/load with "filename" and '
-                                '"accept_risk": true. A .tflite is not a GGUF — '
-                                'for one of those, open this window from the '
-                                'TFLite heads card on the Models screen.',
+                                '"accept_risk": true. A .tflite is not a GGUF, '
+                                'so it does not answer here: the window finds '
+                                'one on its own when a head is loaded, and the '
+                                'TFLite heads card on the Models screen opens '
+                                'it by name.',
                                 style: GoogleFonts.inter(
                                     fontSize: 11, color: AppColors.info),
                               ),
@@ -651,7 +693,12 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     };
     final bits = <String>[
       head,
-      if (widget.filename != null) widget.filename!,
+      // **The resolved name, not the card's.** A window opened from the server
+      // screen has no card, and the head it is about to drive is the one that is
+      // loaded — so showing the card's name here would print an empty string
+      // next to a filename the request is about to use.
+      if (shape == SystemOneShape.tfliteHead && _headFilename != null)
+        _headFilename!,
       if (shape == SystemOneShape.decision && _loadedName.isNotEmpty)
         'loaded: $_loadedName',
       if (shape == SystemOneShape.tfliteHead && _wantedFeatures != null)
@@ -793,6 +840,27 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     final head = _head;
     if (head == null || head.auxiliary.isEmpty) return const [];
     return [
+      // **A head with no name is a hole in the screen, and it gets a line.**
+      // It is reachable: this window is opened with no filename from the server
+      // screen, and if the LiteRT probe fails — or no head is loaded — the
+      // filename is null while the shape and the contract are both known. The
+      // panels then draw a working head with nothing saying which file, and the
+      // only way to find out is to press Run and be refused. A state the screen
+      // can reach has to be a state the screen says.
+      if (_headFilename == null)
+        _card(
+          card,
+          field,
+          'no .tflite to name',
+          Text(
+            'A head cannot be recognised by its contents — it has no '
+            '`cls.output.weight` — so the caller is the only thing that can say '
+            'which head it means. That name comes from the TFLite heads card, or '
+            'from whatever `/v1/litert/status` reports as loaded. Neither '
+            'answered, so there is nothing to send.',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ),
       for (final aux in head.auxiliary)
         _card(
           card,

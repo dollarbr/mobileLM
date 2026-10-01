@@ -349,6 +349,113 @@ class SystemOneLabels {
   ]);
 }
 
+/// What the phone has loaded, as the three endpoints report it.
+///
+/// A class and not a pair of fields because **there are three sources and they
+/// do not overlap**, and the first version of the window looked at one of them
+/// and said a falsehood about the other two:
+///
+/// - `GET /v1/models/local` → `loaded: {filename, runtime, backend, gpu,
+///   gpu_layers, accelerated, vision}`. **GGUF only.** There is no `classifier`
+///   key in it — the first version of the window read `loaded['classifier']`,
+///   which is therefore always null, so every loaded GGUF came out as a decision
+///   model including a GGUF that really does carry a classification head. A
+///   field that does not exist reads exactly like a field that is false, which
+///   is why it went unnoticed.
+/// - `GET /v1/server/capabilities` → `capabilities.classify`, the real flag, and
+///   the only one that knows whether a `cls.output.weight` is in the file.
+/// - `GET /v1/litert/status` → `loaded` for the **LiteRT** runtime, which is a
+///   different runtime in a different plugin and does not appear in the caller's
+///   `loaded` at all. The window opened from the server screen said "nothing
+///   loaded" with a `.tflite` head loaded and its contract on the next screen.
+class DeviceState {
+  const DeviceState({
+    this.ggufName = '',
+    this.ggufRuntime = '',
+    this.ggufClassifies = false,
+    this.tfliteName = '',
+  });
+
+  final String ggufName;
+  final String ggufRuntime;
+
+  /// From `capabilities.classify` — **not** from anything in
+  /// `/v1/models/local`, which does not carry it.
+  final bool ggufClassifies;
+
+  final String tfliteName;
+
+  bool get hasGguf => ggufName.isNotEmpty;
+
+  bool get hasTflite => tfliteName.isNotEmpty;
+
+  bool get isEmpty => !hasGguf && !hasTflite;
+
+  /// Parse the three responses. Each one is optional, because each probe is
+  /// independent and one failing must not blank the other two.
+  static DeviceState fromResponses({
+    Map<String, dynamic>? local,
+    Map<String, dynamic>? capabilities,
+    Map<String, dynamic>? litertStatus,
+  }) {
+    final loaded = local?['loaded'];
+    final caps = capabilities?['capabilities'];
+    return DeviceState(
+      ggufName: loaded is Map ? '${loaded['filename'] ?? ''}' : '',
+      ggufRuntime: loaded is Map ? '${loaded['runtime'] ?? ''}' : '',
+      ggufClassifies: caps is Map && caps['classify'] == true,
+      tfliteName: litertStatus?['loaded'] is Map
+          ? '${(litertStatus!['loaded'] as Map)['path'] ?? ''}'
+                  .split('/')
+                  .last
+          : '',
+    );
+  }
+}
+
+/// The shape to drive, resolved from what is loaded — or null when nothing is.
+///
+/// [given] wins when it is not [SystemOneShape.unknown], because the card the
+/// user tapped named it and a card is a better source than a poll. Past that,
+/// the order is the one that answers the question honestly:
+///
+/// 1. a **GGUF that classifies** is a head with its own label set — the
+///    encoder console drives that one and this window has nothing to ask;
+/// 2. a **GGUF that does not** is a decision model, because a GGUF with no
+///    `cls.output.weight` cannot use the head path and the head path is the only
+///    other one `/v1/classify` has;
+/// 3. a **`.tflite`** is a head, and the window takes its name and works.
+///
+/// The `.tflite` in third rather than first is the point. Both runtimes can be
+/// loaded at once — they are different plugins and separate endpoints — and when
+/// both are, a GGUF is the one `/v1/classify` will route to, so the GGUF decides.
+SystemOneShape? resolveSystemOneShape(
+  DeviceState device, {
+  SystemOneShape given = SystemOneShape.unknown,
+}) {
+  if (given != SystemOneShape.unknown) return given;
+  if (device.hasGguf) {
+    return device.ggufClassifies
+        ? SystemOneShape.ggufHead
+        : SystemOneShape.decision;
+  }
+  if (device.hasTflite) return SystemOneShape.tfliteHead;
+  return null;
+}
+
+/// The `.tflite` the window should name, or null for the other shapes.
+///
+/// The card's file wins; otherwise the one that is loaded. Empty when neither,
+/// and empty is a real answer: the head path cannot be driven by name alone,
+/// because a head has no `cls.output.weight` to be recognised by.
+String? resolveSystemOneHeadFilename(
+  DeviceState device, {
+  String? fromCard,
+}) {
+  if (fromCard != null && fromCard.isNotEmpty) return fromCard;
+  return device.hasTflite ? device.tfliteName : null;
+}
+
 /// What a head declares it wants, read out of what the server reported.
 ///
 /// Pure, and built from a payload **taken off the device** rather than one

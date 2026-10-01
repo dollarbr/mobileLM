@@ -72,6 +72,74 @@ const layaStatus = {
   }
 };
 
+
+// ── DeviceState: os tres endpoints, copiados do A72 ───────────────────────
+//
+// As formas aqui sao o que os tres endpoints **realmente** devolvem. A primeira
+// versao da janela leu `loaded['classifier']` de `/v1/models/local` — e esse
+// pacote **nao tem essa chave**, entao toda GGUF carregada saia como decision
+// model, inclusive uma que tem cabeco de classificacao de verdade. Um campo que
+// nao existe se le exatamente como um campo que e falso, e por isso passou.
+
+/// `GET /v1/models/local` com o Tev1 carregado — as chaves sao exatamente estas.
+const localWithGguf = {
+  'object': 'list',
+  'loaded': {
+    'filename': 'tev1-Q8_0.gguf',
+    'runtime': 'llama',
+    'backend': 'cpu',
+    'gpu': 'Adreno (TM) 618',
+    'gpu_layers': 0,
+    'accelerated': false,
+    'vision': false,
+  },
+  'loading': null,
+  'transfers_in_progress': 0,
+  'data': <dynamic>[],
+};
+
+/// `GET /v1/models/local` com so a cabeca .tflite carregada. `loaded` e null
+/// porque o `loaded` deste endpoint e so GGUF.
+const localWithOnlyTflite = {
+  'object': 'list',
+  'loaded': null,
+  'loading': null,
+  'transfers_in_progress': 0,
+  'data': <dynamic>[],
+};
+
+/// `GET /v1/server/capabilities` — e AQUI que mora o `classify`.
+const capsClassifies = {
+  'server': 'mobileLM Local OpenAI API',
+  'running': true,
+  'model': 'gte-reranker-modernbert-base-Q8_0.gguf',
+  'capabilities': {'text': false, 'embeddings': false, 'rerank': true, 'classify': true},
+};
+const capsDoesNotClassify = {
+  'server': 'mobileLM Local OpenAI API',
+  'running': true,
+  'model': 'tev1-Q8_0.gguf',
+  'capabilities': {'text': true, 'streaming': true, 'gguf': true, 'classify': false},
+};
+
+/// `GET /v1/litert/status` com o act head carregado (compile_ms 7).
+const statusWithHead = {
+  'loaded': {
+    'path': '/data/user/0/com.dollarbr.mobilelm/app_flutter/models/'
+        'laya_en_act_head_fp32.tflite',
+    'signature': 'serving_default',
+    'head': {
+      'features': {'name': 'pooled_cls', 'shape': [1, 1024]},
+      'logits': {'name': 'act_logits', 'shape': [1, 2]},
+      'auxiliary': [
+        {'name': 'feats', 'shape': [1, 4]}
+      ],
+    },
+    'compile_ms': 7,
+  }
+};
+const statusEmpty = {'loaded': null};
+
 void main() {
   // The 422 as `_handleClassifyGenerative` builds it: a model that ignored the
   // instruction and wrote prose. Declared here rather than inside a group
@@ -344,6 +412,125 @@ void main() {
     test('addBlank always leaves somewhere to type', () {
       expect(SystemOneLabels.empty.addBlank().items, ['']);
       expect(SystemOneLabels.starter.addBlank().length, 3);
+    });
+  });
+
+  group('DeviceState and the shape it resolves to', () {
+    test('a GGUF that classifies is a head with its own labels', () {
+      final d = DeviceState.fromResponses(
+        local: localWithGguf,
+        capabilities: capsClassifies,
+        litertStatus: statusWithHead,
+      );
+      expect(d.ggufName, 'tev1-Q8_0.gguf');
+      expect(d.ggufClassifies, isTrue);
+      expect(resolveSystemOneShape(d), SystemOneShape.ggufHead);
+    });
+
+    test('a GGUF that does not classify is a decision model', () {
+      final d = DeviceState.fromResponses(
+        local: localWithGguf,
+        capabilities: capsDoesNotClassify,
+        litertStatus: statusEmpty,
+      );
+      expect(resolveSystemOneShape(d), SystemOneShape.decision);
+    });
+
+    test('o `classifier` nao existe em /v1/models/local, e o teste diz isso', () {
+      // A forma real do pacote, conferida. Se alguem voltar a ler
+      // `loaded['classifier']`, este teste e o que pega — porque a ausencia da
+      // chave e o fato, nao um detalhe do mock.
+      expect(localWithGguf['loaded'], isNot(contains('classifier')));
+      expect(
+        DeviceState.fromResponses(local: localWithGguf).ggufClassifies,
+        isFalse,
+        reason: 'sem capabilities nao se sabe, e "nao se sabe" nao e "nao '
+            'classifica" — quem sabe e o capabilities',
+      );
+    });
+
+    test('so um .tflite carregado: a janela NAO diz "nothing loaded"', () {
+      // O bug que o aparelho mostrou. `/v1/models/local` responde `loaded: null`
+      // porque o seu `loaded` e so GGUF, e a janela aberta pela tela do servidor
+      // dizia "nothing loaded" com a cabeca da Laya carregada e o contrato dela
+      // inteiro na tela seguinte.
+      final d = DeviceState.fromResponses(
+        local: localWithOnlyTflite,
+        capabilities: const {'capabilities': <String, dynamic>{}},
+        litertStatus: statusWithHead,
+      );
+      expect(d.hasGguf, isFalse);
+      expect(d.hasTflite, isTrue);
+      expect(d.tfliteName, 'laya_en_act_head_fp32.tflite');
+      expect(resolveSystemOneShape(d), SystemOneShape.tfliteHead);
+    });
+
+    test('e a janela assume esse nome, para funcionar de verdade', () {
+      final d = DeviceState.fromResponses(
+        local: localWithOnlyTflite,
+        litertStatus: statusWithHead,
+      );
+      // Sem o nome o caminho da cabeca nem pode ser montado: uma cabeca nao tem
+      // `cls.output.weight` para ser reconhecida, entao quem diz qual e so quem
+      // esta chamando.
+      expect(resolveSystemOneHeadFilename(d), 'laya_en_act_head_fp32.tflite');
+    });
+
+    test('nada carregado e null, nao uma forma adivinhada', () {
+      final d = DeviceState.fromResponses(
+        local: const {'loaded': null},
+        litertStatus: statusEmpty,
+      );
+      expect(d.isEmpty, isTrue);
+      expect(resolveSystemOneShape(d), isNull);
+      expect(resolveSystemOneHeadFilename(d), isNull);
+    });
+
+    test('um probe que falhou nao apaga o que os outros dois disseram', () {
+      // As tres sondas sao independentes. Se a do LiteRT cai, as outras duas
+      // continuam valendo — um probe mudo e o que faz um painel em branco
+      // parecer "o aparelho ainda nao respondeu".
+      final d = DeviceState.fromResponses(
+        local: localWithGguf,
+        capabilities: capsDoesNotClassify,
+        litertStatus: null,
+      );
+      expect(d.ggufName, 'tev1-Q8_0.gguf');
+      expect(resolveSystemOneShape(d), SystemOneShape.decision);
+    });
+
+    test('com os dois runtimes carregados, quem decide e a GGUF', () {
+      // `/v1/classify` roteia para a GGUF quando ha uma carregada, entao a GGUF
+      // e o que a janela tem que dirigir.
+      final d = DeviceState.fromResponses(
+        local: localWithGguf,
+        capabilities: capsDoesNotClassify,
+        litertStatus: statusWithHead,
+      );
+      expect(resolveSystemOneShape(d), SystemOneShape.decision);
+      expect(d.hasTflite, isTrue, reason: 'a cabeca continua carregada; e a '
+          'janela que escolhe, e escolhe pelo que o endpoint vai usar');
+    });
+
+    test('a forma que o cartao nomeou ganha da sondagem', () {
+      final d = DeviceState.fromResponses(
+        local: localWithGguf,
+        capabilities: capsDoesNotClassify,
+        litertStatus: statusEmpty,
+      );
+      expect(
+        resolveSystemOneShape(d, given: SystemOneShape.tfliteHead),
+        SystemOneShape.tfliteHead,
+        reason: 'o cartao que o usuario tocou e uma fonte melhor que um poll',
+      );
+    });
+
+    test('o nome do cartao ganha do que esta carregado', () {
+      final d = DeviceState.fromResponses(litertStatus: statusWithHead);
+      expect(
+        resolveSystemOneHeadFilename(d, fromCard: 'other-head.tflite'),
+        'other-head.tflite',
+      );
     });
   });
 

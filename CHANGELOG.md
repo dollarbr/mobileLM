@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### fix: a janela dizia "nothing loaded" com uma cabeça carregada — e lia um campo que não existe
+
+O sintoma era uma frase; o que estava uma linha acima dela era o defeito, e
+**eram dois**.
+
+**1. A janela só olhava para o runtime errado.** `_localModels` lia
+`/v1/models/local`, cujo campo `loaded` é **só GGUF** — e a sondagem do LiteRT
+era condicional a o card ter nomeado um arquivo. De `/v1/models/local`, com o
+`laya_en_act_head_fp32.tflite` carregado, o aparelho devolve `loaded: null`
+(medido, com os três endpoints lado a lado). A janela então dizia
+*"not decided yet — no GGUF is loaded"* e *"nothing loaded"*, **com o contrato
+inteiro da cabeça na tela seguinte.** Uma mentira, não uma lacuna.
+
+Agora a janela pergunta **três** endpoints, porque as três fontes não se sobrepõem
+e cada uma sabe algo que as outras duas não:
+
+| endpoint | o que só ele sabe |
+|---|---|
+| `/v1/models/local` | o nome e o runtime da **GGUF** |
+| `/v1/server/capabilities` | **se** aquela GGUF classifica — e é o único lugar |
+| `/v1/litert/status` | o `.tflite`, que vive em outro runtime e outro plugin |
+
+**2. Eu lia `loaded['classifier']`, e essa chave não existe.** Está em
+`capabilities.classify`. Um campo inexistente se lê exatamente como um campo que é
+falso, então **toda** GGUF carregada saía como decision model — inclusive uma que
+tem `cls.output.weight` de verdade. Há um teste que afirma que a chave não está no
+pacote, para que a próxima vez que alguém ler isso tenha o que pega.
+
+A resolução vai para o núcleo puro (`DeviceState`, `resolveSystemOneShape`,
+`resolveSystemOneHeadFilename`) e a janela **adota** a cabeça carregada: aberta
+pela tela do servidor, sem card e sem filename, ela resolve a forma sozinha, pega
+o nome e funciona. Verificado no A72: `laya_en_act_head_fp32.tflite · wants 1024
+numbers`, `feats [1,4]`, `this head has 2`, e os encoders do catálogo listados.
+
+**Cada sondagem é independente** — três `try`, não um. Um `try` só descartaria as
+duas respostas que chegaram porque a terceira falhou, e a janela voltaria a dizer
+"nothing loaded" porque a sondagem do LiteRT deu 500.
+
+E um buraco que o teste de layout mostrou ao tentar cobrir o caso: **uma cabeça sem
+nome desenhava os painéis funcionando sem nada dizer qual arquivo**, e a única
+forma de descobrir era apertar Run e ser recusado. Estado que a tela alcança tem
+que ser estado que a tela nomeia — agora há um painel para isso.
+
+**Achado de brinde:** **não existe `POST /v1/litert/unload`.** As rotas LiteRT são
+`screen`, `load`, `status` e `run`. Uma cabeça carregada só é trocada carregando
+outra, então o estado "nada carregado" da janela é **inalcançável** depois da
+primeira carga. Não é uma regressão desta mudança — é uma lacuna da API, e vale
+uma rota, porque sem ela não há como sair de um `.tflite` pela rede.
+
 ### feat: a janela de testes para modelos "System One"
 
 **O que é um System One.** O nome vem dos quatro que deram nome a ele — Jev,

@@ -55,7 +55,8 @@ void main() {
 
   Future<void> hostile(WidgetTester tester,
       {SystemOneShape shape = SystemOneShape.decision,
-      bool withContract = true}) async {
+      bool withContract = true,
+      bool withFilename = true}) async {
     tester.view.physicalSize = const Size(720, 2400);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
@@ -69,7 +70,7 @@ void main() {
           // A port nothing listens on, so the probe fails fast and the test is
           // about layout rather than about a live server.
           baseUrl: 'http://127.0.0.1:1',
-          filename: shape == SystemOneShape.tfliteHead
+          filename: shape == SystemOneShape.tfliteHead && withFilename
               ? 'laya_en_act_head_fp32.tflite'
               : null,
           headContract:
@@ -225,7 +226,32 @@ void main() {
     // submit.
     await hostile(tester, shape: SystemOneShape.tfliteHead, withContract: false);
     expect(
-      find.textContaining('Load it first: POST /v1/litert/load'),
+      find.textContaining('POST /v1/litert/load'),
+      findsOneWidget,
+    );
+    _drain(tester);
+  });
+
+
+  testWidgets('uma cabeca sem nome diz que nao tem nome, e nao desenha um buraco',
+      (tester) async {
+    // Estado alcançavel e alcancado: a janela aberta pela tela do servidor nao
+    // tem filename do cartao, e se a sondagem do LiteRT falha — ou nao ha
+    // cabeca carregada — o nome e null enquanto a forma e o contrato sao
+    // conhecidos. Antes desta correcao os painis desenhavam uma cabeca
+    // funcionando sem nada dizer qual arquivo, e a unica forma de descobrir era
+    // apertar Run e ser recusado.
+    await hostile(
+      tester,
+      shape: SystemOneShape.tfliteHead,
+      withContract: true,
+      withFilename: false,
+    );
+    final card = find.text('no .tflite to name');
+    await tester.dragUntilVisible(card, find.byType(ListView), const Offset(0, -240));
+    expect(card, findsOneWidget);
+    expect(
+      find.textContaining('cannot be recognised by its contents'),
       findsOneWidget,
     );
     _drain(tester);
