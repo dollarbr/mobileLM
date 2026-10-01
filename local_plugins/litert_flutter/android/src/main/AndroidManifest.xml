@@ -1,0 +1,28 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.dollarbr.litert_flutter">
+    <!--
+        These <uses-native-library> entries are merged into the host app's
+        manifest by AGP's manifest merger, so an app that depends on
+        litert_flutter gets OpenCL access without a step of its own.
+
+        libOpenCL.so is NOT part of the public Android NDK; it lives in
+        /vendor/lib64/, and from Android 12 (API 31) an app has to opt in
+        explicitly with <uses-native-library> or the dynamic linker refuses the
+        dlopen. LiteRT's GPU backend loads it for the OpenCL accelerator.
+
+        required="false" throughout, so a device without the vendor library
+        still installs and the accelerator list simply comes back without GPU.
+        The CPU path does not touch any of them.
+    -->
+    <application>
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+        <uses-native-library
+            android:name="libOpenCL-car.so"
+            android:required="false" />
+        <uses-native-library
+            android:name="libOpenCL-pixel.so"
+            android:required="false" />
+    </application>
+</manifest>

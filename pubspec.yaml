@@ -56,6 +56,8 @@ dependencies:
   device_info_plus: ^12.4.0
   llama_flutter_android:
     path: local_plugins/llama_flutter_android
+  litert_flutter:
+    path: local_plugins/litert_flutter
   network_info_plus: ^7.0.0
 
 dev_dependencies:

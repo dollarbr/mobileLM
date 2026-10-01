@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:path_provider/path_provider.dart';
@@ -12,11 +13,13 @@ import '../controllers/model_controller.dart';
 import '../controllers/settings_controller.dart';
 import '../core/constants.dart';
 import '../models/ai_model.dart';
+import '../services/download_service.dart';
 import '../utils/logistic.dart';
 import '../utils/server_auth.dart';
 import 'decision_model.dart';
 import 'encoder_settings_service.dart';
 import 'inference_service.dart';
+import 'litert_service.dart';
 
 class OpenAiServerService {
   HttpServer? _server;
@@ -109,6 +112,22 @@ class OpenAiServerService {
       }
       if (request.method == 'POST' && path == '/v1/models/unload') {
         await _handleModelUnload(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/litert/screen') {
+        await _handleLitertScreen(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/litert/load') {
+        await _handleLitertLoad(request);
+        return;
+      }
+      if (request.method == 'GET' && path == '/v1/litert/status') {
+        await _handleLitertStatus(request);
+        return;
+      }
+      if (request.method == 'POST' && path == '/v1/litert/run') {
+        await _handleLitertRun(request);
         return;
       }
       if (request.method == 'GET' && path == '/v1/server/capabilities') {
@@ -1014,6 +1033,165 @@ class OpenAiServerService {
   /// dropped completion event costs one request instead of the endpoint.
   static const Duration kDecisionTimeout = Duration(seconds: 60);
 
+  /// Whether this request names a `.tflite`, which is a different runtime.
+  ///
+  /// From the extension, and not from a setting: a user does not choose a
+  /// runtime, they download a model, and the extension is what the file is.
+  static bool _looksLikeTflite(String filename) =>
+      filename.toLowerCase().endsWith('.tflite');
+
+  /// `/v1/classify` for a **`.tflite` head**: LiteRT, feature vector in, logits
+  /// out.
+  ///
+  /// Returns **raw logits, and a null label**. The label set belongs to whoever
+  /// trained the head — only the caller knows what class 0 is — so a label here
+  /// would be a guess about the model's meaning. `top_index` is the argmax of the
+  /// logits and nothing more: argmax over logits is the right reading only for a
+  /// head trained that way, and this endpoint cannot know that about a model it
+  /// did not train. `relevance_score` is null for the reason it is null on the
+  /// generative path.
+  ///
+  /// `auxiliary_inputs` fills any input beyond the first, and that is not a
+  /// convenience: Laya's act head takes `pooled_cls` **and** `feats`, where
+  /// `feats` is derived by the host from marker logits it already computed.
+  /// Filling it with zeros would return a confident label computed on invented
+  /// features, which is worse than refusing.
+  Future<void> _handleClassifyTflite(
+      HttpRequest request, Map<String, dynamic> body, String filename) async {
+    final litert = Get.find<LitertService>();
+    final loaded = litert.loaded;
+
+    if (loaded == null) {
+      await _json(request, {
+        'error': 'No .tflite loaded. POST /v1/litert/load with '
+            '"accept_risk": true, then poll GET /v1/litert/status.',
+        'filename': filename,
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+    if (!loaded.path.endsWith(filename)) {
+      await _json(request, {
+        'error': 'The loaded .tflite is not the one you named.',
+        'loaded': loaded.path.split('/').last,
+        'asked_for': filename,
+        'note': 'One head at a time. POST /v1/litert/load to switch.',
+      }, status: HttpStatus.conflict);
+      return;
+    }
+    // Which input carries the features. The default is the largest one, and a
+    // caller that knows better says so — see TfliteHeadShape.features for why
+    // "the first" is not the rule.
+    final featuresInput = body['features_input'] as String?;
+    final head = loaded.headWith(featuresInput);
+    if (head == null) {
+      await _json(request, {
+        'error': featuresInput != null
+            ? 'This head has no float input named "$featuresInput".'
+            : '${loaded.path.split('/').last} is not a classification head: '
+                '${notAHeadReason(loaded.signature)}',
+        if (featuresInput != null) 'inputs_available': [
+          for (final t in loaded.signature.inputs) t.toJson(),
+        ],
+        'signature': loaded.toJson(),
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    final raw = body['features'] ?? body['input'] ?? body['embedding'];
+    if (raw is! List) {
+      await _json(request, {
+        'error': "Missing 'features': an array of ${head.featureCount} floats.",
+        'wants': head.features.toJson(),
+        'auxiliary_wanted': [for (final t in head.auxiliary) t.toJson()],
+        'note': 'A head with more than one input: "features" fills '
+            '"${head.features.name}", and the rest go in "auxiliary_inputs". '
+            'Name the feature tensor with "features_input" if this guess is '
+            'wrong.',
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+    final features = _floatsOf(raw);
+    if (features == null) {
+      await _json(request, {
+        'error': "'features' has a value that is not a number.",
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    final aux = <String, Float32List>{};
+    final rawAux = body['auxiliary_inputs'] ?? body['auxiliary'];
+    if (rawAux is Map) {
+      for (final e in rawAux.entries) {
+        final v = e.value;
+        if (v is! List) {
+          await _json(request, {
+            'error': "auxiliary_input '${e.key}' is ${v.runtimeType}, not an "
+                'array of numbers.',
+          }, status: HttpStatus.badRequest);
+          return;
+        }
+        final f = _floatsOf(v);
+        if (f == null) {
+          await _json(request, {
+            'error': "auxiliary_input '${e.key}' has a value that is not a "
+                'number.',
+          }, status: HttpStatus.badRequest);
+          return;
+        }
+        aux['${e.key}'] = f;
+      }
+    }
+
+    try {
+      final logits = await litert
+          .classify(features, auxiliary: aux, featuresInput: featuresInput);
+      var top = 0;
+      for (var i = 1; i < logits.length; i++) {
+        if (logits[i] > logits[top]) top = i;
+      }
+      await _json(request, {
+        'object': 'classification',
+        'model': loaded.path.split('/').last,
+        'runtime': 'litert',
+        'signature': loaded.signature.key,
+        'features_input': head.features.name,
+        'auxiliary_used': [for (final t in head.auxiliary) t.name],
+        'n_classes': logits.length,
+        'top_index': top,
+        'logits': logits.toList(),
+        'label': null,
+        'relevance_score': null,
+        'why_no_score': 'A .tflite head produces logits. Turning them into a '
+            'confidence takes a softmax and a temperature, and this endpoint '
+            'knows neither the label set nor the calibration.',
+        'executed_accelerator': loaded.load.executedAccelerator,
+        'executed_accelerator_note': loaded.load.executedAcceleratorNote,
+      });
+    } on LitertException catch (e) {
+      await _json(request, {
+        'error': e.message,
+        'code': e.code,
+        'wants': head.features.toJson(),
+        'auxiliary_wanted': [for (final t in head.auxiliary) t.toJson()],
+      }, status: e.code == 'busy' ? HttpStatus.conflict : HttpStatus.badRequest);
+    }
+  }
+
+  /// A JSON array of numbers as a `Float32List`, or null if any element is not.
+  ///
+  /// Through a `List<double>` on purpose: a JSON array arrives as `List<dynamic>`
+  /// whose elements are `int` where the number was whole, and
+  /// `Float32List.fromList` rejects an int list with a bare type error that names
+  /// no tensor and no field.
+  static Float32List? _floatsOf(List<Object?> raw) {
+    final out = <double>[];
+    for (final v in raw) {
+      if (v is! num) return null;
+      out.add(v.toDouble());
+    }
+    return Float32List.fromList(out);
+  }
+
   /// `/v1/classify` for a **decision model**: a plain language model that
   /// answers with one letter.
   ///
@@ -1178,6 +1356,266 @@ class OpenAiServerService {
     return out.length >= 2 ? out : null;
   }
 
+  // ── LiteRT (.tflite) ────────────────────────────────────────────────────
+  //
+  // Three endpoints, and the first one exists because of what the second needs.
+  //
+  // **The LiteRT Java API binds tensors by name and cannot list them.** It
+  // creates input and output buffers by signature *index*, and it reports a
+  // tensor's type only if you already know its name. So a host that wants to
+  // run an arbitrary model has to read the names out of the FlatBuffer first,
+  // and that read is `screen`.
+  //
+  // Which is not a convenience. Laya's act head stores its two inputs as
+  // `feats` then `pooled_cls`, while `HOST_CONTRACT.md` lists them the other
+  // way round. A host that bound position 0 would hand a 4-element `feats`
+  // tensor to the 1024-wide `pooled_cls`, and the failure would be a native
+  // shape error with no mention of the order.
+
+  /// `POST /v1/litert/screen` — what a `.tflite` expects, without loading it.
+  ///
+  /// Separate from `load` because the two answer different questions and cost
+  /// wildly different amounts: screening is a header read, compiling a 705 MB
+  /// graph is seconds of native time. A catalogue scan wants the first and must
+  /// not pay for the second.
+  Future<void> _handleLitertScreen(HttpRequest request) async {
+    final body = await _readJsonOrNull(request);
+    if (body == null) {
+      await _json(request, {
+        'error': 'Expected a JSON object with a "filename".',
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+    final litert = Get.find<LitertService>();
+    final filename = '${body['filename'] ?? ''}';
+    if (filename.isEmpty) {
+      await _json(request, {
+        'error': "Missing 'filename': the .tflite to inspect.",
+        'example': {'filename': 'laya_en_act_head_fp32.tflite'},
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+    try {
+      final info = await litert.screen(await _modelPath(filename));
+      await _json(request, info.toJson());
+    } on LitertException catch (e) {
+      await _json(request, {'error': e.message, 'code': e.code},
+          status: HttpStatus.badRequest);
+    }
+  }
+
+  /// `POST /v1/litert/load` — compile and keep a `.tflite`.
+  ///
+  /// `accept_risk` for the same reason `POST /v1/models/load` has it: the
+  /// in-app path confirms with a person, and an HTTP client has no one to ask.
+  /// Here the confirmations it skips are the *litert* ones — the memory dialog
+  /// and the accelerator — and the screen still runs, so a file that is not a
+  /// `.tflite` is still refused with the reason.
+  ///
+  /// Answers `202` before compiling, like the GGUF load does. A 705 MB graph
+  /// takes seconds and a request that hangs that long is a client timeout, and
+  /// a timeout is indistinguishable from a drop.
+  Future<void> _handleLitertLoad(HttpRequest request) async {
+    final body = await _readJsonOrNull(request);
+    if (body == null) {
+      await _json(request, {
+        'error': 'Expected a JSON object with a "filename".',
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+    final litert = Get.find<LitertService>();
+    final filename = '${body['filename'] ?? ''}';
+    if (filename.isEmpty) {
+      await _json(request, {
+        'error': "Missing 'filename': the .tflite to load.",
+        'example': {
+          'filename': 'laya_en_act_head_fp32.tflite',
+          'accept_risk': true,
+        },
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+    if (body['accept_risk'] != true) {
+      await _json(request, {
+        'error': 'Loading a .tflite needs "accept_risk": true. In the app this '
+            'is a confirmation about memory and about which accelerator to ask '
+            'for, and an HTTP client has nobody to ask.',
+        'what_accept_risk_skips': [
+          'the memory dialog for the model being loaded',
+          'the accelerator confirmation',
+        ],
+        'what_it_does_not_skip': [
+          'the file screen — a file that is not a .tflite is still refused',
+          'a signature that cannot be bound by name',
+          'LiteRT refusing the model at compile time',
+        ],
+      }, status: HttpStatus.conflict);
+      return;
+    }
+
+    final accelerators = ((body['accelerators'] as List?) ?? const ['CPU'])
+        .map((e) => '$e')
+        .toList();
+    final numThreads = (body['num_threads'] as num?)?.toInt() ?? 0;
+
+    // Response first, then the compile, with one turn of the event loop between
+    // them. Calling `load` and *then* writing the 202 holds the Dart isolate on
+    // a blocking native call with nothing on the socket yet, and the client sees
+    // `Empty reply from server` with no status code at all.
+    await _json(request, {
+      'object': 'litert.load',
+      'status': 'compiling',
+      'filename': filename,
+      'accelerators': accelerators,
+      'note': 'Poll GET /v1/litert/status for the compiled model.',
+    }, status: HttpStatus.accepted);
+    await Future<void>.delayed(Duration.zero);
+
+    try {
+      final m = await litert.load(
+        await _modelPath(filename),
+        accelerators: accelerators,
+        numThreads: numThreads,
+      );
+      // debugPrint, not a logger: this file has none, and a failure that
+      // arrives only as a 202 with a poll that never changes is a failure
+      // nobody can see.
+      debugPrint('[litert] compiled ${m.path}: ${m.toJson()}');
+    } on LitertException catch (e) {
+      debugPrint('[litert] load of $filename failed: ${e.code} ${e.message}');
+    }
+  }
+
+  /// `GET /v1/litert/status` — what is loaded, and what the device can do.
+  Future<void> _handleLitertStatus(HttpRequest request) async {
+    final litert = Get.find<LitertService>();
+    Map<String, Object?> accel;
+    try {
+      final a = await litert.accelerators();
+      accel = {'available': a.available, 'hasGpu': a.hasGpu, 'hasCpu': a.hasCpu};
+    } on LitertException catch (e) {
+      accel = {'error': e.message, 'code': e.code};
+    }
+    final m = litert.loaded;
+    await _json(request, {
+      'loaded': m?.toJson(),
+      'accelerators': accel,
+    });
+  }
+
+  /// `POST /v1/litert/run` — one signature, tensors **by name**.
+  ///
+  /// The general capability, and the reason the other two exist. A head is one
+  /// use; being able to put a feature vector into any named tensor and read any
+  /// named output is what "so I can test other things" needs.
+  ///
+  /// Inputs arrive as JSON arrays of numbers and leave the same way. That is the
+  /// right trade at the HTTP boundary even though the channel carries
+  /// `Float32List`: a 512x1024 input is 524 288 doubles, and as JSON that is
+  /// megabytes of text on a phone.
+  Future<void> _handleLitertRun(HttpRequest request) async {
+    final body = await _readJsonOrNull(request);
+    if (body == null) {
+      await _json(request, {
+        'error': 'Expected a JSON object with "inputs".',
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+    final litert = Get.find<LitertService>();
+    final m = litert.loaded;
+    if (m == null) {
+      await _json(request, {
+        'error': 'No .tflite loaded. POST /v1/litert/load with a filename, or '
+            'GET /v1/litert/status to see what is.',
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    final signature = '${body['signature'] ?? m.signature.key}';
+    final rawInputs = body['inputs'];
+    if (rawInputs is! Map || rawInputs.isEmpty) {
+      await _json(request, {
+        'error': "Missing 'inputs': an object of tensor name to array of "
+            'numbers. Names come from /v1/litert/screen, not from position.',
+        'this_model_wants': {
+          for (final t in m.signature.inputs) t.name: t.toJson(),
+        },
+      }, status: HttpStatus.badRequest);
+      return;
+    }
+
+    final inputs = <String, Float32List>{};
+    for (final e in rawInputs.entries) {
+      final name = '${e.key}';
+      final arr = e.value;
+      if (arr is! List) {
+        await _json(request, {
+          'error': "Input '$name' is ${arr.runtimeType}, not an array of numbers.",
+        }, status: HttpStatus.badRequest);
+        return;
+      }
+      // Built through a List<double> first on purpose: a JSON array arrives as
+      // List<dynamic> whose elements are int where the number was whole, and
+      // Float32List.fromList rejects an int list with a bare type error.
+      final doubles = arr.map((v) => (v is num) ? v.toDouble() : double.nan).toList();
+      if (doubles.any((d) => d.isNaN)) {
+        await _json(request, {
+          'error': "Input '$name' has a value that is not a number.",
+        }, status: HttpStatus.badRequest);
+        return;
+      }
+      final declared = m.signature.inputs.where((t) => t.name == name).firstOrNull;
+      if (declared != null && declared.elementCount != doubles.length) {
+        // Checked here, where the message can say what was expected, rather
+        // than left to the runtime as a native shape error.
+        await _json(request, {
+          'error': "Input '$name' wants ${declared.elementCount} values "
+              '(${declared.type.label} ${declared.shapeLabel}) and got '
+              '${doubles.length}.',
+        }, status: HttpStatus.badRequest);
+        return;
+      }
+      inputs[name] = Float32List.fromList(doubles);
+    }
+
+    final outNames = ((body['output_names'] ?? body['outputNames']) as List?)
+            ?.map((e) => '$e').toList() ??
+        [for (final t in m.signature.outputs) t.name];
+
+    try {
+      final r = await litert.run(inputs, outNames, signature: signature);
+      await _json(request, {
+        'object': 'litert.run',
+        'signature': r.signature,
+        'run_ms': r.runMillis,
+        'input_bytes': r.inputBytes,
+        'outputs': {
+          for (final e in r.outputs.entries) e.key: e.value.toList(),
+        },
+        'executed_accelerator': m.load.executedAccelerator,
+        'executed_accelerator_note': m.load.executedAcceleratorNote,
+      });
+    } on LitertException catch (e) {
+      await _json(request, {'error': e.message, 'code': e.code},
+          status: e.code == 'busy' ? HttpStatus.conflict : HttpStatus.badRequest);
+    }
+  }
+
+  /// Full path of a model file, reusing the one path builder that exists.
+  ///
+  /// `DownloadService.modelPath` is already the single place that joins a
+  /// filename to the app's model directory, and the `.tflite` files live beside
+  /// the GGUF ones. A second joiner here would be a second way to be wrong, and
+  /// the difference shows up as a file that exists and cannot be opened — the
+  /// symptom that cost the most to read in this file's history.
+  ///
+  /// An absolute path passes through, so a caller can screen a `.tflite` from
+  /// anywhere (an import directory, a temp file from a download).
+  Future<String> _modelPath(String filename) async {
+    if (filename.startsWith('/')) return filename;
+    return Get.find<DownloadService>().modelPath(filename);
+  }
+
   /// `POST /v1/classify` — this app's own shape, because there is no standard
   /// one. Takes a single `input` and returns one score per class, with the
   /// labels the GGUF carried.
@@ -1187,21 +1625,35 @@ class OpenAiServerService {
     // something malformed, but it is the pre-existing behaviour of every other
     // endpoint here and consistency beats a one-off difference nobody asked for.
     final body = await _readJson(request);
+    // `filename`/`model` is optional for the other two paths — a classifier with a
+    // head is recognised by its own tensors — and required for the .tflite one,
+    // because a head has no `cls.output.weight` to be recognised by.
+    final filename = '${body['filename'] ?? body['model'] ?? ''}';
 
-    // Two kinds of model answer this endpoint, and they need different engines.
+    // **Three** kinds of model answer this endpoint, and the tests are in the
+    // order of how much each one assumes.
     //
-    // A **classifier with a head** carries `cls.output.weight` and scores every
-    // class in one forward pass. That is the path below, and it is the one that
-    // exists.
+    // 1. A **.tflite head** is a third runtime — LiteRT, not llama.cpp. Decided
+    //    from the file extension, because a user does not choose a runtime, they
+    //    download a model; asking the caller to name the runtime would be a
+    //    field that can disagree with the file, silently.
     //
-    // A **decision model** (Tev1, Bespoke-Nimble) is a plain language model
-    // fine-tuned to answer with one letter. It has no head, no logit, and no
-    // score — so asking the head path for one is asking for something the file
-    // does not contain. Measured on the A72: Tev1-0.8B loads as `qwen35` and
-    // answers the decision fine, and the head path says "no model loaded".
+    // 2. A **classifier with a head** carries `cls.output.weight` and scores
+    //    every class in one forward pass.
     //
-    // Dispatching on the presence of the head is the honest test: it is a fact
-    // about the file, not a setting the user can get wrong.
+    // 3. A **decision model** (Tev1, Bespoke-Nimble) is a plain language model
+    //    fine-tuned to answer with one letter. It has no head, no logit and no
+    //    score, so asking the head path for one asks for something the file does
+    //    not contain. Measured on the A72: Tev1-0.8B loads as `qwen35` and
+    //    answers the decision fine, while the head path says "no model loaded".
+    //
+    // 2 and 3 are told apart by the presence of the head, which is a **fact
+    // about the file** and not a setting the user can get wrong. That is the
+    // same test the 0.4.0 encoders settled on, for the same reason.
+    if (_looksLikeTflite(filename)) {
+      await _handleClassifyTflite(request, body, filename);
+      return;
+    }
     final info = await LlamaEncoder.info();
     if (!info.isClassifier) {
       await _handleClassifyGenerative(request, body);

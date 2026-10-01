@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: runtime LiteRT 2.2.0 para `.tflite`, e `/v1/classify` servindo cabeças
+
+`local_plugins/litert_flutter/` traz o LiteRT 2.2.0 (o TFLite renomeado) como
+plugin **separado** de `flutter_litert_lm`: são dois runtimes que só dividem o
+nome no repositório do Google — um é prompt→tokens, o outro é um interpretador de
+tensores. 2.2.0 e não 1.4.2 porque `CompiledModel`/`GpuOptions` só existem em
+`litert-api` a partir daí, e porque é a versão que o card da Laya nomeia.
+**9,28 MB** de `.so` arm64, contra 222,8 MB de nativas no APK.
+
+A API liga tensores **por nome** e não tem como listar os nomes, então o host lê
+o FlatBuffer: `/v1/litert/screen` (`litert_model.dart`, 23 testes, um deles
+contra o act head real da Laya). Não é conveniência — o act head guarda `feats`
+antes de `pooled_cls`, ao contrário do `HOST_CONTRACT.md`.
+
+`POST /v1/litert/screen|load|run` e `GET /v1/litert/status` expõem o runtime.
+`/v1/classify` ganhou um terceiro caminho, despacho pela extensão do arquivo.
+
+**Medido no A72 com `laya_en_act_head_fp32.tflite`** (1,0 MB, SHA256 conferido
+contra o SHA256SUMS do repo):
+
+| | compila | run | logit 0 | logit 1 |
+|---|---|---|---|---|
+| CPU (XNNPACK) | 6 ms | 0–2 ms | +0,284356 | −0,209888 |
+| GPU (OpenCL) | 273 ms | 0 ms | +0,284356 | −0,209888 |
+
+Diferença máxima entre backends **2,98e-08** (float32), reprodutibilidade entre
+runs 0, e `/v1/classify` dá **exatamente** o que `/v1/litert/run` dá.
+
+**`executed_accelerator` é `null`, e a resposta diz por quê.** `CompiledModel` não
+expõe o acelerador que usou. A resposta traz `available` e `requested`; inventar
+o "real" seria mentir. No logcat: NPU ausente, `libLiteRtClGlAccelerator.so`
+carregado, XNNPACK registrado; `getAvailableAccelerators()` devolve
+`["GPU", "CPU"]`.
+
+**A regra de qual input é o vetor de features mudou por causa do aparelho.** Era
+"o primeiro"; o act head quebra isso, porque `feats [1,4]` vem antes de
+`pooled_cls [1,1024]`. O default passou a ser **o maior input**, com
+`features_input` como override, e a resposta sempre nomeia qual foi usado.
+Auxiliares nunca são preenchidos com zeros — um logit sobre features inventadas
+volta com um rótulo confiante.
+
+**Três bugs meus, e o padrão deles:** o nome do método não batia (`load` vs
+`loadModel`), que o Flutter reporta como `MissingPluginException` e aponta para o
+registro do plugin; a resposta vinha da thread errada; e `every` numa lista vazia
+é `true`, então uma assinatura sem entradas passava como ligável. Os três se
+apresentam como outra coisa, e nenhum é óbvio no código.
+
+
 ### O LiteRT-LM foi medido nos dois backends, e a GPU é mais rápida
 
 A pergunta estava aberta desde o começo desta linha: *"acredito que GPU seja

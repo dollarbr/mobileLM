@@ -1108,6 +1108,125 @@ montanha e cidade dão respostas diferentes**. A variação de 50 tok/s contra
 os pedidos eram idênticos e a resposta byte-idêntica parecia ser o modelo
 funcionando. A divergência apareceu com três prompts diferentes no mesmo lote.
 
+## O runtime LiteRT (`.tflite`), e o que ele não sabe dizer
+
+`local_plugins/litert_flutter/` traz o **LiteRT 2.2.0** — o TFLite renomeado —
+como plugin separado de `flutter_litert_lm`. Separado porque são **dois runtimes
+que só dividem o nome no repositório do Google**: `litertlm-android` é LiteRT-**LM**
+(prompt → tokens, `Backend.{cpu,gpu,npu}`), e este é o interpretador de tensores
+(`CompiledModel`, buffers nomeados). Um é um classificador de 1 MB, o outro é um
+GGUF. Juntá-los seria um plugin com 46 MB de nativas para servir 1 MB.
+
+**Por que 2.2.0 e não 1.4.2, que é 4,3 MB em vez de 8,7.** Duas coisas, e as duas
+decidem: `litert` sozinho expõe só a API antiga `org.tensorflow.lite.Interpreter` —
+`CompiledModel` e `GpuOptions` estão em `litert-api`, que a 2.2.0 é um AAR (o
+`.jar` que o Maven serve tem 1.449 bytes e está vazio) e carrega 0,5 MB de código
+nativo; e é a versão que o card da Laya nomeia — *"both graphs use LiteRT 2.2.0
+CompiledModel with GpuOptions(precision = FP32)"*. Amarrar a uma versão diferente
+da que um modelo publicado foi validado contra é um jeito de descobrir que os
+números mudaram.
+
+Custo: **9,28 MB** de `.so` arm64, contra 222,8 MB de nativas no APK. O
+`abiFilters 'arm64-v8a'` no módulo de biblioteca é o que os outros plugins já
+fazem e **não** controla o APK — quem filtra é o módulo do app, via
+`--target-platform`.
+
+### A API liga por nome e não lista nomes — daí o parser em Dart
+
+`run(Map, Map, signatureName)` liga por nome. `createInputBuffers(0)` cria por
+**índice de assinatura**, e `getInputTensorType(nome, assinatura)` só funciona se
+o nome já for conhecido. **Não há como listar os nomes pela API.** Então o host
+precisa lê-los do FlatBuffer, e essa leitura é `/v1/litert/screen`
+(`lib/services/litert_model.dart`, 23 testes, incl. o act head real da Laya).
+
+Não é conveniência. O act head guarda **`feats` antes de `pooled_cls`**, enquanto o
+`HOST_CONTRACT.md` lista o contrário. Um host que amarrasse a posição 0 entregaria
+um tensor de 4 elementos ao `pooled_cls` de 1024.
+
+### Medido no A72, com `laya_en_act_head_fp32.tflite` (1,0 MB, SHA conferido)
+
+| | compila | run | logit 0 | logit 1 |
+|---|---|---|---|---|
+| CPU (XNNPACK) | **6 ms** | 0–2 ms | +0,284356 | −0,209888 |
+| GPU (OpenCL) | 273 ms | 0 ms | +0,284356 | −0,209888 |
+
+**Diferença máxima entre os backends: 2,98e-08** — precisão de float32. Os dois
+caminhos calculam a mesma coisa, e a reprodutibilidade entre runs é 0.
+
+E `/v1/classify` com a cabeça dá **exatamente** o que `/v1/litert/run` dá, com
+diferença `0.000e+00` — o embrulho não acrescenta nem perde nada.
+
+### O acelerador executado não é exposto, e a resposta diz isso
+
+`CompiledModel` **não tem getter** do acelerador que usou. A classe expõe
+`Options` (o que pedir) e nada que leia de volta o que o LiteRT fez, e o LiteRT
+cai internamente quando o acelerador pedido não está disponível.
+
+A regra deste repo é reportar o backend que **realmente** rodou, então a resposta
+carrega `available` (o que o aparelho diz que aguenta — `Environment
+.getAvailableAccelerators()`, já filtrado) e `requested`, e
+`executed_accelerator` vem **nulo** com uma nota dizendo por quê. Um accelerator
+sob demanda seria uma verdade que o aparelho não sabe.
+
+No aparelho a resposta real sai do logcat, e sai: `NPU accelerator could not be
+loaded`, `Dynamically loaded GPU accelerator(libLiteRtClGlAccelerator.so)`,
+`XNNPACK CPU accelerator registered` — e `getAvailableAccelerators()` devolve
+`["GPU", "CPU"]`. O NPU continua fora, como em todas as outras camadas.
+
+### `/v1/classify` tem três caminhos, e o `.tflite` é o terceiro
+
+Despachado pela **extensão do arquivo**, não por configuração: quem não escolhe
+runtime, escolhe modelo. Um campo `runtime` no request seria algo que pode
+discordar do arquivo, e a discordância é silenciosa.
+
+**`relevance_score` é `null` e `label` é `null`.** A cabeça produz logits; o
+conjunto de rótulos pertence a quem treinou, e só o chamador sabe o que é a
+classe 0. `top_index` é o argmax dos logits e nada mais — argmax sobre logits só
+é a leitura certa para uma cabeça treinada assim, e este endpoint não sabe disso
+sobre um modelo que ele não treinou.
+
+**A regra de qual input é o vetor de features mudou por causa do aparelho.** Era
+"o primeiro input", e o act head quebra isso do jeito mais comum possível: guarda
+`feats [1,4]` **antes** de `pooled_cls [1,1024]`, então "primeiro" escolhe o
+auxiliar de 4 elementos e o endpoint responde, corretamente, *"a cabeça quer 4
+features e recebeu 1024"* — resposta certa para a pergunta errada.
+
+O que é verdade entre cabeças é o **tamanho**: o vetor de features é o grande, e
+entradas auxiliares são quantidades derivadas e pequenas. Então o default é **o
+maior input**, e quem souber melhor diz com `features_input`. A resposta sempre
+nomeia qual input foi usado, então errar custa um request e não uma sessão de
+debug. `test/tflite_head_shape_test.dart` fixa a regra, e o caso do act head é o
+primeiro teste do grupo.
+
+**Entradas auxiliares nunca são preenchidas com zeros.** Um logit computado sobre
+features inventadas é um número sem significado, e volta usando um rótulo
+confiante. A resposta 400 nomeia o que falta e o tamanho que cada uma quer.
+
+### Três bugs meus que custaram um ciclo cada, e o padrão deles
+
+**O nome do método não batia.** O Kotlin registrava `"load"` e o Dart chamava
+`loadModel`, então toda carga caía em `notImplemented()` — que o Flutter reporta
+como `MissingPluginException`, cuja mensagem do lado Dart aponta para o
+**registro** do plugin. A classe estava no dex, o registrante a referenciava, e a
+única pista restante era o nome. A mensagem agora diz que `notImplemented` é
+"registrado, mas sem handler com esse nome", que é o caso comum.
+
+**A resposta vinha da thread errada.** O handler do `MethodChannel` roda na
+platform thread e `CompiledModel.create` é nativo e bloqueante; responder de lá é
+o que a engine Flutter reclama. Todo corpo agora responde por um wrapper que
+sempre volta para a platform thread.
+
+**`inputs.every(...)` numa lista vazia é `true`**, então uma assinatura **sem
+entradas** passava como ligável — e como o default do modelo é "a primeira
+ligável", ela era escolhida e não tinha o que preencher. `bindable` agora exige
+entradas e saídas.
+
+O padrão dos três: **um erro que se apresenta como outra coisa.** O sintoma aponta
+para o registro quando o problema é o nome; para o crash quando é a thread; para
+"sem resposta" quando é uma lista vazia. Nenhum deles é óbvio no código, e todos
+os três só apareceram porque a checagem seguinte olhou o log em vez de acreditar
+na mensagem.
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no

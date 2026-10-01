@@ -19,6 +19,7 @@ import 'services/inference_service.dart';
 import 'services/cloud_service.dart';
 import 'services/download_service.dart';
 import 'services/device_info_service.dart';
+import 'services/litert_service.dart';
 import 'services/local_image_service.dart';
 import 'services/app_log_service.dart';
 import 'services/encoder_settings_service.dart';
@@ -88,6 +89,13 @@ void main() {
     Get.put(CloudService());
     Get.put(DownloadService());
     Get.put(LocalImageService());
+    // Registered with Get.put and not lazily: `/v1/litert/*` resolves it with
+    // Get.find, and a lazy registration would make the first HTTP request the
+    // thing that decides whether the service exists. It costs nothing to hold
+    // — the 8,7 MB of LiteRT natives are in the APK whatever we do, and the
+    // Environment handle is the only live object and is not created until
+    // something asks what the device can do.
+    Get.put(LitertService());
     final crashReporting =
         await Get.putAsync(() => CrashReportingService().init());
     FlutterError.onError = (details) {
