@@ -446,8 +446,14 @@ Rota: `llama_attach_threadpool(ctx, pool, pool_batch)`, API pública do
 
 Escopo, deliberado: só na contagem **automática** (uma contagem digitada em
 Settings é override do usuário) e só no caminho **GGUF**. O LiteRT não tem
-gancho equivalente aqui — `planLiteRtTier` decide por `npuAvailable` e nunca
-mediu.
+gancho equivalente aqui — todo o pinning vive em `jni_wrapper.cpp` e o caminho
+LiteRT passa por `liblitert-lm.so`, sem acesso a nenhum daqueles símbolos.
+
+**Isso deixou de ser uma nota de escopo e passou a ser a explicação de um número
+medido.** O backend de CPU do LiteRT roda **sem pin**, e o pinning sozinho vale
+2,8× neste aparelho. Medido: LiteRT 0.6B na CPU dá 3,0 tok/s contra 18,6 que um
+GGUF do mesmo tamanho daria pela lei `k/parâmetros` — os 6,2× de diferença que
+restam são kernels, não thread. Ver "O micro-benchmark do LiteRT" abaixo.
 
 Medido: 1 thread dá 11,6 tok/s e 2 dão 18,0. A hipótese de que 1 thread ganharia
 — 100% de um núcleo parece melhor ao `schedutil` do que 50% — é **medida e falsa**.
@@ -483,14 +489,35 @@ Dois erros de medição que existiram e que só o aparelho mostrou:
 Contar por `onToken` é correto porque o engine chama uma vez por token que ele
 contou, então a assinatura dele não precisou mudar.
 
-## O que falta: micro-benchmark no LiteRT (decidido, não implementado)
+## O micro-benchmark do LiteRT: a pergunta mudou de forma
 
 `planLiteRtTier({required String mode, required bool npuAvailable})` devolve
-NPU → GPU → CPU e **nunca mediu nada**. Para o GGUF isso foi consertado pela
-faixa de tamanho, que é extrapolação acima de 1B; para o LiteRT **não há nem
-isso**, porque a escolha é feita antes de qualquer número existir.
+NPU → GPU → CPU e, **até esta medição, nunca tinha medido nada**. Para o GGUF isso
+foi consertado pela faixa de tamanho, que é extrapolação acima de 1B; para o
+LiteRT não havia nem isso, porque a escolha era feita antes de qualquer número
+existir.
 
-Se for implementado, o que já está medido e precisa ser respeitado:
+**Um modelo foi medido nos dois backends, e a resposta é "sempre GPU" — por 27%.**
+
+| LiteRT Qwen3 0.6B | TTFT | decode |
+|---|---|---|
+| `cpu_safe` → `backend=cpu` | 4,58 s | **3,0** tok/s |
+| `auto_fast` → `backend=gpu` | 2,94 s | **3,8** tok/s |
+
+As quatro amostras de cada lado são idênticas (`3.0 3.0 3.0 3.0` e
+`3.8 3.8 3.8 3.8`), porque a GPU não passa pelo rampa do governor que a CPU
+sofre. E o que motivou o A/B foi um **erro meu na documentação**, não uma ideia
+nova: eu tinha escrito que a GPU era 8× mais lenta que a CPU aqui, comparando o
+LiteRT-na-GPU com os GGUFs-na-CPU — o que compara **dois runtimes**, não dois
+backends. A tabela de medição do catálogo traz a correção completa.
+
+**O que isso muda sobre a pergunta original.** A versão anterior desta seção
+pedia um micro-benchmark que escolhesse o backend por aparelho e por modelo. Ele
+não faria o que se esperava: escolheria GPU, e o LiteRT continuaria **6,2× mais
+lento que o llama.cpp** para o mesmo tamanho de modelo. O gargalo não é a escolha
+do backend, é o engine.
+
+Se ainda assim for implementado, o que já está medido e precisa ser respeitado:
 
 - **A carga é o custo, não a geração.** Comparar CPU e GPU de verdade significa
   carregar duas vezes. E o LiteRT tem fallback **nativo** — `Backend.{cpu,gpu,npu}`
@@ -505,13 +532,13 @@ Se for implementado, o que já está medido e precisa ser respeitado:
   (o linker namespace bloqueia `libneuron_adapter_mgvi.so`) e no MT6878 não há
   prova. Benchmark de NPU pode ser ruído, e ruído aqui vira escolha de backend.
 - **O ganho do GGUF foi de 4-6×.** Se o LiteRT der 1,1×, um micro-benchmark que
-  roda a cada carga custa mais do que ele informa. Por isso a resposta honesta
-  para GPU pode ser "sempre GPU, e é isso" — o que precisa ser **medido uma vez**,
-  não decidido de memória.
-
-O que faria a frase "isto faz X, que antes não existia" sair verdadeira: hoje
-não há como saber qual backend o LiteRT deveria usar neste aparelho. Com o
-micro-benchmark, há — e ele é por aparelho e por modelo, não por tabela.
+  roda a cada carga custa mais do que ele informa. **O medido foi 1,27×** — dentro
+  dessa faixa, e por isso a resposta honesta para GPU é "sempre GPU, e é isso".
+- **Um número só não generaliza.** Os outros 4 `litert` do catálogo não foram
+  medidos e nenhum é um 0.6B. A lei `tok/s ≈ k/parâmetros` foi ajustada em GGUF;
+  a LiteRT pode ter outra curva, e a diferença entre os dois engines é
+  estrutural (o LiteRT não alcança o pinning, que vale 2,8× sozinho), não uma
+  constante que valha entre modelos.
 
 ## A memória mostrada é `MemAvailable`, e no A72 isso é 4×
 
@@ -694,6 +721,14 @@ assimetria que a seção do micro-benchmark do LiteRT descreve, agora vista de
 um jeito que a API torna reproduzível: `planLiteRtTier` sempre prefere GPU,
 `planAcceleration` mantém GGUF pequeno na CPU.
 
+**Essa assimetria é a que confunde, e a API é o jeito de sair dela.** Os dois
+`backend` são a resposta certa a perguntas **diferentes**: `gpu` no LiteRT é um
+modelo de 586 MB rodando a 3,8 tok/s, e `cpu` no GGUF é um modelo de 142 MB
+rodando a 49,3. Comparar os dois números como se fossem o mesmo eixo foi
+exatamente o erro que produziu "a GPU é 8× mais lenta que a CPU" nesta
+documentação. A tabela com os dois backends do **mesmo** arquivo LiteRT está na
+seção do micro-benchmark, e é a única comparação que responde à pergunta.
+
 ## `stream: true` não fazia streaming, e o watchdog entre tokens cortava a resposta
 
 Dois defeitos que só apareceram quando a medição do catálogo passou a usar a
@@ -839,28 +874,38 @@ app não tem suporte a adaptador: `loadModel` recebe um caminho de GGUF único.
 Não é entrada de catálogo; no máximo é "importar um GGUF já mesclado", e mesmo
 assim são 5,5 GB.
 
-### O que falta para o Tev1 ser usável de verdade
+### Os 4 passos que o Tev1 exigia, e o que eles viraram
 
-O `/v1/classify` do app depende de `cls.output.weight` — a cabeça de encoder —
-que um modelo generativo não tem. Ele não serve o Tev1, e por isso afeature é uma
-**superfície de decisão**, não uma entrada de catálogo:
+Isto estava aqui como plano. **Está feito e medido** — a seção "A superfície de
+decisão" mais abaixo tem os números. O que fica são as três decisões que os
+passos produziram e que ainda valem como regra:
 
-1. montar o prompt (system instruction + `state`/`question`/opções),
-2. mandar `temperature: 0`, `max_tokens: 12` e o pensamento desligado,
-3. mapear a letra de volta para a etiqueta da opção,
-4. **e não inventar confiança.** O Tev1 devolve só a letra, então
-   `relevance_score` teria de ser nulo. O exemplo de Ollama do Nimble traz
-   probabilidades, mas elas vêm da camada de serviço do Nimble, não dos pesos —
-   trazê-las para o Tev1 seria fabricar um número.
+1. **montar o prompt** — `state` vai dentro de um envelope JSON, não em prosa.
+   Um ticket de suporte com aspas e chaves mudaria a forma da pergunta, e um
+   decision model é exatamente o modelo para o qual se alimenta texto não
+   confiável. Ver `decision_model.dart`.
+2. **`temperature: 0` e o pensamento desligado** — `generate()` ganhou
+   `temperatureOverride` e `maxTokensOverride` para isso, porque nenhum dos dois
+   pode vir do Settings. Temperatura 0 é o que torna a decisão reprodutível; o
+   `/no_think` é a convenção que o `chat_controller.dart` já usava, reaproveitada
+   em vez de reinventada.
+3. **mapear a letra de volta** — `parseDecisionAnswer`, e o `<think>` é removido
+   **antes**, porque uma letra dentro da deliberação do modelo não é a resposta
+   dele. O Tev1 escreve `<think>\n\n</think>\n\nB` e um parser de primeira letra
+   devolve `t`.
+4. **não inventar confiança** — `relevance_score` é `null` e `scores` mapeia
+   tudo para `null`, com um `why_no_scores` na resposta. As probabilidades do
+   Nimble vêm da camada de serviço dele, não dos pesos.
 
-O caminho certo é estender `/v1/classify` com um caminho generativo, e não criar
-um endpoint novo: o contrato já existe e o `AGENTS.md` diz que o endpoint é o
-contrato.
+O caminho foi estender `/v1/classify` e não criar um endpoint novo, como estava
+previsto: o contrato já existe e o `AGENTS.md` diz que o endpoint é o contrato.
 
-**Três coisas pendentes de decisão:** a licença do Tev1 diz "being finalized", o
-que impede colocar num app distribuído (não impede um build pessoal); não há Q4,
-só Q8_0 de 774 MB e f16 de 1,4 GB; e o GGUF vem de um repositório de comunidade
-com 0 downloads, então a conversão não foi verificada por terceiros.
+**O que continua pendente é de licença, não de código** — e é por isso que o Tev1
+**não** é entrada de catálogo. A licença diz "being finalized", o que impede
+colocar num app distribuído (não impede um build pessoal); não há Q4, só Q8_0 de
+774 MB e f16 de 1,4 GB; e o GGUF vem de um repositório de comunidade com 0
+downloads, então a conversão não foi verificada por terceiros. Nenhuma dessas três
+se resolve com código.
 
 **O que a integração não precisou:** o app reconhece sozinho um `.gguf`
 desconhecido que apareça no diretório de modelos — `refreshDownloaded` o registrou
