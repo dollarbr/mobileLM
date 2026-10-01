@@ -110,8 +110,22 @@ diferença máxima de 2,98e-08 entre eles, e `/v1/classify` serve
 
 O que **não** existe é o *host* completo do Laya, e continua fora do escopo
 combinado: são 705 MB de grafo, uma tabela de embeddings de 98 MB com SHA256, o
-tokenizer ModernBERT e a orquestração de dois grafos. Cabe no Edge 60, não no
-A72. O console do `.tflite` faz a parte honesta disso — mostra o que o arquivo
+tokenizer ModernBERT e a orquestração de dois grafos.
+
+**Isto já foi escrito aqui como "cabe no Edge 60, não no A72", e está errado.**
+São 804 MB de pesos contra um `maxModelBytes` de **1,19 GB** no A72 (25% de
+`MemTotal` = 4,78 GB) — 68% do orçamento que o próprio app se dá. **O A72 nunca
+foi excluído por memória.** O que seria caro é *cálculo*: um forward pass do
+ModernBERT não é decode, o pinning de 4 threads que vale 2,8× para geração não
+compensa aqui, e a resposta honesta é "segundos por passagem" — **uma
+estimativa, não uma medição.** Argumento completo em
+[`HANDOFF.md`](HANDOFF.md) §4.1.
+
+O que separa "fora do escopo" de "não cabe" é que só o primeiro era verdade: o
+interpretador já está no APK e já foi provado neste aparelho, então o host é
+trabalho de orquestração em Dart, não uma questão de capacidade do telefone.
+
+O console do `.tflite` faz a parte honesta disso — mostra o que o arquivo
 diz de si mesmo, deixa você escolher o acelerador, e roda o endpoint — sem
 inventar as features que só o host sabe produzir.
 

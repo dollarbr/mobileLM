@@ -199,9 +199,55 @@ frio no A72, zero falhas.
 |---|---|
 | **os outros 4 `litertlm`** (gemma-4 E2B/E4B e mais dois) | "GPU é o melhor LiteRT neste aparelho" veio de **um** modelo, o 0.6B. Nenhum dos outros é um 0.6B, e a curva do LiteRT pode ser outra |
 | **a hipótese da quantização** | o SmolLM2 135M é o mais lento e é o único `Q4_K_M`. Se a causa for a quantização e não o tamanho, a regra de 1280 MB precisa de recorte |
-| **o host completo do Laya** | 705 MB de grafo, tabela de embeddings de 98 MB, tokenizer ModernBERT, orquestração de 2 grafos. Cabe no Edge 60, **não** no A72 |
+| **o host completo do Laya** | 705 MB de grafo, tabela de embeddings de 98 MB, tokenizer ModernBERT, orquestração de 2 grafos. **Não é memória** — §4.1. É trabalho de host, e a parte cara é *cálculo*, não peso |
 | **o NPU** | inalcançável no Edge 60 (o linker namespace bloqueia `libneuron_adapter_mgvi.so`) e não provado no MT6878 |
 | **as 3 pendências de licença do Tev1** | licença "being finalized", sem Q4, GGUF de comunidade com 0 downloads. **Não se resolvem com código** |
+
+---
+
+### 4.1 O Laya no A72: uma afirmação minha que a aritmética desmente
+
+Este merece uma subseção, porque os docs diziam **"Cabe no Edge 60, não no
+A72"** e isso era **uma afirmação minha, sem medição, que a regra do próprio app
+desmente**.
+
+**Os pesos cabem, e sobra.** Conferido contra o código e contra o aparelho agora:
+
+| | número | de onde veio |
+|---|---|---|
+| grafo do encoder | 705 MB | o modelo publicado |
+| tabela de embeddings | 98 MB | o modelo publicado |
+| act head | 1,0 MB | **medido no A72** |
+| **total** | **804 MB** | |
+| `maxModelBytes` no A72 | **1,19 GB** | `totalRamGB × 0.25`, `device_info_service.dart:29` |
+| `MemTotal` no A72 | 4,78 GB (5.011.840 kB) | `/proc/meminfo`, lido agora |
+| `MemAvailable` no A72 | 2,86 GB (2.997.760 kB) | `/proc/meminfo`, lido agora |
+
+804 MB são **68% do orçamento que o app mesmo se dá**, e 33% do que o telefone
+tem disponível agora. A regra dos 25% da RAM física existe porque o
+low-memory killer do Android chega antes de os pesos acabarem, e esse raciocínio
+não fica menos verdadeiro para um modelo maior. **O A72 nunca foi excluído por
+memória, e "não cabe no A72" era eu escrevendo uma conclusão onde havia uma conta
+para fazer.**
+
+**O que custaria de verdade é cálculo, e isso ninguém mediu.** Um forward pass
+do ModernBERT sobre uma passagem não é decode autoregressivo: não há reaproveitamento
+de KV, então o pinning do app — afinado para geração token a token, e que vale
+2,8× sozinho — não compra nada aqui, e a passagem toda é um prefill de 12 camadas
+de uma vez. Num Snapdragon 720G de 2019 (2×A78 + 6×A55, Adreno 618) a estimativa
+honesta é **segundos por passagem, não milissegundos**, e 705 MB por OpenCL num
+Adreno 618 que divide RAM com a CPU também não é um plano promissor. **As duas
+coisas são chute.** O ponto é que nenhuma das duas é uma parede de memória, e
+tratar "é grande demais" como resposta pulou a pergunta.
+
+**Então o bloqueio real é mais estreito do que parecia.** O act head — a parte
+que produz os logits — **já roda no A72, 159 ms, nos dois backends**. O que não
+existe é um host: ler a passagem, tokenizar com ModernBERT, rodar o encoder de
+705 MB, derivar `[top1, top1−top2, entropia, k/255]`, e então rodar o act head. Isso é um trabalho de orquestração em Dart contra um interpretador que já
+está no APK e já foi provado neste aparelho, **não** uma pergunta sobre a
+capacidade do telefone. Ficou fora do escopo como combinado, e deve ficar — mas
+**"fora do escopo" e "não cabe" são frases diferentes**, e só a primeira era
+verdadeira.
 
 ---
 
@@ -253,10 +299,11 @@ que resta é olhar arch e `n_layer`.
    muda uma frase do `AGENTS.md` que hoje vale para um modelo só.
 2. **Uma entrada de catálogo `.tflite`.** O console existe e funciona, mas o
    único arquivo utilizável é um que foi empurrado à mão. Duas rotas: a Laya
-   (bloqueada por licença e pelo host de 705 MB) ou **um `.tflite` de uma
-   entrada só**, que a regra do "maior input" tornou trivial — um
-   `Linear(1024, 2)` é o classificador mínimo, e ele cobre o caminho feliz sem
-   auxiliares, que hoje exige JSON escrito à mão.
+   (licença, e um host de ~800 MB que **cabe** no A72 — §4.1 — mas é trabalho de
+   orquestração, não de aparelho) ou **um `.tflite` de uma entrada só**, que a
+   regra do "maior input" tornou trivial — um `Linear(1024, 2)` é o classificador
+   mínimo, e ele cobre o caminho feliz sem auxiliares, que hoje exige JSON
+   escrito à mão.
 3. **Fechar a fila antiga de UI** (overflows restantes, nomes e comentários dos
    modelos, quantização por swipe no card).
 4. **A 0.6.0**, com o critério deste repo: minor = feature, e a frase tem que sair

@@ -178,10 +178,20 @@ cálculo subiu como minor. Verificado antes de decidir: `gh release list` para
 em `0.4.0`, e o APK não tem nenhuma lib TFLite e o catálogo não menciona
 TFLite. Laya
 (`litert-community/Laya-English-LiteRT`) vem como `.tflite`, não como GGUF, e o
-APK **não tem interpretador TFLite** — `liblitertlm_jni.so` é LiteRT-LM
-generativo e não serve. Isso é a primeira coisa a resolver, e é por isso que
-`/v1/classify` foi landado agora sem modelo atrás: o endpoint é o contrato, o
-modelo vem na 0.4.1.
+APK **não tinha** interpretador TFLite — `liblitertlm_jni.so` é LiteRT-LM
+generativo e não serve. Isso era a primeira coisa a resolver, e é por isso que
+`/v1/classify` foi landado sem modelo atrás: o endpoint é o contrato, o modelo
+vem depois.
+
+⚠️ **Esse parágrafo descreve um estado que já passou, e ele se contradiz com a
+seção "O runtime LiteRT (`.tflite`)" mais abaixo deste arquivo.** Naquele
+momento o APK não tinha interpretador; **agora tem** — `local_plugins/litert_flutter/`
+traz o LiteRT 2.2.0, e o act head real da Laya roda no A72 a 159 ms. O que
+ainda não existe é o *host* (o encoder ModernBERT de 705 MB que produz as
+features), que é trabalho de orquestração e não de aparelho: os 804 MB de pesos
+cabem folgados no orçamento de `maxModelBytes` do A72 (1,19 GB). Ver
+[`docs/HANDOFF.md`](docs/HANDOFF.md) §4.1, e leia o parágrafo acima como
+"antes de resolver", não como o estado atual.
 
 Todo commit em mobileLM-app deve ser **documentado** (pedido explícito do usuário) —
 diferente do resto do workspace, onde commit só ocorre se pedido.

@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### docs: "o Laya não cabe no A72" era afirmação sem medição, e a regra do app a desmente
+
+Os docs diziam, em dois lugares, que o host completo do Laya "cabe no Edge 60 e
+não no A72". **Não havia medição nenhuma por trás disso.** Conferido contra o
+código e contra o aparelho: 705 MB de encoder + 98 MB de embeddings + 1,0 MB de
+act head = **804 MB**, contra um `maxModelBytes` de **1,19 GB** no A72 (25% de
+`MemTotal` = 4,78 GB) e 2,86 GB de `MemAvailable` lidos agora. São 68% do
+orçamento que o próprio app se dá. **O A72 nunca foi excluído por memória.**
+
+O que seria caro é *cálculo*, e isso também é estimativa: um forward pass do
+ModernBERT não é decode, o pinning de 4 threads que vale 2,8× para geração não
+atende a um prefill de 12 camadas, e "segundos por passagem" é palpite, não
+número. Registrado como estimativa no §4.1 do `HANDOFF.md`.
+
+A distinção que importa para o trabalho: **"fora do escopo" e "não cabe" são
+frases diferentes, e só a primeira era verdade.** O interpretador já está no APK
+e já foi provado no A72 (159 ms, dois backends, diferença 2,98e-08), então o host
+é orquestração em Dart, não uma pergunta sobre o telefone. Continua fora do
+escopo combinado — mas por decisão, não por impossibilidade.
+
 ### docs: um handoff datado, e a lista de próximos passos que estava invertida
 
 `docs/HANDOFF.md` — estado de 2026-10-01 em um arquivo: os números conferidos,
