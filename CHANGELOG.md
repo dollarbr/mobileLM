@@ -4,6 +4,81 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: a janela de testes para modelos "System One"
+
+**O que é um System One.** O nome vem dos quatro que deram nome a ele — Jev,
+Laya, Tev1, Bespoke-Nimble — e a classe é **aberta**: é "um modelo que responde a
+uma pergunta estruturada com uma classe", e o próximo publicado entra nela sem
+ninguém editar uma lista. **Nada no código olha para esses quatro nomes.** A
+forma é decidida pelo que o arquivo é, a mesma regra que o `/v1/classify` já usa,
+e o motivo é o que a 0.4.0 dos encoders estabeleceu: um nome não é uma
+arquitetura. `tev1-Q8_0.gguf` não é um decision model por causa do "tev1", e há
+um teste que afirma exatamente isso para os quatro nomes e para um quinto que
+ninguém ouviu falar.
+
+**Onde a janela vive.** `SystemOneConsole` (`lib/views/system_one_console.dart`),
+com o núcleo puro em `lib/services/system_one.dart` (66 testes) e o layout em
+`test/system_one_console_layout_test.dart`. Aberta em **dois** lugares, e a
+escolha é sobre onde o conhecimento está:
+
+- no **card `.tflite`**, com duas ações — *Inspect the file* (o console que
+ _existia, que **inspeciona**) e *Test a decision* (esta, que **pergunta**). São
+  dois trabalhos diferentes e estavam num botão só;
+- na **tela do servidor**, e **não** nos cards de GGUF. A forma de um GGUF só é
+  visível depois de carregá-lo, então um botão "decision" nos 36 cards de modelo
+  de chat seriam 36 botões errados para o modelo em que estão. Onde há modelo
+  carregado, a forma é um fato.
+
+**O que ela dirige, e o que ela se recusa a dizer.** Os dois caminhos compartilham
+uma coisa: **os rótulos são do chamador**. Nem um decision model nem uma cabeça
+carregam os nomes das classes, os dois endpoints devolvem `label: null` em vez de
+adivinhar, e a tela mostra esse `null` **e o motivo que o endpoint dá**. Uma tela
+que transformasse logits crus em porcentagem seria o primeiro lugar do app que
+inventa um número, e seria no único lugar onde alguém está prestes a confiar nele.
+A recusa de um decision model é **um resultado na tela**, não um toast: o
+endpoint responde 422 com o texto do modelo para o caso exato em que ele escreveu
+prosa, e esse texto é a única forma de ver o que aconteceu.
+
+**Medido no Galaxy A72, nesta sessão:**
+
+| | |
+|---|---|
+| janela de decisão, corpo que a própria tela monta | **3 de 3** com Tev1-0.8B, `relevance_score: null` e `scores` todo nulo |
+| tela da cabeça | renderiza, e lê **1024 / 4 / 2** do `GET /v1/litert/status` real |
+| `compile_ms` do act head | **5–7 ms** (o número anterior, 6 ms, se confirma) |
+| `/v1/classify` sem o auxiliar `feats` | 400 `missing_auxiliary`, nomeando `feats FLOAT32 [1, 4]` |
+| `/v1/classify` com vetor + `feats` | 200, `logits [0.0202, -0.0613]`, `top_index 0` |
+
+**O `Run` não foi exercido na tela.** A tela do A72 não aceita texto sintético
+(`input text` não entra em campo nenhum, com o dump provando que o foco não foi
+para lá), e o vetor são 1024 números. O que **está** verificado é o contrato de
+ponta: os dois endpoints aceitam e recusam exatamente os corpos que a tela monta,
+enviados com `curl` usando o JSON **extraído do próprio código** por um teste
+descartável. A lacuna é conhecida e é do aparelho, não do código.
+
+**Três bugs meus que o aparelho pegou e o teste unitário não:**
+
+1. **Eu parseei `signature` como objeto; a resposta real é `signatures[]`.** O
+   consequência foi silenciosa e bonita: a janela dizia "qualquer comprimento
+   serve" para uma cabeça que quer 1024 números, e o teste passava porque
+   alimentava a forma que eu tinha imaginado. O `HeadContract` existe por causa
+   disso, e os dois payloads dos testes são **copiados do aparelho**.
+2. **O "largest input" guard trocava as entradas.** Ao descobrir que
+   `pooled_cls` era maior que `feats`, eu adicionava a entrada *nova* à lista de
+   auxiliares e perdia a antiga — então a lista de auxiliares continha o vetor de
+   features. Só apareceu no primeiro payload real.
+3. **A tela não tinha campo para entradas auxiliares**, então podia ler uma
+   cabeça real, dizer o nome dos tensores reais, e mesmo assim não conseguir
+   perguntar nada a ela. É uma janela de teste que não testa. Agora há um campo
+   por auxiliar declarado, com a contagem vinda do arquivo, e **nunca preenchida
+   com zeros** — um logit sobre features inventadas volta com um rótulo.
+
+E uma distinção que só apareceu ao escrever os testes: **2–24 é o limite do decision
+model, não de uma cabeça.** Uma cabeça tem tantas classes quanto foi treinada, e
+aplicar o 24 ali seria o app inventando uma regra sobre um modelo que ele não
+treinou. São dois tipos (`SystemOneOptions` e `SystemOneLabels`) porque os
+limites não são o mesmo, e o painel dos rótulos diz isso em voz alta.
+
 ### docs: "o Laya não cabe no A72" era afirmação sem medição, e a regra do app a desmente
 
 Os docs diziam, em dois lugares, que o host completo do Laya "cabe no Edge 60 e

@@ -12,9 +12,13 @@ import '../services/cpu_self_test.dart';
 import '../services/cpu_self_test_service.dart';
 import '../services/device_info_service.dart';
 import '../services/memory_readout.dart';
+import '../services/system_one.dart';
 import '../services/download_service.dart';
 import '../services/inference_service.dart';
+import '../controllers/server_controller.dart';
+import '../utils/server_auth.dart';
 import 'litert_head_console.dart';
+import 'system_one_console.dart';
 import '../services/local_image_service.dart';
 
 class ModelView extends GetView<ModelController> {
@@ -356,26 +360,114 @@ class ModelView extends GetView<ModelController> {
           .withValues(alpha: 0.35),
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: const Icon(Icons.hexagon_outlined, size: 20),
-        title: Text(model.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
-        subtitle: Text(controller.modelSizeLabel(model),
-            style: GoogleFonts.inter(
-                fontSize: 12, color: Theme.of(sheetContext).hintColor)),
-        trailing: const Icon(Icons.chevron_right, size: 20),
-        onTap: () {
-          // `sheetContext`, not the outer one: the sheet is a different route in
-          // the Navigator, and popping the outer context would pop the page the
-          // user came from instead of the sheet.
-          Navigator.of(sheetContext).pop();
-          Get.to(() => LitertHeadConsole(
-                onClose: () => Get.back(),
-                filename: model.filename,
-              ));
-        },
+      // **One `child`, so the two actions live in a `Column` under the tile
+      // rather than as a second child of the `Material`.** `Material` takes
+      // exactly one, and the compile error for that arrives as a
+      // positional-argument complaint about a `Padding` a dozen lines further
+      // down — which is not a message that points at the thing that is wrong.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.hexagon_outlined, size: 20),
+            title: Text(model.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
+            subtitle: Text(controller.modelSizeLabel(model),
+                style: GoogleFonts.inter(
+                    fontSize: 12, color: Theme.of(sheetContext).hintColor)),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () {
+              // `sheetContext`, not the outer one: the sheet is a different route
+              // in the Navigator, and popping the outer context would pop the
+              // page the user came from instead of the sheet.
+              Navigator.of(sheetContext).pop();
+              Get.to(() => LitertHeadConsole(
+                    onClose: () => Get.back(),
+                    filename: model.filename,
+                  ));
+            },
+          ),
+          // **Two actions, because they are two different jobs.** The tile above
+          // *inspects* the head: what it is, what tensors it wants, what the
+          // device can accelerate. The row below *drives* it — the System One
+          // window, which asks the head something and shows what came back.
+          //
+          // The window is reachable from here and not from the GGUF cards, for
+          // the same reason the server screen hosts it: a `.tflite`'s shape is
+          // settled by its extension before anything is loaded, while a GGUF's
+          // is not settled until it is. A "decision" button on 36 chat model
+          // cards would be 36 buttons that are wrong for the model they sit on.
+          //
+          // A `Wrap`, for the fourth time in this file: an icon beside an
+          // English label with nothing limiting it is the exact shape of the
+          // three overflows this repo has already paid for.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+            child: Wrap(
+              spacing: 4,
+              runSpacing: 0,
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                    Get.to(() => LitertHeadConsole(
+                          onClose: () => Get.back(),
+                          filename: model.filename,
+                        ));
+                  },
+                  icon: const Icon(Icons.search, size: 15),
+                  label: Text('Inspect the file',
+                      style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Theme.of(sheetContext).hintColor)),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                    Get.to(() => SystemOneConsole(
+                          onClose: () => Get.back(),
+                          filename: model.filename,
+                          // Settled by the extension, with nothing loaded: a
+                          // head has no `cls.*` tensor to be recognised by, so
+                          // the extension is the only fact there is.
+                          shape: SystemOneShape.tfliteHead,
+                          // The embedding encoders, so the vector panel can name
+                          // where a 1024-number vector comes from instead of
+                          // pointing at a bare endpoint.
+                          embedders: controller.curatedEmbedders
+                              .map((m) => m.filename)
+                              .toList(),
+                          baseUrl: Get.isRegistered<ServerController>()
+                              ? Get.find<ServerController>().baseUrl
+                              : null,
+                          // The key, when the user turned it on. Every in-app
+                          // client that skipped this header made its console read
+                          // "server not running" against a running server.
+                          authHeaders: Get.isRegistered<ServerController>()
+                              ? localApiHeaders(
+                                  useApiKey: Get
+                                      .find<ServerController>()
+                                      .useApiKey
+                                      .value,
+                                  apiKey:
+                                      Get.find<ServerController>().apiKey.value,
+                                )
+                              : const {},
+                        ));
+                  },
+                  icon: const Icon(Icons.rule, size: 15),
+                  label: Text('Test a decision',
+                      style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: Theme.of(sheetContext).hintColor)),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

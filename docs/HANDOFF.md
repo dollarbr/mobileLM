@@ -297,13 +297,16 @@ que resta é olhar arch e `n_layer`.
 1. **Os 4 `litertlm` restantes.** O caminho de medição já existe e é o mesmo; a
    pergunta é estreita ("a GPU continua sendo o melhor LiteRT aqui?") e a resposta
    muda uma frase do `AGENTS.md` que hoje vale para um modelo só.
-2. **Uma entrada de catálogo `.tflite`.** O console existe e funciona, mas o
-   único arquivo utilizável é um que foi empurrado à mão. Duas rotas: a Laya
-   (licença, e um host de ~800 MB que **cabe** no A72 — §4.1 — mas é trabalho de
-   orquestração, não de aparelho) ou **um `.tflite` de uma entrada só**, que a
-   regra do "maior input" tornou trivial — um `Linear(1024, 2)` é o classificador
-   mínimo, e ele cobre o caminho feliz sem auxiliares, que hoje exige JSON
-   escrito à mão.
+2. **Uma entrada de catálogo `.tflite`.** **Parcialmente entregue em 2026-10-01:**
+   a janela de testes dos modelos *System One* existe, e ela dirige o act head da
+   Laya no A72 — inclusive o `feats [1,4]`, que antes não tinha campo em lugar
+   nenhum. **O que continua de pé:** não há entrada de catálogo, então o único
+   arquivo utilizável ainda é um que foi empurrado à mão; e a janela **não
+   embute** um texto com um encoder, que é o que tornaria o vetor de 1024 números
+   um botão em vez de um colar. Esse é o próximo incremento natural, e ele são duas
+   chamadas e duas cargas de modelo — o que é por que não foi assumido sem medir.
+   O host completo da Laya (o encoder ModernBERT de 705 MB) segue fora de escopo,
+   e §4.1 diz por quê ele não é um problema de memória.
 3. **Fechar a fila antiga de UI** (overflows restantes, nomes e comentários dos
    modelos, quantização por swipe no card).
 4. **A 0.6.0**, com o critério deste repo: minor = feature, e a frase tem que sair

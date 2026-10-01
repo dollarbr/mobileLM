@@ -1488,6 +1488,49 @@ gate existir mesmo sem ter resolvido isto.
   uma chamada bloqueante) o bubble dizia **5047,6 tok/s** num aparelho cujo modelo
   mais rápido faz 3,1. `test/token_rate_test.dart` fixa o caso.
 
+## A janela de testes dos modelos "System One"
+
+O nome vem dos quatro que deram nome a ele — Jev, Laya, Tev1, Bespoke-Nimble — e
+a classe é **aberta**. É "um modelo que responde a uma pergunta estruturada com
+uma classe", e o próximo publicado entra nela sem ninguém editar uma lista.
+**Nada no código olha para esses quatro nomes**; a forma é decidida pelo que o
+arquivo é, como o `/v1/classify` já faz, e `test/system_one_test.dart` tem um
+teste que afirma isso para os quatro e para um nome que ninguém ouviu falar.
+
+`lib/services/system_one.dart` (puro, 66 testes) + `lib/views/system_one_console.dart`.
+Aberta no **card `.tflite`** (duas ações: *Inspect the file*, que já existia, e
+*Test a decision*) e na **tela do servidor** — e **não** nos cards de GGUF, porque
+a forma de um GGUF só é visível depois de carregá-lo e um botão "decision" nos 36
+cards de chat seriam 36 botões errados.
+
+Quatro regras que a tela guarda, e todas custaram uma decisão:
+
+1. **Os rótulos são do chamador** — e por isso `label: null` e o motivo do
+   endpoint aparecem na tela. Transformar logits crus em porcentagem seria o
+   primeiro número inventado do app, no único lugar onde alguém vai confiar nele.
+2. **A recusa de um decision model é um resultado, não um toast.** O 422 traz o
+   texto que o modelo escreveu, que é a única forma de ver o que aconteceu.
+3. **Auxiliares nunca são preenchidos com zeros** — nem pela tela, nem pelo
+   endpoint. Um campo por entrada auxiliar declarada, com a contagem do arquivo.
+4. **2–24 é o limite do decision model, não o de uma cabeça.** São dois tipos
+   (`SystemOneOptions`, `SystemOneLabels`) porque os limites não são o mesmo, e
+   recusar 25 rótulos de uma cabeça de 512 classes seria inventar uma regra.
+
+**`HeadContract` existe porque eu parseei o payload errado e o teste passou.** A
+primeira versão procurava um `signature` **objeto** com `inputs` dentro; o
+aparelho devolve uma **array** `signatures`. A consequência foi silenciosa: a
+janela dizia "qualquer comprimento serve" para uma cabeça que quer 1024 números,
+e o teste unitário passava porque alimentava a forma que eu tinha imaginado. Os
+dois payloads dos testes agora são **copiados do A72** — `laya_en_act_head_fp32.tflite`,
+`feats [1,4]` **antes** de `pooled_cls [1,1024]`, saída `act_logits [1,2]`.
+
+Medido no A72: a tela de decisão acerta **3 de 3** com Tev1-0.8B usando o corpo
+que ela própria monta, `relevance_score: null` e `scores` todo nulo; a tela da
+cabeça renderiza e lê 1024/4/2 do `GET /v1/litert/status` real; `compile_ms` 5–7.
+**O `Run` não foi apertado na tela** — a tela do A72 não aceita texto sintético e
+o vetor são 1024 números. O contrato de ponta está verificado por `curl` com o
+JSON extraído do próprio código; a lacuna é do aparelho, e está escrita assim.
+
 ## Sugestões de próximas features
 
 **Comece por [`docs/HANDOFF.md`](docs/HANDOFF.md)** — snapshot datado do estado,

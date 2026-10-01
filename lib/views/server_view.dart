@@ -4,9 +4,12 @@ import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 
+import '../controllers/model_controller.dart';
 import '../controllers/server_controller.dart';
 import '../core/colors.dart';
 import '../core/constants.dart';
+import '../utils/server_auth.dart';
+import 'system_one_console.dart';
 
 class ServerView extends GetView<ServerController> {
   const ServerView({super.key});
@@ -252,13 +255,37 @@ class ServerView extends GetView<ServerController> {
                           _urlRow(context, isDark, 'Local',
                               controller.localUrl.value),
                           const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                              onPressed: controller.localUrl.value == null
-                                  ? null
-                                  : () =>
-                                      _testHealth(controller.localUrl.value!),
-                              icon: const Icon(Icons.wifi, size: 16),
-                              label: Text('test_local'.tr)),
+                          // A `Wrap`, not a `Row`. Three of the overflows this
+                          // repo has paid for were a `Row` of buttons with
+                          // nothing limiting it, and these two are exactly that
+                          // shape: an icon plus an English label each, side by
+                          // side, at 2× text on a 360 dp screen.
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                  onPressed: controller.localUrl.value == null
+                                      ? null
+                                      : () => _testHealth(
+                                          controller.localUrl.value!),
+                                  icon: const Icon(Icons.wifi, size: 16),
+                                  label: Text('test_local'.tr)),
+                              // The System One window lives here rather than on
+                              // the model cards, and that is a decision about
+                              // where the knowledge is. A GGUF answers with a
+                              // letter or with logits, and which one is only
+                              // visible after a load — so offering a "decision"
+                              // button on 36 chat model cards would be 36 wrong
+                              // buttons. Here, a model is loaded and its shape is
+                              // a fact.
+                              OutlinedButton.icon(
+                                onPressed: () => _openSystemOne(context),
+                                icon: const Icon(Icons.rule, size: 16),
+                                label: const Text('System One test'),
+                              ),
+                            ],
+                          ),
                         ])),
               ]),
               const SizedBox(height: 12),
@@ -644,5 +671,34 @@ class ServerView extends GetView<ServerController> {
     } catch (e) {
       Get.snackbar('Health failed', '$e');
     }
+  }
+
+  /// Open the System One window for whatever is loaded.
+  ///
+  /// The shape is deliberately left [SystemOneShape.unknown] and the window is
+  /// left to ask the server what it is. Deciding here from the filename would be
+  /// the exact mistake the whole feature is built to avoid: a name is not an
+  /// architecture, and `tev1-Q8_0.gguf` is not a decision model because of the
+  /// "tev1".
+  void _openSystemOne(BuildContext context) {
+    final embedders = <String>[];
+    if (Get.isRegistered<ModelController>()) {
+      embedders.addAll(
+        Get.find<ModelController>().curatedEmbedders.map((m) => m.filename),
+      );
+    }
+    Get.to(() => SystemOneConsole(
+          onClose: () => Get.back(),
+          // The server's own address, and its own auth — including the API key
+          // when the user turned it on. Every in-app client that skipped this
+          // header made its console read "server not running" against a server
+          // that was running, and nothing else on screen changed.
+          baseUrl: controller.baseUrl,
+          authHeaders: localApiHeaders(
+            useApiKey: controller.useApiKey.value,
+            apiKey: controller.apiKey.value,
+          ),
+          embedders: embedders,
+        ));
   }
 }
