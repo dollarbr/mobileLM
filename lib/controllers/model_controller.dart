@@ -31,14 +31,23 @@ String? modelSectionKey({
   required bool custom,
   required bool image,
   required bool litert,
+  required bool tflite,
   required bool gguf,
   required bool fits,
 }) {
   if (downloaded) return 'downloaded';
-  if (custom) return litert ? 'custom-litert' : 'custom-gguf';
+  // A custom `.tflite` gets its own bucket rather than being filed as a custom
+  // GGUF, because "Custom GGUF Models" over a card whose runtime is the tensor
+  // interpreter is the kind of label that is merely close enough to be worse
+  // than no label at all.
+  if (custom) {
+    if (tflite) return 'custom-tflite';
+    return litert ? 'custom-litert' : 'custom-gguf';
+  }
   if (!fits) return null;
   if (image) return 'image';
   if (litert) return 'litert';
+  if (tflite) return 'tflite';
   if (gguf) return 'gguf';
   return null;
 }
@@ -188,17 +197,21 @@ class ModelController extends GetxController {
     final downloaded = <AiModel>[];
     final gguf = <AiModel>[];
     final litert = <AiModel>[];
+    final tflite = <AiModel>[];
     final image = <AiModel>[];
     final customGguf = <AiModel>[];
     final customLitert = <AiModel>[];
+    final customTflite = <AiModel>[];
 
     final buckets = {
       'downloaded': downloaded,
       'gguf': gguf,
       'litert': litert,
+      'tflite': tflite,
       'image': image,
       'custom-gguf': customGguf,
       'custom-litert': customLitert,
+      'custom-tflite': customTflite,
     };
     for (final m in models) {
       final key = modelSectionKey(
@@ -206,6 +219,7 @@ class ModelController extends GetxController {
         custom: custom(m),
         image: isImageModel(m),
         litert: isLiteRtModel(m),
+        tflite: isTfliteModel(m),
         gguf: isLlamaModel(m),
         fits: fits(m),
       );
@@ -216,9 +230,14 @@ class ModelController extends GetxController {
       ModelSection('Downloaded', _byModality(downloaded)),
       ModelSection('GGUF', _byModality(gguf)),
       ModelSection('LiteRT', _byModality(litert)),
+      // Its own heading rather than a badge inside LiteRT: the two runtimes
+      // have nothing in common but a name in Google's Maven repository, and
+      // the heading is where the user learns that.
+      ModelSection('TFLite', _byModality(tflite)),
       ModelSection('Image', _byModality(image)),
       ModelSection('Custom GGUF Models', _byModality(customGguf)),
       ModelSection('Custom LiteRT Models', _byModality(customLitert)),
+      ModelSection('Custom TFLite Models', _byModality(customTflite)),
     ].where((s) => s.count > 0).toList();
   }
 
@@ -436,6 +455,18 @@ class ModelController extends GetxController {
   bool isLlamaModel(AiModel model) {
     return model.runtime == AiModel.runtimeLlama ||
         model.filename.toLowerCase().endsWith('.gguf');
+  }
+
+  /// A `.tflite`, served by LiteRT's `CompiledModel`.
+  ///
+  /// Deliberately **not** folded into [isLiteRtModel] even though both are
+  /// "LiteRT" in Google's repository. They are different engines: one takes a
+  /// prompt and streams tokens, the other takes named input tensors. The card
+  /// reads `runtime` to decide what to do with a model, and it cannot decide
+  /// anything useful if the predicate says yes to both.
+  bool isTfliteModel(AiModel model) {
+    return model.runtime == AiModel.runtimeTflite ||
+        model.filename.toLowerCase().endsWith('.tflite');
   }
 
   bool isGeneralModel(AiModel model) =>
@@ -2170,9 +2201,11 @@ class ModelController extends GetxController {
 
         if (!lower.endsWith('.gguf') &&
             !lower.endsWith('.litertlm') &&
+            !lower.endsWith('.tflite') &&
             !lower.endsWith('.safetensors')) {
           Get.snackbar('Unsupported Model',
-              'Only .gguf, .litertlm, and .safetensors files can be imported.',
+              'Only .gguf, .litertlm, .tflite, and .safetensors files can be '
+              'imported.',
               snackPosition: SnackPosition.BOTTOM);
           return;
         }

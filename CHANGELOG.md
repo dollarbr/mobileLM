@@ -4,6 +4,107 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: `.tflite` é um modelo do app — descoberto, listado e com console
+
+O runtime LiteRT da versão anterior servia `.tflite` **pela rede** e não tinha
+nada na interface: o arquivo não era descoberto, não tinha card, não tinha botão
+e não podia ser importado. Quem usasse a API HTTP conseguia; quem abrisse o app,
+não. A tela de Modelos é o caminho do produto, e o recurso não existia nele.
+
+- **`.tflite` entra na descoberta** (`download_native.dart`) e passa nos guardas
+  de importação, em Dart e em Kotlin. Sem isso o arquivo não entrava em
+  `downloadedFiles`: sem tamanho, sem card, sem botão, e sem como ser apagado
+  pela interface.
+- **`AiModel.runtimeTflite`** é um quarto runtime, e não uma variante de
+  `runtimeLiteRt`. `litertlm-android` e o interpretador de tensores só dividem um
+  nome no repositório do Google: um recebe prompt e devolve tokens, o outro recebe
+  tensores nomeados. `runtimeFromFilename` **não tinha** o ramo `.tflite`, então um
+  `.tflite` caía em `runtimeLlama` — e `isLlamaModel` afirma
+  `runtime == runtimeLlama || filename endsWith .gguf`, ou seja: um classificador
+  de 1 MB era arquivado como GGUF e o card oferecia *Load* para um engine que
+  rejeita os magic bytes.
+- **Seção própria** (`TFLite` / `Custom TFLite Models`) e badge `TFLITE`, porque
+  os dois runtimes não têm nada em comum além do nome no repositório do Google.
+- **`LitertHeadConsole`**, que passa pelo servidor HTTP como o console de
+  encoders, pelo mesmo motivo: o que vale testar num telefone é a superfície de
+  API, e um console que fosse direto ao plugin passaria com o endpoint quebrado.
+  Ele mostra o que o arquivo diz de si mesmo, pede o acelerador, e roda o
+  `/v1/classify` — o caminho que um cliente de verdade usa.
+
+Medido no A72, com `laya_en_act_head_fp32.tflite`, **159 ms** do clique ao
+logit: `logits [0.2563, -0.2082]`, `top_index 0`, `features_input "pooled_cls"`,
+`auxiliary_used ["feats"]`.
+
+### fix: o console de encoders não mandava a chave da API — e nenhum teste pegava
+
+`/v1/**` está atrás de `_isAuthorized` desde o trabalho da chave, e **nenhum
+cliente dentro do app mandava cabeçalho `Authorization`**. `useApiKey` foi
+lançado com `false`, então nada quebrou até alguém ligar a chave — momento em que
+o probe do console de encoders lia "servidor desligado" contra um servidor no ar,
+e o botão de *run* morria sem nada na tela dizendo por quê.
+
+`localApiHeaders(useApiKey:, apiKey:)` fica em `server_auth.dart`: pura, com os
+dois valores como argumento, e devolvendo um mapa **vazio** quando a chave está
+desligada — para o chamador poder fazer splat sem condicional. Três casos que
+importam: chave desligada não manda nada (um cabeçalho aí seria inofensivo mas
+errado, e desligar a feature teria que significar também "sem cabeçalho"); chave
+ligada e vazia não manda nada, porque o servidor trata chave vazia como "não
+exigir chave" e `Bearer ` seria um cabeçalho malformado; e a chave é aparada,
+porque uma chave colada traz newline.
+
+Os dois consoles vigiam `useApiKey` e `apiKey` além de `isRunning`. Só `isRunning`
+não basta: **ligar a chave deixa toda chamada sem autenticação em 401 sem nenhuma
+outra observável mudar**, então um console que vigia só `isRunning` fica com a
+última resposta que recebeu.
+
+### Os três defeitos que só o aparelho mostrou, e o padrão deles
+
+**Um `Switch` que o `uiautomator` diz estar em toda a linha e está em 169 px.**
+O dump de acessibilidade do switch do servidor tem `bounds [45,266][1035,542]` —
+a linha inteira — e `class android.widget.Switch`. Tocar no centro da linha não
+faz nada, e `enabled=true clickable=true`, e `startServer` nunca é chamado. O
+Flutter funde a semântica da linha; o alvo de toque real do `Switch` tem ~169 px
+na ponta direita. **O dump mente sobre onde o toque precisa cair**, e ele mente de
+um jeito que parece "o controle está quebrado".
+
+**`ChoiceChip` e `TextField` sem `Material`, na mesma tela, no mesmo build.** O
+console é aberto com `Get.to`, que põe a tela sob `GetMaterialApp` sem nada no
+meio — e é o `Scaffold` que normalmente fornece o `Material`. Os dois widgets
+chamam `debugCheckHasMaterial` em si mesmos, então cada um lançava do próprio
+`build`. O primeiro apareceu no log (`ChoiceChip.build` →
+`debugCheckHasMaterial`); o segundo só apareceu num screenshot, como uma caixa
+vermelha no lugar do campo de entrada. **A correção certa é um `Material` na
+raiz, não um por painel** — e ela remove a regra de ter que auditar cada painel
+novo. O `Material` por painel que eu coloquei primeiro foi removido: dois
+mecanismos para uma regra é um mecanismo a mais.
+
+**`POST` numa rota que só aceita `GET`, engolido por um `catch` mudo.**
+`/v1/litert/status` é `GET`; o console o chamava por um `_post`. O catch era
+`on Object {}` — sem nada — e o resultado foi um console que dizia "not
+screened yet" e "device reports: (not read yet)" **para sempre**, com o probe
+dizendo que o servidor estava de pé. Ele estava. O helper passou a receber o
+**método como parâmetro**, e a falha do status passou a aparecer em uma linha no
+painel. E o `screen` foi desacoplado do `status`: eram duas perguntas, e uma
+falha na segunda estava apagando a primeira.
+
+O padrão é o de sempre: **um erro que se apresenta como outro.** O sintoma
+apontou para "o servidor não subiu", para "a tela está com defeito", e para "o
+aparelho ainda não carregou o modelo".
+
+### O teste que passava com o defeito vivo
+
+O teste de layout do console montava a tela dentro de um `Scaffold` — que
+fornece `Material`. Ele passou **contra os dois bugs acima**, no mesmo aparelho em
+que eles estavam quebrados. Agora o teste monta a tela como ela é mostrada, sem
+`Scaffold`, e a prova de que ele é capaz de falhar está no próprio arquivo:
+removendo o `Material` da raiz, seis exceções; com ele, oito de oito.
+
+E uma armadilha do harness já paga em `material_scaffold_test.dart`, agora
+documentada nos dois arquivos: `takeException()` devolve **uma** exceção por
+chamada. Um teste que constrói dois widgets ofensivos deixa a segunda na fila, e
+ela aparece no teste **seguinte** como "Multiple exceptions were detected",
+acusando o teste errado por um assert disparado no certo.
+
 ### feat: runtime LiteRT 2.2.0 para `.tflite`, e `/v1/classify` servindo cabeças
 
 `local_plugins/litert_flutter/` traz o LiteRT 2.2.0 (o TFLite renomeado) como

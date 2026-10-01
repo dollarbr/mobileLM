@@ -11,6 +11,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart'
 import '../controllers/server_controller.dart';
 import '../core/colors.dart';
 import '../services/inference_service.dart';
+import '../utils/server_auth.dart';
 
 /// A console for a loaded encoder, shown above the chat.
 ///
@@ -78,6 +79,13 @@ class _EncoderConsoleState extends State<EncoderConsole> {
     _serverWorkers = [
       ever(server.isRunning, (_) => _probeServer()),
       ever(server.localUrl, (_) => _probeServer()),
+      // The key is watched too, and not only `isRunning`: turning it on makes
+      // every unauthenticated call 401 and turning it off makes them work
+      // again, with no other observable changing. Without this the console keeps
+      // whatever the last answer was — so enabling the key in Settings and coming
+      // back here leaves a working server reading as broken.
+      ever(server.useApiKey, (_) => _probeServer()),
+      ever(server.apiKey, (_) => _probeServer()),
     ];
   }
 
@@ -243,12 +251,27 @@ class _EncoderConsoleState extends State<EncoderConsole> {
     });
   }
 
+  /// The `Authorization` header this app's own calls have to carry.
+  ///
+  /// Empty when the server is not asking for a key, and not asking is the state
+  /// this console shipped in — so this line is what keeps it working for whoever
+  /// turned the key on afterwards. Without it the probe below reads "not
+  /// running" against a server that is running and listening, and the run button
+  /// goes dead with nothing on screen to say why.
+  Map<String, String> get _auth => localApiHeaders(
+        useApiKey: Get.find<ServerController>().useApiKey.value,
+        apiKey: Get.find<ServerController>().apiKey.value,
+      );
+
   Future<bool> _probe(String base) async {
     try {
       final c = HttpClient()..connectionTimeout = const Duration(seconds: 2);
       final req = await c
           .getUrl(Uri.parse('$base/v1/server/capabilities'))
           .timeout(const Duration(seconds: 2));
+      for (final e in _auth.entries) {
+        req.headers.set(e.key, e.value);
+      }
       // getUrl devolve o request, não a response: o status code só existe
       // depois do close(), e sem isso o probe não compila.
       final res = await req.close().timeout(const Duration(seconds: 2));
@@ -306,6 +329,9 @@ class _EncoderConsoleState extends State<EncoderConsole> {
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
       final req = await client.postUrl(Uri.parse('$_base$path'));
       req.headers.contentType = ContentType.json;
+      for (final e in _auth.entries) {
+        req.headers.set(e.key, e.value);
+      }
       req.write(jsonEncode(body));
       final resp = await req.close().timeout(const Duration(seconds: 120));
       final text = await resp.transform(utf8.decoder).join();

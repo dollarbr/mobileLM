@@ -937,10 +937,11 @@ class MainActivity : FlutterActivity() {
 
         val filename = displayNameFor(uri)
         val lower = filename.lowercase()
-        if (!lower.endsWith(".gguf") && !lower.endsWith(".litertlm") && !lower.endsWith(".safetensors")) {
+        if (!lower.endsWith(".gguf") && !lower.endsWith(".litertlm") &&
+            !lower.endsWith(".tflite") && !lower.endsWith(".safetensors")) {
             finishImportError(
                 "UNSUPPORTED_MODEL",
-                "Only .gguf, .litertlm, and .safetensors files can be imported."
+                "Only .gguf, .litertlm, .tflite, and .safetensors files can be imported."
             )
             return
         }

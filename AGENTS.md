@@ -1227,6 +1227,100 @@ para o registro quando o problema é o nome; para o crash quando é a thread; pa
 os três só apareceram porque a checagem seguinte olhou o log em vez de acreditar
 na mensagem.
 
+## `.tflite` é um modelo do app — e a tela tem um `Material` a menos do que você acha
+
+O runtime LiteRT (acima) serve `.tflite` por HTTP. Até a versão anterior ele
+**não existia na interface**: a descoberta filtrava por extensão, e `.tflite` não
+estava na lista. Um arquivo no diretório de modelos era invisível — sem tamanho,
+sem card, sem botão, sem como ser apagado — e o import recusava em Dart **e** em
+Kotlin. A API servia o arquivo perfeitamente esse tempo todo, que é o que tornou
+isto worth consertar em vez de documentar.
+
+`AiModel.runtimeTflite` é um **quarto runtime**. `litertlm-android` (prompt →
+tokens) e o interpretador de tensores (buffers nomeados) só dividem um nome no
+repositório do Google. `runtimeFromFilename` não tinha o ramo, então um `.tflite`
+caía em `runtimeLlama` — e `isLlamaModel` é
+`runtime == runtimeLlama || filename endsWith .gguf`, de modo que a seção, o
+badge e o botão diziam "GGUF" sobre um classificador de 1 MB.
+
+### `Get.to` não fornece `Material`, e isso custa três widgets
+
+O console é aberto com `Get.to(() => LitertHeadConsole(...))`. Não há `Scaffold`
+no caminho — e é o `Scaffold` que fornece o `Material`. `ChoiceChip`, `TextField`
+e `InkWell` chamam `debugCheckHasMaterial` em **si mesmos**, então cada um lança
+do próprio `build` e a subárvore inteira para de renderizar enquanto o app bar e
+a barra de abas continuam funcionando.
+
+**Um `Material(type: transparency)` na raiz corrige os três de uma vez.** É a
+correção certa e não a que satisfaz o assert: um por painel obriga a auditar cada
+painel novo, e o primeiro `Material` que eu coloquei — em volta dos chips —
+virou redundante e foi removido. Dois mecanismos para uma regra é um mecanismo a
+mais.
+
+O sintoma differed por widget, e é por isso que vale saber qual:
+
+| widget | onde aparece |
+|---|---|
+| `ChoiceChip` | no **log do app**, com `ChoiceChip.build (choice_chip.dart:221)` e `debugCheckHasMaterial` logo abaixo |
+| `TextField` | **só num screenshot**, como uma caixa vermelha no lugar do campo |
+
+### O `uiautomator` mente sobre onde o `Switch` aceita toque
+
+O dump do switch do servidor traz `bounds [45,266][1035,542]` — a linha inteira —
+e `class="android.widget.Switch"`, `enabled="true"`, `clickable="true"`. Tocar no
+centro não faz nada, e `startServer` nunca chega a ser chamado. O alvo de toque
+real tem ~169 px na **ponta direita** da linha; o Flutter funde a semântica da
+linha inteira num único nó.
+
+O sintoma é "o controle está quebrado" e a pista disponível ("está enabled,
+está clickable") confirma isso em vez de refutá-lo. **Confundir o `bounds` do nó de
+semântica com a caixa do widget** é o que faz um toggle parecer morto.
+
+O que separa isso de um defeito real é um controle: o switch **Require API key**,
+na mesma tela, responde a toque normalmente (ele abre um diálogo). Sem esse
+controle, "o `Switch` deste aparelho não responde a `input tap`" e "este `Switch`
+está quebrado" são a mesma frase.
+
+### Um `catch` mudo esconde o defeito, e `takeException` devolve uma por vez
+
+`/v1/litert/status` é `GET`. O console o chamava por um `_post`. O `catch` era
+`on Object {}` — sem nada — e o console passou a sessão inteira inteira dizendo
+"not screened yet" e "device reports: (not read yet)", com o probe dizendo que o
+servidor estava de pé. Ele estava.
+
+Três regras que daí saem, e as três já custaram um round:
+
+1. **O helper de HTTP recebe o método como parâmetro.** Um `_post` e um `_get`
+   separados deixam a escolha para quem chama, e quem chama erra.
+2. **Um `catch` de poll escreve o erro.** Um poll que falha em silêncio é
+   exatamente o que faz um painel em branco parecer "o aparelho ainda não
+   respondeu".
+3. **`takeException()` devolve uma exceção por chamada.** Construir dois widgets
+   ofensivos deixa a segunda na fila, e ela aparece no **teste seguinte** como
+   "Multiple exceptions were detected during the running of the current test" —
+   acusando o teste errado por um assert disparado no certo. Ambos os arquivos de
+   teste drenam em laço (`_drain`).
+
+E **perguntas independentes não se encadeiam**: o `screen` era disparado do
+caminho de sucesso do `status`, então uma falha no status apagava o screen sem
+deixar rastro. São duas chamadas agora.
+
+### O teste de layout que passava com o defeito vivo
+
+O teste do console montava a tela dentro de um `Scaffold`, que fornece `Material`.
+Ele passou **contra os dois widgets quebrados acima**, no mesmo aparelho em que
+eles estavam quebrados. `test/litert_console_layout_test.dart` monta a tela como
+ela é mostrada — sem `Scaffold` — e a prova de que o harness é capaz de falhar
+está no próprio arquivo: sem o `Material` da raiz, seis exceções; com ele, oito
+de oito.
+
+E o outro lado do `ListView` preguiçoso, já pago três vezes neste repo e agora
+mais uma: um `SizedBox(height: 2400)` dentro de `Scaffold(body:)` **não**
+move o viewport — o `Scaffold` dá 600 dp e o `Expanded` do console preenche isso.
+O que move o viewport é `tester.view.physicalSize`. Sem isso, o `ListView` nunca
+constrói as linhas de baixo e todo `find.text` depois da primeira não encontra
+nada — o que se lê como "o painel de baixo está faltando".
+
 ## Notas de build
 
 - Máquina: 12 hybrid cores (10 e-core + 2 p-core). `org.gradle.workers.max=2` no
@@ -1243,6 +1337,13 @@ na mensagem.
 - Threads: 4 é o ótimo no Edge 60 (4×A78+4×A55); 8 regressa porque A55 trava A78.
 - R8 está desligado (`isMinifyEnabled = false`). Não adicione regras ProGuard por
   precaução — elas não fazem efeito e podem mascarar problemas reais.
+- **Um cliente dentro do app tem que mandar a chave da API.** `localApiHeaders()`
+  em `server_auth.dart` — mapa vazio quando a chave está desligada, `Bearer`
+  quando está ligada e não está vazia. `/v1/**` está atrás de `_isAuthorized` e
+  `useApiKey` foi lançado com `false`, então **nenhum cliente dentro do app
+  mandava o cabeçalho** e nada quebrou até alguém ligar a chave. Os dois consoles
+  vigiam `useApiKey`/`apiKey` além de `isRunning`: ligar a chave deixa toda
+  chamada em 401 **sem nenhuma outra observável mudar**.
 - **Plugins locais com `dependency_overrides` podem não ser detectados pelo Flutter plugin discovery.** Se `dart_plugin_registrant.dart` não inclui, registrar manualmente no `MainActivity`.
 - **Modelo pequeno na CPU, e agora isso é código, não conselho.** A regra "GPU
   (Vulkan) tem overhead de shader que domina até ~2B" morou anos neste arquivo

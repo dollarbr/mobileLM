@@ -67,6 +67,19 @@ enum TensorType {
   final String label;
   final int bytesPerElement;
 
+  /// The inverse of [label].
+  ///
+  /// Throws on an unknown label rather than defaulting, for the reason in
+  /// [LitertTensor.fromJson]: a type this build does not know is a schema newer
+  /// than the code, and the only safe reading of that is to refuse.
+  static TensorType fromLabel(String label) => values.firstWhere(
+        (t) => t.label == label,
+        orElse: () => throw FormatException(
+            'Unknown TFLite tensor type "$label". The schema this build reads '
+            'does not have it, which means the model was produced by a newer '
+            'converter.'),
+      );
+
   static TensorType fromCode(int code) => values.firstWhere(
         (t) => t.code == code,
         orElse: () => throw FormatException(
@@ -141,6 +154,27 @@ class LitertTensor {
         if (hasDynamicDimension) 'dynamic': true,
       };
 
+  /// Read back what [toJson] wrote.
+  ///
+  /// The inverse exists because the screen runs over HTTP: the console asks the
+  /// server to read the FlatBuffer and gets JSON back, and it needs the same
+  /// value the server built. Re-parsing the file on the client would be a second
+  /// reader for a value that crossed the wire already, and the two could disagree
+  /// about a schema nobody changed.
+  ///
+  /// **A type it does not recognise is an error, not a guess.** `toJson` writes
+  /// the schema's own label (`FLOAT32`), and a label this reader does not know is
+  /// a schema newer than the code — the same condition [TensorType.fromCode]
+  /// refuses on the read side. Falling back to float32 there would turn "a model
+  /// I cannot describe" into "a model that computes something".
+  static LitertTensor fromJson(Map<String, dynamic> j) => LitertTensor(
+        name: '${j['name'] ?? ''}',
+        type: TensorType.fromLabel('${j['type']}'),
+        shape: ((j['shape'] as List?) ?? const [])
+            .map((e) => (e as num).toInt())
+            .toList(),
+      );
+
   @override
   String toString() => '$name ${type.label} $shapeLabel';
 }
@@ -195,6 +229,17 @@ class LitertSignature {
     return 'unknown';
   }
 
+  static LitertSignature fromJson(Map<String, dynamic> j) => LitertSignature(
+        key: '${j['signature'] ?? ''}',
+        inputs: ((j['inputs'] as List?) ?? const [])
+            .map((e) => LitertTensor.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        outputs: ((j['outputs'] as List?) ?? const [])
+            .map((e) => LitertTensor.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        subgraphIndex: (j['subgraph'] as num?)?.toInt() ?? 0,
+      );
+
   Map<String, dynamic> toJson() => {
         'signature': key,
         'subgraph': subgraphIndex,
@@ -238,6 +283,14 @@ class LitertModelInfo {
     }
     return signatures.first;
   }
+
+  static LitertModelInfo fromJson(Map<String, dynamic> j) => LitertModelInfo(
+        version: (j['version'] as num?)?.toInt() ?? 0,
+        description: '${j['description'] ?? ''}',
+        signatures: ((j['signatures'] as List?) ?? const [])
+            .map((e) => LitertSignature.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
 
   Map<String, dynamic> toJson() => {
         'version': version,

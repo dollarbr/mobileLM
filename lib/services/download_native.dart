@@ -27,6 +27,13 @@ Future<List<String>> getDownloadedModels(String modelsDir) async {
       .where((name) =>
           (name.endsWith('.gguf') ||
               name.endsWith('.litertlm') ||
+              // A `.tflite` is a model to this app now, and the whitelist is the
+              // only thing standing between a file the user put there and a card
+              // with a button on it. Without the extension it does not appear in
+              // `downloadedFiles`, so it has no size, no card, cannot be loaded
+              // and cannot be deleted from the UI — the runtime serves it fine
+              // over HTTP the whole time.
+              name.endsWith('.tflite') ||
               name.endsWith('.safetensors')) &&
           // A projector is a .gguf too, but it is half of a pair, not a model:
           // llama_model_load rejects it outright ("CLIP cannot be used as main

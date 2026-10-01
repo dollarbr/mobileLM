@@ -14,6 +14,7 @@ import '../services/device_info_service.dart';
 import '../services/memory_readout.dart';
 import '../services/download_service.dart';
 import '../services/inference_service.dart';
+import 'litert_head_console.dart';
 import '../services/local_image_service.dart';
 
 class ModelView extends GetView<ModelController> {
@@ -76,6 +77,7 @@ class ModelView extends GetView<ModelController> {
                 if (controller.modelScope.value == 'local') ...[
                   _buildImportingProgress(context),
                   _buildEncoderMenu(context),
+                  _buildTfliteMenu(context),
                   _buildCpuSelfTestCard(context),
                   _DeviceLoadCard(
                     controller: controller,
@@ -233,6 +235,147 @@ class ModelView extends GetView<ModelController> {
                 fontSize: 12, color: Theme.of(context).hintColor)),
         trailing: const Icon(Icons.chevron_right, size: 20),
         onTap: () => _showEncoderSheet(context),
+      ),
+    );
+  }
+
+  /// The `.tflite` menu, for the same reason the encoder menu exists and with
+  /// the same three rules.
+  ///
+  /// It is here because a `.tflite` is a model the user downloads and it does
+  /// not chat, and someone who taps its Load expecting a conversation would be
+  /// right to be annoyed. A `.tflite` also reaches this screen at all now: it
+  /// used to be invisible, because discovery filtered on an extension list that
+  /// did not include it — the runtime served the file perfectly well over HTTP
+  /// the whole time, which is the part that made it worth fixing rather than
+  /// documenting.
+  ///
+  /// No `Obx` for the same measured reason as the encoder tile above: a second
+  /// nested builder inside the list's `Obx` takes the whole list off the screen.
+  /// Nothing reactive is lost — the `.tflite` list is derived from files on disk
+  /// and is filled by the same `refreshDownloaded` that fills everything else,
+  /// and the tile disappears entirely when there is none.
+  Widget _buildTfliteMenu(BuildContext context) {
+    final heads = controller.displayedModels
+        .where((m) => controller.isTfliteModel(m))
+        .toList();
+    if (heads.isEmpty) return const SizedBox.shrink();
+    // `Material`, not a decorated `Container`: `ListTile` needs a `Material`
+    // ancestor to paint on and asserts without one, taking the list with it.
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Material(
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          leading: Icon(Icons.hexagon_outlined,
+              color: Theme.of(context).colorScheme.primary),
+          title: Text('TFLite heads',
+              style:
+                  GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+          subtitle: Text(
+            heads.length == 1
+                ? '1 model · classification, not chat'
+                : '${heads.length} models · classification, not chat',
+            style: GoogleFonts.inter(
+                fontSize: 12, color: Theme.of(context).hintColor),
+          ),
+          trailing: const Icon(Icons.chevron_right, size: 20),
+          onTap: () => _showTfliteSheet(context),
+        ),
+      ),
+    );
+  }
+
+  /// The sheet: one card per `.tflite`, and the console opens from there.
+  void _showTfliteSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (_, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).dividerColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('TFLite heads',
+                style: GoogleFonts.inter(
+                    fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
+            Text(
+              'These do not chat either. A .tflite is a tensor graph: it takes '
+              'named input tensors and returns named output tensors, and the '
+              'console screens the file first to show you what it wants. The API '
+              'server has to be on to use it.',
+              style: GoogleFonts.inter(
+                  fontSize: 12, color: Theme.of(context).hintColor),
+            ),
+            const SizedBox(height: 20),
+            for (final m in controller.displayedModels
+                .where((m) => controller.isTfliteModel(m))) ...[
+              _tfliteCard(context, m),
+              const SizedBox(height: 10),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One `.tflite` in the sheet, with the console as its action.
+  ///
+  /// The console opens rather than loading, because the two questions are
+  /// different: a graph can be perfectly loadable and useless without knowing
+  /// what it expects, and a Load button that compiled it and then showed a blank
+  /// console would have spent native time to teach nothing.
+  Widget _tfliteCard(BuildContext sheetContext, AiModel model) {
+    return Material(
+      color: Theme.of(sheetContext)
+          .colorScheme
+          .surfaceContainerHighest
+          .withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: const Icon(Icons.hexagon_outlined, size: 20),
+        title: Text(model.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
+        subtitle: Text(controller.modelSizeLabel(model),
+            style: GoogleFonts.inter(
+                fontSize: 12, color: Theme.of(sheetContext).hintColor)),
+        trailing: const Icon(Icons.chevron_right, size: 20),
+        onTap: () {
+          // `sheetContext`, not the outer one: the sheet is a different route in
+          // the Navigator, and popping the outer context would pop the page the
+          // user came from instead of the sheet.
+          Navigator.of(sheetContext).pop();
+          Get.to(() => LitertHeadConsole(
+                onClose: () => Get.back(),
+                filename: model.filename,
+              ));
+        },
       ),
     );
   }
@@ -2496,7 +2639,13 @@ class ModelView extends GetView<ModelController> {
     if (controller.isDownloaded(model.filename)) {
       badges.add((label: 'DOWNLOADED', color: AppColors.success));
     }
-    if (controller.isLiteRtModel(model)) {
+    if (controller.isTfliteModel(model)) {
+      // Its own badge, not "LiteRT". The two share a name in Google's Maven
+      // repository and nothing else — one streams tokens from a prompt, the
+      // other maps named tensors — and a badge that calls a 1 MB classifier
+      // "LiteRT" is the same confusion the section heading exists to stop.
+      badges.add((label: 'TFLITE', color: AppColors.primary));
+    } else if (controller.isLiteRtModel(model)) {
       badges.add((label: 'LiteRT', color: AppColors.primary));
     } else if (controller.isLlamaModel(model)) {
       badges.add((label: 'GGUF', color: AppColors.info));

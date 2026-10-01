@@ -16,6 +16,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobilelm/services/litert_model.dart';
+import 'package:mobilelm/services/litert_service.dart';
 
 void main() {
   group('a file that is not a TFLite model says so, and says what it is', () {
@@ -263,6 +264,99 @@ void main() {
     });
   });
 
+  group('JSON round-trip, because the screen runs over HTTP', () {
+    // The console does not read the FlatBuffer itself — it asks the server to,
+    // and gets JSON. So the value has to survive the trip, and the thing that
+    // proves it is a round trip against the real file rather than a fixture: the
+    // parser's output goes out as JSON, comes back, and has to be the same graph.
+    test('a signature survives toJson and back', () {
+      const original = LitertSignature(
+        key: 'serving_default',
+        inputs: [
+          LitertTensor(name: 'feats', type: TensorType.float32, shape: [1, 4]),
+          LitertTensor(
+              name: 'pooled_cls', type: TensorType.float32, shape: [1, 1024]),
+        ],
+        outputs: [
+          LitertTensor(name: 'act_logits', type: TensorType.float32, shape: [1, 2]),
+        ],
+        subgraphIndex: 0,
+      );
+      final back = LitertSignature.fromJson(original.toJson());
+      expect(back.key, original.key);
+      expect(back.subgraphIndex, original.subgraphIndex);
+      expect([for (final t in back.inputs) t.name], ['feats', 'pooled_cls']);
+      expect(back.inputs[0].shape, [1, 4]);
+      expect(back.inputs[1].elementCount, 1024);
+      expect(back.outputs.first.name, 'act_logits');
+      // And the judgement survives, which is the part that matters: a signature
+      // that came back not-bindable would make the console refuse a model it had
+      // just described as fine.
+      expect(back.bindable, original.bindable);
+    });
+
+    test('a dynamic dimension survives, and is still flagged', () {
+      const original = LitertTensor(
+          name: 'x', type: TensorType.float32, shape: [1, -1, 1024]);
+      final back = LitertTensor.fromJson(original.toJson());
+      expect(back.hasDynamicDimension, isTrue);
+      expect(back.elementCount, 0);
+    });
+
+    test('an int shape from JSON becomes an int shape, not a double', () {
+      // `jsonDecode` gives `1` as int and `1.0` as double, and both are `num`.
+      // A shape of doubles would still print as `[1, 1024]` and would compare
+      // unequal to the same shape parsed from the file — so the failure is a test
+      // that passes on the label and fails on the value.
+      final back = LitertTensor.fromJson({
+        'name': 'x',
+        'type': 'FLOAT32',
+        'shape': [1, 1024]
+      });
+      expect(back.shape, [1, 1024]);
+      expect(back.shape.every((d) => d is int), isTrue);
+      expect(back.elementCount, 1024);
+    });
+
+    test('an unknown type label is refused, not read as float', () {
+      // The trap. Defaulting here would turn "a schema I cannot describe" into
+      // "a model that computes something", and the console would happily fill a
+      // buffer with float32 where the file says something else.
+      expect(
+        () => LitertTensor.fromJson({'name': 'x', 'type': 'FLOAT8E5M3', 'shape': [1]}),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'message', contains('FLOAT8E5M3'))
+            .having((e) => e.message, 'message', contains('newer converter'))),
+      );
+    });
+
+    test('the whole model round-trips, default signature included', () {
+      const info = LitertModelInfo(
+        version: 3,
+        description: 'MLIR Converted.',
+        signatures: [
+          LitertSignature(
+            key: 'serving_default',
+            inputs: [
+              LitertTensor(name: 'x', type: TensorType.float32, shape: [1, 8]),
+            ],
+            outputs: [
+              LitertTensor(name: 'y', type: TensorType.int32, shape: [1, 3]),
+            ],
+            subgraphIndex: 0,
+          ),
+        ],
+      );
+      final back = LitertModelInfo.fromJson(info.toJson());
+      expect(back.version, 3);
+      expect(back.description, 'MLIR Converted.');
+      expect(back.defaultSignature!.key, 'serving_default');
+      // A non-float output is preserved as itself rather than coerced, because
+      // the refusal that follows from it depends on the type being real.
+      expect(back.defaultSignature!.outputs.first.type, TensorType.int32);
+    });
+  });
+
   group('the real published act head, parsed without the runtime', () {
     // litert-community/Laya-English-LiteRT, laya_en_act_head_fp32.tflite,
     // 1.0 MB. SHA256 c6f8de9b66e36581ce03cca7047d0a6b… in the repo's
@@ -319,6 +413,32 @@ void main() {
     test('it is bindable, so the host can drive it', () {
       final info = parseLitertModel(File(path!).readAsBytesSync());
       expect(info.defaultSignature!.bindable, isTrue);
+    }, skip: skip);
+
+    test('the real file round-trips through JSON unchanged', () {
+      // The pair that matters for the console: parse the published file, put it
+      // through the wire format the server returns, read it back, and check the
+      // head is still a head with the same boundary. A fixture would pass even if
+      // the wire format disagreed with the parser about something the file
+      // happens not to exercise.
+      final parsed = parseLitertModel(File(path!).readAsBytesSync());
+      final back = LitertModelInfo.fromJson(parsed.toJson());
+      expect(back.version, parsed.version);
+      expect(back.description, parsed.description);
+      final a = parsed.defaultSignature!;
+      final b = back.defaultSignature!;
+      expect(b.key, a.key);
+      expect([for (final t in b.inputs) t.name],
+          [for (final t in a.inputs) t.name]);
+      expect([for (final t in b.outputs) t.name],
+          [for (final t in a.outputs) t.name]);
+      expect(b.inputs.map((t) => t.elementCount).toList(),
+          a.inputs.map((t) => t.elementCount).toList());
+      // The boundary the console depends on: features is the 1024 one, and
+      // `feats` is the auxiliary. If the round trip reordered them, the console
+      // would fill the wrong tensor.
+      expect(tfliteHeadShape(b)!.features.name, 'pooled_cls');
+      expect([for (final t in tfliteHeadShape(b)!.auxiliary) t.name], ['feats']);
     }, skip: skip);
 
     test('the file announces itself as an MLIR conversion, with one signature', () {

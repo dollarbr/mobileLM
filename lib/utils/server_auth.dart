@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 /// Whether the local API server requires a key, and which one.
@@ -128,6 +129,34 @@ bool constantTimeEquals(String? a, String? b) {
     diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
   }
   return diff == 0;
+}
+
+/// The headers a request **from inside this app** has to carry.
+///
+/// Pure and taking the two values as arguments, rather than reading the
+/// controller, so it can be tested without a running app — and because the thing
+/// it decides is a question with a wrong answer either way: send the key when
+/// the server is not asking for it and nothing happens, but **omit it when the
+/// server is asking and every call comes back 401**.
+///
+/// That is not hypothetical. `/v1/**` is behind `_isAuthorized`, the encoder
+/// console called the server with no `Authorization` header at all, and
+/// `useApiKey` shipped defaulting to `false` — so nothing was wrong until
+/// somebody turned the key on. After that the console's probe read "server not
+/// running" against a server that was running and listening, and its run button
+/// went dead. The symptom points at the server; the cause is one missing header
+/// in the caller.
+///
+/// Returns an empty map when the key is off, so a caller can splat it
+/// unconditionally rather than branching at every call site.
+Map<String, String> localApiHeaders({
+  required bool useApiKey,
+  required String apiKey,
+}) {
+  if (!useApiKey) return const {};
+  final key = apiKey.trim();
+  if (key.isEmpty) return const {};
+  return {HttpHeaders.authorizationHeader: 'Bearer $key'};
 }
 
 /// Check an `Authorization` header against the configured key.

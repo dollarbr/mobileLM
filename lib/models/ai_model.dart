@@ -3,6 +3,17 @@ class AiModel {
   static const runtimeLiteRt = 'litert';
   static const runtimeSd = 'sd';
 
+  /// The tensor-interpreter runtime: a `.tflite`, driven by LiteRT's
+  /// `CompiledModel`.
+  ///
+  /// A fourth value, and not a flavour of `runtimeLiteRt`. The two share a name
+  /// in Google's Maven repository and nothing else: `litertlm-android` takes a
+  /// prompt and streams tokens, and this takes named input tensors and returns
+  /// named output tensors. Calling a `.tflite` "litert" would put it in the same
+  /// list as the 586 MB generative models, and the button on its card would load
+  /// it into an engine that cannot read its magic bytes.
+  static const runtimeTflite = 'tflite';
+
   static bool hasVisionMarker(String value) {
     final lower = value.toLowerCase();
     return lower.contains('vl-') ||
@@ -98,6 +109,7 @@ class AiModel {
   static String runtimeFromFilename(String filename, {String? template}) {
     final lower = filename.toLowerCase();
     if (lower.endsWith('.litertlm')) return runtimeLiteRt;
+    if (lower.endsWith('.tflite')) return runtimeTflite;
     if (lower.endsWith('.safetensors') || template == runtimeSd) {
       return runtimeSd;
     }

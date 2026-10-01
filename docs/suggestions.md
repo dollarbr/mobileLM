@@ -100,10 +100,20 @@ generativo.
 **A 0.4.1 nunca existiu** — nem tag nem release — e a reserva foi absorvida pela
 0.5.0. Mas a feature **não** foi resolvida por isso, e a situação de agora é
 melhor do que era: `/v1/classify` passou a servir **decision models** por um
-caminho generativo, medido com Tev1-0.8B a 5 de 5. O Laya é um `.tflite` com uma
-cabeça de classificação, não um modelo generativo, então ele continua precisando
-do interpretador TFLite — é a única peça que falta, e é uma dependência, não uma
-feature.
+caminho generativo, medido com Tev1-0.8B a 5 de 5.
+
+**E a peça que faltava está entregue e verificada.** O interpretador é o LiteRT
+2.2.0 (`local_plugins/litert_flutter/`), medido no A72 nos dois backends com
+diferença máxima de 2,98e-08 entre eles, e `/v1/classify` serve
+`laya_en_act_head_fp32.tflite` — **159 ms** do clique ao logit, com
+`features_input "pooled_cls"` e `auxiliary_used ["feats"]` nomeados na resposta.
+
+O que **não** existe é o *host* completo do Laya, e continua fora do escopo
+combinado: são 705 MB de grafo, uma tabela de embeddings de 98 MB com SHA256, o
+tokenizer ModernBERT e a orquestração de dois grafos. Cabe no Edge 60, não no
+A72. O console do `.tflite` faz a parte honesta disso — mostra o que o arquivo
+diz de si mesmo, deixa você escolher o acelerador, e roda o endpoint — sem
+inventar as features que só o host sabe produzir.
 
 E a análise de Laya/OpenJev **não se aplica** a Tev1, o que vale dizer porque
 "mesma categoria" costuma significar "mesmo motivo para estar de fora": o que
