@@ -122,21 +122,40 @@ o Tev1 é um `qwen35` comum que emite uma letra como token seguinte.
 
 ---
 
+## Onde a fila está hoje
+
+Os itens 1 a 5 desta lista **foram entregues** — 1, 3 e 5 na **0.3.1**, e está
+registrado nas seções "✅" acima. Uma lista de sugestões que aponta para o que já
+existe não está desatualizada, está **invertida**.
+
+O estado datado, o que está medido e o próximo passo com protocolo estão em
+[`HANDOFF.md`](HANDOFF.md). Resumido: a **hipótese da quantização**
+(`Q4_K_M` contra `Q4_0` do mesmo modelo), os **4 `litertlm` restantes**, uma
+**entrada de catálogo `.tflite`**, e só então a fila antiga de UI abaixo.
+
+---
+
 ## 🟢 Baixo esforço, alto impacto
 
-### 1. Exportar conversa
+### 1. Exportar conversa ✅ entregue na 0.3.1
 Compartilhar como texto, markdown ou PDF. Útil para salvar diagnósticos, respostas longas, ou enviar para outro lugar.
 - **Esforço:** ~1h
 - **Como:** `share_plus` já está no projeto; usar `DocumentExporter` simples
 - **Priority:** Alta
 
 ### 2. Botão "copiar resposta" dedicado
+❗ **não verificado.** A tabela da 0.3.1 lista três itens e este não é um deles —
+já existia "copiar trecho". **Ninguém conferiu**, então treat como pendente até
+provar na tela.
+
 Já existe copiar trecho, mas um botão no bubble com "copiar tudo" seria rápido.
 - **Esforço:** ~30 min
 - **Como:** Adicionar ícone de cópia no `_streamBubble` e no `ChatBubble`
 - **Priority:** Média
 
 ### 3. Sugestões rápidas (chips) após resposta
+✅ **entregue na 0.3.1**
+
 Quando o modelo responde, mostrar chips como "explique melhor", "resuma", "traduza", "continue". Envia um prompt pré-definido automaticamente.
 - **Esforço:** ~2h
 - **Como:** Widgets chips na parte inferior do bubble, lista de prompts mapeada por contexto
@@ -153,6 +172,8 @@ Desliga Vulkan/GPU, usa CPU-only quando bateria < 20%. Já tem toggle de acelera
 ## 🟡 Médio esforço, alto impacto
 
 ### 5. Sumarização automática de contexto
+✅ **entregue na 0.3.1**
+
 Quando `contextTokensUsed` > 75% do tamanho, resumo automático das mensagens mais antigas. Libera contexto mantendo o resumo como mensagem de sistema.
 - **Esforço:** ~4-6h
 - **Como:** Orquestrar `InferenceService.generate()` com histórico truncado + resumo injetado
@@ -171,11 +192,27 @@ Já tem `speech_to_text` e LiteRT multimodal, mas não está integrado no fluxo 
 - **Como:** Integrar `SpeechToText` com o input field, transformar em mensagem de texto antes de enviar
 - **Priority:** Média
 
-### 8. Benchmark comparativo de quantizações
-Testar Q4_0 vs Q5_0 vs Q8_0 no modelo atual e mostrar tok/s de cada uma. Já tem engine de benchmark, só precisa expor na UI.
-- **Esforço:** ~2-3h
-- **Como:** Tela dedicada em Settings > Modelos, comparar lado a lado
-- **Priority:** Baixa
+### 8. Benchmark comparativo de quantizações ⭐ **é o próximo passo**
+Testar `Q4_0` vs `Q4_K_M` vs `Q8_0` **do mesmo modelo** e medir de verdade.
+
+- **Esforço:** ~1h de download e medição. **Não** são 2-3h de tela.
+- **Como:** `POST /v1/models/load` + `/v1/chat/completions` com streaming, pedidos
+  consecutivos sem pausa, melhor de 3. Está pronto em `~/.cache/mobilelm-tools/`.
+- **Prioridade:** **Alta** — este item estava marcado "Baixa" e é o mais
+  importante da fila. Motivo: é o único que muda o advice para **36 dos 46**
+  modelos do catálogo, e o advice atual está **comprovadamente errado** — o
+  `AGENTS.md` diz que o menor modelo é o mais lento, e o menor do catálogo
+  (SmolLM2 135M, 5,1 tok/s) é de fato o mais lento dos seis medidos.
+
+**A ordem é medir primeiro, tela depois.** A tela dedicada (Settings > Modelos,
+lado a lado) é o item **depois** deste, e só vale a pena se a medição mostrar que
+a diferença importa — uma tela que compara três quantizações de um modelo que se
+comporta igual é uma tela que ensina a não notar diferença.
+
+**Pré-condição, verificada:** o catálogo **não tem** nenhuma família em duas
+quantizações (`Q4_0` 11, `Q4_K_M` 12, `Q8_0` 1, nenhuma família repetida). O par
+vem de fora do catálogo, do mesmo autor, para que a única variável seja a
+quantização. Protocolo em [`HANDOFF.md`](HANDOFF.md) §5.
 
 ---
 

@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### docs: um handoff datado, e a lista de próximos passos que estava invertida
+
+`docs/HANDOFF.md` — estado de 2026-10-01 em um arquivo: os números conferidos,
+onde está cada peça do que foi entregue, o que está medido, o que não está, as
+decisões que custaram tempo, o **próximo passo com protocolo**, e o runbook para
+medir de novo (aparelhos, ferramentas, armadilhas de `adb` e de harness).
+
+**O "Top 3" do `AGENTS.md` apontava para três features entregues na 0.3.1** —
+exportar conversa, chips de sugestão rápida, sumarização automática. Uma lista de
+próximos passos que só aponta para o que já foi entregue não está desatualizada:
+está **invertida**, e é pior do que não ter, porque induz quem a lê a concluir que
+o resto também está pronto. A regra do repo já vale para prosa em geral — uma
+versão repetida em três lugares, uma delas errada, e nada que reclame — e vale
+mais ainda para "o que fazer depois".
+
+`docs/suggestions.md` deixa de listar como pendente o que já está feito, e o item
+8 (benchmark de quantizações) sai de **"Baixa, ~2-3h, tela dedicada"** para o que
+ele de fato é: **~1h de medição, prioridade Alta**, porque é o único da fila que
+muda o advice para **36 dos 46** modelos do catálogo — e o advice atual está
+comprovadamente errado, já que o menor modelo do catálogo é o mais lento dos seis
+medidos. A tela dedicada fica **depois** da medição, e só se a medição mostrar que
+a diferença importa.
+
+**Precondição verificada antes de recomendar:** o catálogo **não tem** nenhuma
+família em duas quantizações (`Q4_0` 11, `Q4_K_M` 12, `Q8_0` 1, nenhuma família
+repetida), então o par tem que vir de fora dele — do mesmo autor, para que a
+única variável seja a quantização.
+
 ### feat: `.tflite` é um modelo do app — descoberto, listado e com console
 
 O runtime LiteRT da versão anterior servia `.tflite` **pela rede** e não tinha

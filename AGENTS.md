@@ -1474,6 +1474,39 @@ gate existir mesmo sem ter resolvido isto.
 
 ## Sugestões de próximas features
 
-Ver [`docs/suggestions.md`](docs/suggestions.md) para lista completa organizada
-por esforço/impacto. Top 3: exportar conversa, chips de sugestão rápida,
-sumarização automática de contexto.
+**Comece por [`docs/HANDOFF.md`](docs/HANDOFF.md)** — snapshot datado do estado,
+com o que está medido, o que não está, e o próximo passo com o protocolo.
+
+Ver [`docs/suggestions.md`](docs/suggestions.md) para a lista completa
+organizada por esforço/impacto.
+
+**Este parágrafo já esteve errado e é a razão de o outro existir.** Ele dizia
+"Top 3: exportar conversa, chips de sugestão rápida, sumarização automática de
+contexto" — e **as três foram entregues na 0.3.1**, há mais de um ano de
+versões. Uma lista de próximos passos que só aponta para o que já foi entregue
+não está desatualizada: está **invertida**, e é pior do que não ter, porque
+induz quem a lê a concluir que o resto também está pronto.
+
+A regra do repo já vale para prosa em geral — uma versão repetida em três
+lugares, uma delas errada, e nada no repositório que reclame — e vale mais ainda
+para "o que fazer depois". Um próximo passo que já foi feito custa o mesmo que
+um número de versão errado: um ciclo inteiro de trabalho para descobrir que não
+havia trabalho.
+
+**A fila aberta, na ordem em que o `HANDOFF` justifica:**
+
+1. **A hipótese da quantização** — `Q4_K_M` contra `Q4_0` do **mesmo** modelo.
+   É o único item que muda advice para **36 dos 46** do catálogo, e o advice
+   atual está comprovadamente errado (o menor modelo é o mais lento). O
+   catálogo **não tem** nenhuma família em duas quantizações, então o par vem de
+   fora dele.
+2. **Os 4 `litertlm` restantes.** "GPU é o melhor LiteRT neste aparelho" veio de
+   **um** modelo, o 0.6B; nenhum dos outros é um 0.6B.
+3. **Uma entrada de catálogo `.tflite`.** O console funciona, mas o único arquivo
+   utilizável foi empurrado à mão. A rota barata é uma cabeça de **uma entrada**
+   só — a regra do "maior input" tornou isso trivial, e ela cobre o caminho feliz
+   sem auxiliares.
+4. **Fechar a fila antiga de UI**: overflows restantes, nomes e comentários dos
+   modelos, quantização por swipe no card.
+5. **A 0.6.0**, com o critério do repo: minor = feature, e "isto faz X, que antes
+   não existia" tem que sair verdadeiro.

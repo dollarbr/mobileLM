@@ -113,6 +113,20 @@ docs/*
 !docs/SHIZUKU.md
 !docs/superpowers/
 
+# Two that were missing from the list above, and the rule that decided it:
+# **if `AGENTS.md` tells the reader to open a file before touching something, that
+# file has to be in the repo.** Otherwise the instruction points at a path that
+# only exists on the machine of whoever wrote it.
+#
+# `HYBRID_CORE.md` is the one that was actually missing, and it is the doc this
+# guide calls mandatory before anything that depends on the Rust core — including
+# the reason the branch must not be deleted. `HANDOFF.md` is the datad snapshot
+# that says what is measured, what is not, and what the next step is; the next
+# session needs it to be in the repo for the same reason, and not in a
+# conversation that ends with the harness.
+!docs/HYBRID_CORE.md
+!docs/HANDOFF.md
+
 # Stale entries from the parked Rust core (`mobilelm_core`, removed in 0.3.5 — see
 # docs/HYBRID_CORE.md). Nothing produces these two files any more; CI no longer
 # copies them into jniLibs, and `release.yml` warns if `liblitert-lm.so` reappears
