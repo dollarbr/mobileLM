@@ -889,13 +889,53 @@ do LFM2.5 230M em sessão quente era 18,0 tok/s. O 135M é `Q4_K_M` e os outros 
 **não foi testada**. O que é medido é que "escolha o menor modelo" é advice
 errado neste aparelho: o menor é o mais lento.
 
-**2. A GPU é 8× mais lenta que a CPU neste aparelho.** O único modelo que foi
-para a GPU é o LiteRT, e ele faz **3,8 tok/s contra 31–49** dos GGUFs. Isso
-responde a pergunta que estava aberta desde o começo desta linha de trabalho —
-"acredito que GPU seja melhor, mas vai saber". A resposta medida é: para este
-telefone e estes modelos, não. E a assimetria é de arquitetura, não de aparelho:
-`planLiteRtTier` **sempre** prefere GPU e nunca mediu, enquanto `planAcceleration`
-agora manda GGUF pequeno para a CPU.
+**2. O LiteRT-LM é ~6× mais lento que o llama.cpp neste aparelho — e a GPU é
+*mais rápida*, não mais lenta.** Isto **corrige** o que esta seção dizia antes.
+Eu tinha escrito "a GPU é 8× mais lenta que a CPU aqui", comparando os 3,8 tok/s
+do LiteRT-na-GPU com os 31–49 dos GGUFs-na-CPU. **Isso compara dois runtimes, não
+dois backends**, e a frase deixava parecer que a GPU era o problema.
+
+Medido com o mesmo build, A/B virando o toggle de Settings:
+
+| LiteRT Qwen3 0.6B | TTFT | decode |
+|---|---|---|
+| `cpu_safe` → `backend=cpu` | 4,58 s | **3,0** tok/s |
+| `auto_fast` → `backend=gpu` | 2,94 s | **3,8** tok/s |
+
+A GPU ganha por **27%**. O 8× que eu vi era entre a GGUF-na-CPU e a
+LiteRT-na-GPU. Isolando o runtime do backend, com a mesma lei `tok/s ≈ k/parâmetros`
+que gave acima:
+
+```
+GGUF 0.35B na CPU ..............  31,9 tok/s   medido
+GGUF 0.60B esperado ............  18,6 tok/s   extrapolado
+LiteRT 0.60B na CPU ............   3,0 tok/s   medido
+LiteRT 0.60B na GPU ............   3,8 tok/s   medido
+```
+
+**O LiteRT-LM na CPU é 6,2× mais lento que o llama.cpp na CPU**, para trabalho
+comparável. A GPU não é a causa: ela não passa nem do teto de ineficiência do
+próprio engine.
+
+**Por quê, e é estrutural:** todo o pinning de threads vive dentro de
+`jni_wrapper.cpp` — `buildCpuSet`, `ggml_threadpool_new`, `llama_attach_threadpool`.
+O caminho LiteRT passa por `liblitert-lm.so` e não tem acesso a nenhum deles, então
+o backend de CPU dele roda **sem pin**, e o pinning sozinho vale 2,8× neste
+aparelho (6,5 → 18,0 tok/s, medido). O resto da diferença são kernels: ggml com
+i8mm/dotprod nos A76 contra o conjunto próprio do LiteRT-LM.
+
+**Consequência para `planLiteRtTier`:** o default de sempre preferir GPU está
+**correto neste aparelho**, por 27% — mas estava certo por acaso, porque nunca
+mediu. E a resposta honesta da seção "micro-benchmark no LiteRT" muda: o
+problema não é escolher o backend, é o engine ser 6× mais lento. Um benchmark que
+mede os dois backends escolheria GPU e continuaria 6× atrás de um GGUF do mesmo
+tamanho.
+
+**O alcance do número:** um modelo, um aparelho. Os outros 4 `litert` do catálogo
+(gemma-4 E2B, E4B, e os outros dois) não foram medidos, e nenhum deles é um
+0.6B — a lei `k/parâmetros` foi ajustada em GGUF, e a LiteRT pode ter outra
+curva. O que dá para dizer é que **o backend GPU é o melhor LiteRT neste
+aparelho**, não que o LiteRT é ruim em todo lugar.
 
 **3. As amostras da CPU variam 150×; as da GPU, não.** O LFM2.5 230M deu 49,3,
 0,3 e 44,7 em três pedidos seguidos; o LiteRT deu 3,8 quatro vezes. É o governor

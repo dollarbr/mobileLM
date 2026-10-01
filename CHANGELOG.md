@@ -4,6 +4,65 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### O LiteRT-LM foi medido nos dois backends, e a GPU é mais rápida
+
+A pergunta estava aberta desde o começo desta linha: *"acredito que GPU seja
+melhor, mas vai saber"*. A resposta medida, A/B virando o toggle de Settings, no
+mesmo build:
+
+| LiteRT Qwen3 0.6B | TTFT | decode |
+|---|---|---|
+| `cpu_safe` → `backend=cpu` | 4,58 s | **3,0** tok/s |
+| `auto_fast` → `backend=gpu` | 2,94 s | **3,8** tok/s |
+
+A GPU ganha por **27%**, e as quatro amostras de cada lado são idênticas
+(`3.0 3.0 3.0 3.0` e `3.8 3.8 3.8 3.8`) — a GPU não passa pelo rampa do governor
+que a CPU sofre.
+
+**Isto corrige o `AGENTS.md`, que dizia "a GPU é 8× mais lenta que a CPU aqui".**
+Os 3,8 tok/s do LiteRT-na-GPU foram comparados com os 31–49 dos GGUFs-na-CPU, e
+isso compara **dois runtimes**, não dois backends. Isolando:
+
+```
+GGUF 0.35B na CPU ..............  31,9 tok/s   medido
+GGUF 0.60B esperado ............  18,6 tok/s   extrapolado
+LiteRT 0.60B na CPU ............   3,0 tok/s   medido
+```
+
+**O LiteRT-LM na CPU é 6,2× mais lento que o llama.cpp na CPU** para trabalho
+comparável. A GPU não é a causa: não passa nem do teto de ineficiência do engine.
+
+**Por quê, e é estrutural:** todo o pinning de threads vive em
+`jni_wrapper.cpp` — `buildCpuSet`, `ggml_threadpool_new`, `llama_attach_threadpool`.
+O caminho LiteRT passa por `liblitert-lm.so` e não alcança nenhum deles, então o
+backend de CPU do LiteRT roda sem pin, e o pinning sozinho vale 2,8× neste
+aparelho. O resto são kernels: ggml com i8mm/dotprod contra o conjunto próprio do
+LiteRT-LM.
+
+**O default de `planLiteRtTier` continua certo** — por 27%, e por acaso, porque
+nunca mediu. E a resposta honesta ao "micro-benchmark do LiteRT" muda de forma: o
+problema não é escolher backend, é o engine ser 6× mais lento. Um benchmark que
+mede os dois backends escolheria GPU e continuaria 6× atrás de um GGUF do mesmo
+tamanho.
+
+**Alcance:** um modelo, um aparelho. Os outros 4 `litert` do catálogo não foram
+medidos e nenhum é um 0.6B.
+
+### `input tap` funciona no A72 — a checagem é que estava errada
+
+O guia de pilotagem registra oito tentativas com `tap.sh` falhando, e a nota
+atribui o toque a um defeito do painel. Não é. `input tap` funciona; o que não
+funcionava era a **checagem**: `tap.sh` confirmava `mWakefulness=Awake`, e
+`dumpsys power` continua dizendo `Awake` com o painel morto. A checagem real é o
+**tamanho do screenshot** — 15 KB é um PNG todo preto, 190 KB é conteúdo.
+
+Com wake, `wm dismiss-keyguard` e a checagem do tamanho antes de cada toque, os
+toques e os swipes responderam de primeira. `/tmp/opencode/setmode.py` faz a
+navegação e confere cada passo por `uiautomator`, incluindo o detalhe de que a tela
+do Server é full-screen e não tem a barra de abas — buscar a aba 4 nela falha e o
+script acaba rolando a página errada sem nunca sair.
+
+
 ### fix: o KV cache nunca era limpo entre gerações
 
 O comentário no `jni_wrapper.cpp` dizia "Clear memory from previous generation to
