@@ -97,9 +97,15 @@ NPU → GPU → CPU. Também não tem o dispatch por variante ARM
 (`GGML_CPU_ALL_VARIANTS`) que evita SIGILL em aparelhos pré-2017. Manter um plugin
 LiteRT à parte anularia o ganho de consolidar.
 
-Estudo completo (em português) na raiz do workspace: `docs/KMP_MIGRATION_ANALYSIS.md`
-(começa por um fact-check datado), `docs/KMP_MIGRATION_PLAN.md`,
-`docs/KMP_BUILD_LIMITATIONS.md`. **Reabrir só se o Llamatik ganhar LiteRT** ou se o
+Estudo completo (em português) **na raiz do workspace**, um nível acima deste
+arquivo: [`../docs/KMP_MIGRATION_ANALYSIS.md`](../docs/KMP_MIGRATION_ANALYSIS.md)
+(começa por um fact-check datado), [`../docs/KMP_MIGRATION_PLAN.md`](../docs/KMP_MIGRATION_PLAN.md),
+[`../docs/KMP_BUILD_LIMITATIONS.md`](../docs/KMP_BUILD_LIMITATIONS.md).
+
+O `../` é o ponto. A forma antiga resolvia para `mobileLM-app/docs/`, que não os
+contém — a prosa dizia "na raiz do workspace" e só quem já conhecia o layout
+acertava o caminho. É a mesma classe do `HYBRID_CORE.md` ausente, e a mesma
+regra: **um caminho num guia tem que resolver a partir de onde o guia está.** **Reabrir só se o Llamatik ganhar LiteRT** ou se o
 caminho NPU for abandonado de vez.
 
 ## Tools privilegiadas (Shizuku)
