@@ -12,6 +12,7 @@ import '../controllers/chat_controller.dart';
 import 'server_view.dart';
 import '../core/constants.dart';
 import '../services/inference_service.dart';
+import '../services/language_preference.dart';
 import '../services/cpu_self_test.dart';
 import '../services/cpu_self_test_service.dart';
 import '../controllers/model_controller.dart';
@@ -49,7 +50,7 @@ class SettingsView extends GetView<SettingsController> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
               const SizedBox(height: 8),
-              _sectionLabel(context, 'APPEARANCE'),
+              _sectionLabel(context, 'section_appearance'),
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.palette_outlined,
@@ -65,7 +66,7 @@ class SettingsView extends GetView<SettingsController> {
                       isDark,
                       leading: Icon(_themeModeIcon(mode),
                           size: 20, color: Theme.of(context).hintColor),
-                      title: _themeModeName(mode),
+                      title: _themeModeName(mode).tr,
                       trailing: controller.themeMode.value == mode
                           ? Icon(Icons.check,
                               size: 18,
@@ -78,10 +79,12 @@ class SettingsView extends GetView<SettingsController> {
                     ),
                   const Divider(height: 0.5, indent: 16),
                   _buildFontSizeCard(context, isDark),
+                  const Divider(height: 0.5, indent: 16),
+                  _buildLanguageCard(context, isDark),
                 ],
               ),
               const SizedBox(height: 16),
-              _sectionLabel(context, 'INFERENCE MODE'),
+              _sectionLabel(context, 'section_inference_mode'),
               _appleGroupedCard(context, isDark, children: [
                 _appleListTile(
                   context,
@@ -118,7 +121,7 @@ class SettingsView extends GetView<SettingsController> {
                 ),
               ]),
               const SizedBox(height: 24),
-              _sectionLabel(context, 'MODEL SETTINGS'),
+              _sectionLabel(context, 'section_model_settings'),
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.tune_rounded,
@@ -250,18 +253,18 @@ class SettingsView extends GetView<SettingsController> {
                 children: [_buildImageGenerationCard(context, isDark)],
               ),
               const SizedBox(height: 24),
-              _sectionLabel(context, 'DEVICE INFORMATION'),
+              _sectionLabel(context, 'section_device_information'),
               _buildDeviceCard(context, isDark),
               const SizedBox(height: 10),
               if (Platform.isAndroid) _buildNpuCard(context, isDark),
               const SizedBox(height: 24),
-              _sectionLabel(context, 'STORAGE'),
+              _sectionLabel(context, 'section_storage'),
               _buildStorageCard(context, isDark),
               const SizedBox(height: 24),
-              _sectionLabel(context, 'WORKSPACE'),
+              _sectionLabel(context, 'section_workspace'),
               _buildWorkspaceCard(context, isDark),
               const SizedBox(height: 24),
-              _sectionLabel(context, 'AGENT'),
+              _sectionLabel(context, 'section_agent'),
               _appleGroupedCard(context, isDark, children: [
                 _appleListTile(
                   context,
@@ -303,7 +306,7 @@ class SettingsView extends GetView<SettingsController> {
               const SizedBox(height: 10),
               _scheduledTasksTile(context, isDark),
               const SizedBox(height: 10),
-              _sectionLabel(context, 'DIAGNOSTICS'),
+              _sectionLabel(context, 'section_diagnostics'),
               _appleGroupedCard(context, isDark, children: [
                 // The benchmark tile and the two switches that govern it used to
                 // live inside _buildLiteRtCard, which is only built when a
@@ -402,7 +405,7 @@ class SettingsView extends GetView<SettingsController> {
                 ),
               ]),
               const SizedBox(height: 24),
-              _sectionLabel(context, 'ABOUT'),
+              _sectionLabel(context, 'section_about'),
               _appleGroupedCard(context, isDark, children: [
                 Padding(
                   padding: const EdgeInsets.all(16),
@@ -1023,10 +1026,21 @@ class SettingsView extends GetView<SettingsController> {
     return parts.join(' · ');
   }
 
-  Widget _sectionLabel(BuildContext context, String title) {
+  /// Rótulo de seção em caixa alta.
+  ///
+  /// **O `.tr` é aqui, não no call site**, e o `toUpperCase` vem **depois**.
+  /// Eram literais em inglês numa tela que já falava português — que é
+  /// exatamente o sintoma visível do defeito que o seletor de idioma veio
+  /// fechar: um título de seção numa língua que a pessoa não escolheu, acima
+  /// de uma tela que fala a dela.
+  ///
+  /// `.tr` e depois `toUpperCase` porque PT-BR e EN diferem na caixa de letras
+  /// acentuadas, e a regra de exibição (caixa alta, entreletra 1.4) pertence ao
+  /// estilo da seção, não à tradução.
+  Widget _sectionLabel(BuildContext context, String chave) {
     return Padding(
       padding: const EdgeInsets.only(left: 16, bottom: 6),
-      child: Text(title,
+      child: Text(chave.tr.toUpperCase(),
           style: GoogleFonts.spaceGrotesk(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -1043,7 +1057,7 @@ class SettingsView extends GetView<SettingsController> {
     } else if (localImage.isModelLoaded.value) {
       return 'Active: ${localImage.loadedModelName.value}';
     }
-    return 'No model loaded';
+    return 'no_model_loaded'.tr;
   }
 
   Widget _buildDeviceCard(BuildContext context, bool isDark) {
@@ -1850,6 +1864,89 @@ class SettingsView extends GetView<SettingsController> {
     ]);
   }
 
+  /// Seletor de idioma: **auto**, inglês ou português do Brasil.
+///
+/// **Três opções e nenhum `Switch`**, porque não são dois estados: `auto` não é
+/// "português desligado", é uma terceira coisa que se decide sozinha. Um par de
+/// botões de radio deixa a diferença visível — quem escolhe `auto` precisa de
+/// poder dizer o que ele faz, e é a linha de detalhe embaixo do valor.
+///
+/// **Os rótulos NÃO passam por `.tr`**, e é deliberado: o nome de um idioma é
+/// o dado, e um dado traduzido deixa de identificar o idioma. Em português o
+/// item diz "Português (Brasil)"; em inglês diz "Portuguese (Brazil)". Um
+/// rótulo localizado diria "Inglês" dentro de uma lista de Idiomas e quem lê em
+/// inglês não reconheceria o próprio idioma.
+///
+/// **A troca vale na hora**, por `Get.updateLocale`, e o card inteiro se
+/// reconstrói junto — inclusive o título desta seção, que é a prova visível de
+/// que funcionou. Um idioma que só muda no próximo cold start parece quebrado.
+Widget _buildLanguageCard(BuildContext context, bool isDark) {
+    final accent = Theme.of(context).colorScheme.primary;
+    final escolha = controller.language.value;
+    final locale = Get.locale;
+
+    // O detalhe muda com a escolha porque é a parte que responde "o que isso
+    // faz por mim" — e em `auto` a resposta depende do aparelho, não da tela.
+    final detalhe = escolha == LanguagePreference.auto
+        ? (LanguagePreference.ehPortugues(Get.deviceLocale)
+            ? 'language_auto_detail_pt'.tr
+            : 'language_auto_detail_en'.tr)
+        : escolha == LanguagePreference.english
+            ? 'language_english_detail'.tr
+            : 'language_portuguese_brazil_detail'.tr;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.translate_rounded, size: 16, color: accent),
+            const SizedBox(width: 8),
+            Text('language'.tr,
+                style: GoogleFonts.inter(
+                    fontSize: 15, fontWeight: FontWeight.w400)),
+            const Spacer(),
+            Text(
+              LanguagePreference.rotulo(escolha, locale),
+              style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: accent,
+                  fontWeight: FontWeight.w600),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text(detalhe,
+              style: GoogleFonts.inter(
+                  fontSize: 12, color: Theme.of(context).hintColor)),
+          const SizedBox(height: 10),
+          // `Wrap` e nao `Row`: os tres rotulos nao cabem numa linha de 360 dp
+          // com o texto no tamanho que este app permite, e o `AGENTS.md` já
+          // pagou por `Row` sem `Expanded` em quatro lugares. Ver também
+          // `test/row_overflow_audit_test.dart`.
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final opcao in LanguagePreference.opcoes)
+                ChoiceChip(
+                  selected: escolha == opcao,
+                  onSelected: (_) => controller.setLanguage(opcao),
+                  label: Text(LanguagePreference.rotulo(opcao, locale),
+                      style: GoogleFonts.inter(fontSize: 13)),
+                  selectedColor: accent.withValues(alpha: 0.18),
+                  labelStyle: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight:
+                        escolha == opcao ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFontSizeCard(BuildContext context, bool isDark) {
     const min = 0.8;
     const max = 1.4;
@@ -2468,11 +2565,17 @@ class SettingsView extends GetView<SettingsController> {
     );
   }
 
+  /// A chave do modo de tema; o `.tr` é no call site.
+  ///
+  /// Devolver o texto já traduzido aqui congelaria o idioma: `title:` recebe a
+  /// string pronta e não teria onde traduzir. E `_themeModeName` é chamada de
+  /// um `build`, não de um `const`, então o valor continua sendo reavaliado a
+  /// cada quadro.
   String _themeModeName(ThemeMode m) => m == ThemeMode.light
-      ? 'Light'
-      : m == ThemeMode.dark
-          ? 'Dark'
-          : 'System Default';
+        ? 'theme_light'
+        : m == ThemeMode.dark
+            ? 'theme_dark'
+            : 'theme_system';
   IconData _themeModeIcon(ThemeMode m) => m == ThemeMode.light
       ? Icons.wb_sunny_outlined
       : m == ThemeMode.dark

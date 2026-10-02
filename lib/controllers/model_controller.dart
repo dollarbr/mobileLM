@@ -359,7 +359,8 @@ class ModelController extends GetxController {
           filename: file,
           url: '',
           size: _formatModelSize(file),
-          description: 'Imported from local storage',
+          descriptionEn: 'Imported from local storage',
+            descriptionPt: 'Importado do armazenamento local',
           template: isLiteRt ? 'litert' : 'chatml',
           runtime: runtime,
           isImported: true,
@@ -430,13 +431,13 @@ class ModelController extends GetxController {
     // weights alone cannot read an image, however the model is named.
     if (!isLiteRtModel(model)) return model.needsMmproj;
     final lower =
-        '${model.name} ${model.filename} ${model.description}'.toLowerCase();
+        '${model.name} ${model.filename} ${model.descriptionSearch}'.toLowerCase();
     return model.isVision || AiModel.hasVisionMarker(lower);
   }
 
   bool isUncensoredModel(AiModel model) {
     return AppConstants.isUncensoredModelName(
-      '${model.name} ${model.filename} ${model.description}',
+      '${model.name} ${model.filename} ${model.descriptionSearch}',
     );
   }
 
@@ -632,8 +633,14 @@ class ModelController extends GetxController {
       filename: resolvedFilename,
       url: url.trim(),
       size: size == null || size.trim().isEmpty ? 'Unknown size' : size.trim(),
-      description: description == null || description.trim().isEmpty
+      // Um modelo digitado à mão tem a ficha que a pessoa escreveu, e ela
+      // vale nos dois idiomas: não há como saber em que língua foi escrita, e
+      // inventar uma tradução seria pior do que repetir o que foi digitado.
+      descriptionEn: description == null || description.trim().isEmpty
           ? 'Added from custom URL'
+          : description.trim(),
+      descriptionPt: description == null || description.trim().isEmpty
+          ? 'Adicionado por URL personalizada'
           : description.trim(),
       template: template.trim().isEmpty ? 'chatml' : template.trim(),
       runtime: AiModel.runtimeFromFilename(
@@ -1475,7 +1482,8 @@ class ModelController extends GetxController {
           filename: filename,
           url: '',
           size: '',
-          description: '',
+          descriptionEn: '',
+            descriptionPt: '',
           template: '',
         ))) {
       // Auto-download TAESD for fast VAE decode if not present

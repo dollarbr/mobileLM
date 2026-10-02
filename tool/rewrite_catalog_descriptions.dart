@@ -1,48 +1,81 @@
-// Reescreve as `description` do catálogo a partir de um mapa de traduções.
+// Reescreve as descrições do catálogo nos **dois** idiomas.
 //
-// Existe porque regex não funciona aqui, e a tentativa custou três builds:
-// **18 das 59 descrições são literais adjacentes em Dart**, e o Dart concatena
-// literais vizinhos automaticamente. Uma regex `(?:'[^']*')+` para no
-// apostrofo de `"Microsoft\'s"`, devolve um valor menor que o real, e a
-// substituição deixa o texto antigo colado depois do novo.
+// Existe porque regex não funciona neste arquivo, e a tentativa custou três
+// builds. **18 das 62 descrições são literais adjacentes em Dart**, e o Dart
+// concatena literais vizinhos em tempo de compilação:
 //
-// Este arquivo faz o trabalho com o scanner do próprio Dart, que é quem
-// decide o que é uma string. Rodar com:
+//     'description':
+//         'Cross-encoder reranker, ModernBERT, Portuguese and English. Measured '
+//         'on an Edge 60 at 111 ms per query with a real logit spread of '
+//         '2,07. The one to start with.',
 //
-//   dart run tool/rewrite_catalog_descriptions.dart
+// Três coisas quebram qualquer regex ao mesmo tempo: o valor ocupa **várias
+// linhas**; 3 entradas usam **aspas duplas** (porque contêm `Microsoft's`); e
+// `dart format` **remove o espaço entre os segmentos**, então `'a ' 'b'` vira
+// `'a' 'b'`. Três versões de regex falharam em sequência, e a última **colou
+// texto novo em cima do antigo** — `"…aparelhos compouca RAM"`, que parece
+// traduzido e não está.
+//
+// Este arquivo faz o trabalho com o scanner do próprio Dart, que é quem decide
+// o que é uma string. Rodar com:
+//
+//     dart run tool/rewrite_catalog_descriptions.dart
 //
 // É ferramenta de uma vez, não código do produto: roda, verifica, e sai.
+//
+// **Os dois idiomas saem em campos com o idioma NO NOME** (`descriptionEn`,
+// `descriptionPt`). Um campo `description` que "significa português" foi a
+// versão anterior e é a que produz o bug que o seletor de idioma veio
+// consertar: com EN como padrão, alguém adiciona uma entrada com só `description`
+// e a tela mostra português num app inglês, sem nenhum aviso. `catalogDescription()`
+// resolve, e ela é quem tem o `.tr` da decisão.
 
 import 'dart:io';
 
 const catalogo = 'lib/core/constants.dart';
+const enJson = 'tool/catalog_en.json';
+const ptJson = 'tool/catalog_pt.json';
 
 void main(List<String> args) {
-  final traducoes = _carregar(args.isEmpty ? 'tool/catalog_pt.json' : args[0]);
-  final src = File(catalogo).readAsStringSync();
+  final en = _carregar(args.isNotEmpty ? args[0] : enJson);
+  final pt = _carregar(args.length > 1 ? args[1] : ptJson);
 
+  // Nenhum idioma pode ter entrada que o outro não tem. Um par assim é uma
+  // entrada que aparece em português num app inglês, ou o inverso — e a falha
+  // é invisível, porque a tela mostra *alguma* descrição.
+  final soEn = en.keys.where((k) => !pt.containsKey(k)).toList();
+  final soPt = pt.keys.where((k) => !en.containsKey(k)).toList();
+  if (soEn.isNotEmpty || soPt.isNotEmpty) {
+    stderr.writeln('ERRO: pares de traducao desiguais.');
+    stderr.writeln('  so em EN: $soEn');
+    stderr.writeln('  so em PT: $soPt');
+    exit(1);
+  }
+
+  final src = File(catalogo).readAsStringSync();
   final aplicadas = <String>[];
-  final saida = _reescrever(src, traducoes, aplicadas);
+  final saida = _reescrever(src, en, pt, aplicadas);
 
   if (saida == null) {
-    stderr
-        .writeln('ERRO: a varredura parou. ja aplicadas: ${aplicadas.length}');
-    stderr.writeln(
-        'ultima: ' + (aplicadas.isEmpty ? '(nenhuma)' : aplicadas.last));
+    stderr.writeln('ERRO: a varredura parou. ja aplicadas: ' +
+        aplicadas.length.toString());
+    stderr.writeln('  ultima: ' +
+        (aplicadas.isEmpty ? '(nenhuma)' : aplicadas.last));
     exit(1);
   }
   File(catalogo).writeAsStringSync(saida);
+  stdout.writeln('descricoes reescritas: ' + aplicadas.length.toString());
+
   // NÃO roda `dart format`: o arquivo já não está no formato do formatador no
   // main, e formatar aqui reescreve ~100 linhas que não têm nada a ver com a
   // tradução. A quebra de linha é do próprio _formatar, e é a que importa.
-  stdout.writeln('aplicadas: ${aplicadas.length}');
 }
 
 Map<String, String> _carregar(String caminho) {
   final bruto = File(caminho).readAsStringSync();
   final mapa = <String, String>{};
   // Formato deliberadamente burro: "nome<TAB>texto", um por linha, porque
-  // qualquer aspas no texto quebraria um JSON escrito a mao.
+  // qualquer aspa no texto quebraria um JSON escrito à mão.
   for (final linha in bruto.split('\n')) {
     if (linha.trim().isEmpty || linha.startsWith('#')) continue;
     final i = linha.indexOf('\t');
@@ -52,52 +85,62 @@ Map<String, String> _carregar(String caminho) {
   return mapa;
 }
 
-/// Reescreve cada `description`, devolvendo `null` se algo não fechar.
-///
-/// A estratégia é localizar o par de aspas que delimita o valor **contando**,
-/// e o contador trata `\` como escape — que é a única regra que a regex não
-/// fazia.
+/// Reescreve cada descrição, devolvendo `null` se algo não fechar.
 String? _reescrever(
   String src,
-  Map<String, String> traducoes,
+  Map<String, String> en,
+  Map<String, String> pt,
   List<String> aplicadas,
 ) {
   final buf = StringBuffer();
   var i = 0;
   final n = src.length;
-
-  // nome da entrada atual, para casar a traducao
   String? nomeAtual;
 
   while (i < n) {
-    // captura 'name': '...' para saber qual entrada é esta
     if (src.startsWith("'name':", i)) {
-      final nome = _lerString(src, i + "'name':".length);
-      if (nome != null) {
-        nomeAtual = nome.valor;
-        buf.write(src.substring(i, nome.fim));
-        i = nome.fim;
-        continue;
-      }
+      final nome = _lerValor(src, i + "'name':".length);
+      if (nome == null) { stderr.writeln('  PAROU em ler nome, i=' + i.toString()); return null; }
+      nomeAtual = nome.valor;
+      buf.write(src.substring(i, nome.fim));
+      i = nome.fim;
+      continue;
     }
 
-    if (src.startsWith("'description':", i)) {
-      buf.write(src.substring(i, i + "'description':".length));
-      i += "'description':".length;
-      // pula espacos
+    // Aceita o nome antigo para poder rodar sobre um arquivo já migrado.
+    if (src.startsWith("'description':", i) ||
+        src.startsWith("'descriptionEn':", i)) {
+      final chave = src.startsWith("'descriptionEn':", i)
+          ? "'descriptionEn':"
+          : "'description':";
+      final indent = i - src.lastIndexOf('\n', i) - 1;
+      buf.write("'descriptionEn':\n" + ' ' * (indent + 4));
+      i += chave.length;
       while (i < n && (src[i] == ' ' || src[i] == '\n' || src[i] == '\t')) {
         buf.write(src[i]);
         i++;
       }
-      final atual = _lerValorCompleto(src, i);
-      if (atual == null) return null;
-      final novo = nomeAtual == null ? null : traducoes[nomeAtual];
-      if (novo == null) {
-        buf.write(src.substring(i, atual.fim));
-      } else {
-        buf.write(_formatar(novo, ' ' * (i - src.lastIndexOf('\n', i) - 1)));
-        aplicadas.add(nomeAtual!);
+      final atual = _lerValor(src, i);
+      if (atual == null) { stderr.writeln('  PAROU em _lerValor, i=' + i.toString()); return null; }
+
+      if (nomeAtual == null) {
+        stderr.writeln('  PAROU: descricao sem nome');
+        return null;
       }
+      final textoEn = en[nomeAtual];
+      final textoPt = pt[nomeAtual];
+      if (textoEn == null || textoPt == null) {
+        stderr.writeln('  PAROU: sem traducao para ' + nomeAtual);
+        return null;
+      }
+
+      // O texto antigo em inglês é útil quando o EN não mudou, mas ele também
+      // pode estar truncado — e foi, em uma entrada. Então o EN **sempre** vem
+      // do JSON, nunca do arquivo: o arquivo é a saída, não a fonte.
+      buf.write(_formatar(textoEn, ' ' * (indent + 4)));
+      buf.write(",\n" + ' ' * (indent + 4) + "'descriptionPt':\n");
+      buf.write(_formatar(textoPt, ' ' * (indent + 4)));
+      aplicadas.add(nomeAtual);
       i = atual.fim;
       continue;
     }
@@ -108,77 +151,50 @@ String? _reescrever(
   return buf.toString();
 }
 
-class _Str {
-  _Str(this.valor, this.fim);
+class _Valor {
+  _Valor(this.valor, this.fim);
   final String valor;
   final int fim;
 }
 
-/// Lê um literal Dart começando em [i], que precisa estar na aspa de abertura.
+/// Lê o valor de um literal Dart **coletando todos os segmentos**.
 ///
-/// Devolve o valor **sem** os escapes resolvidos: o texto de uma descrição em
-/// português não tem `\`, e resolver exigiria desfazer `\"` e `\\` sem saber
-/// o que é conteúdo.
-_Str? _lerString(String src, int i) {
+/// A concatenação adjacente é a parte que faltou nas duas primeiras versões.
+/// O catálogo escreve 18 das 62 descrições em 2 a 5 segmentos, e o Dart os junta
+/// sozinho. Ler só o primeiro deixava o resto do texto antigo no arquivo, e o
+/// resultado era o texto novo **colado no meio do antigo**.
+///
+/// Um segmento continua quando a próxima aspa, ignorando espaços e quebras, é
+/// de novo uma abertura. Uma aspa no fim de linha que fecha o segmento não é
+/// seguida de outra — é a distinção, e ela é o que o scanner precisa saber.
+///
+/// **O delimitador é lido UMA vez, e o laço interno só lê o corpo.** Foi aqui
+/// que a versão anterior gastou uma volta inteira: encadeando, ela punha
+/// `i = j + 1` para passar a aspa de abertura, e no topo do laço seguinte lia
+/// `delim = src[i]` de novo — dois avanços na mesma aspa. O segundo pegava a
+/// **letra** seguinte (`E` de `Edge`), que não é delimitador, e devolvia null
+/// claiming que o arquivo não fechava.
+///
+/// A versão mais antiga tinha o bug oposto: `i = j` deixava a aspa ser lida
+/// como fechamento, devolvia um segmento vazio e parava depois do primeiro. As
+/// duas falhas produzem a mesma mensagem e causas diferentes, que é o que
+/// confunde — a segunda achava que eram aspas duplas não tratadas.
+_Valor? _lerValor(String src, int i) {
   final n = src.length;
-  // pula espacos ate a aspa
+
   while (i < n && (src[i] == ' ' || src[i] == '\n' || src[i] == '\t')) {
     i++;
   }
-  // O catálogo usa **as duas** formas de literal: 3 entradas abrem com " e
-  // o resto com '. Um scanner que só conhece ' para na terceira, e a falha
-  // aparece como "a varredura parou na 33ª entrada" — longe da causa, que é
-  // uma aspa que ninguém pensou em tratar.
   if (i >= n) return null;
   final delim = src[i];
+  // O catálogo usa **as duas** formas de literal: 3 entradas abrem com " e
+  // o resto com '. Um scanner que só conhece ' para na terceira, e a falha
+  // aparece como "a varredura parou na 33ª entrada" — longe da causa.
   if (delim != "'" && delim != '"') return null;
   i++;
-  final sb = StringBuffer();
-  while (i < n) {
-    final c = src[i];
-    if (c == r'\' && i + 1 < n) {
-      final e = src[i + 1];
-      sb.write(e == "'" ? "'" : e);
-      i += 2;
-      continue;
-    }
-    if (c == delim) return _Str(sb.toString(), i + 1);
-    sb.write(c);
-    i++;
-  }
-  return null;
-}
 
-/// Lê o valor de um `description` **coletando todos os segmentos**.
-///
-/// A concatenação adjacente é a parte que faltava nas duas primeiras versões.
-/// O catálogo escreve 18 das 59 descrições em 2 a 5 segmentos, e o Dart os
-/// junta sozinho — `listenable()` em tempo de compilação. Ler só o primeiro
-/// segmento deixava o resto do texto antigo no arquivo, e o resultado era o
-/// texto novo **colado no meio do antigo**: "…aparelhos compouca RAM". É pior
-/// que não traduzir, porque parece traduzido.
-///
-/// Um segmento continua quando a próxima aspa, ignorando espaços e quebras,
-/// é de novo uma abertura. Uma aspa no fim de linha que fecha o segmento não
-/// é seguida de outra — é a distinção, e ela é o que o scanner precisa saber.
-class _ValorCompleto {
-  _ValorCompleto(this.valor, this.fim);
-  final String valor;
-  final int fim;
-}
-
-_ValorCompleto? _lerValorCompleto(String src, int i) {
-  final n = src.length;
   final partes = <String>[];
-
   while (true) {
-    while (i < n && (src[i] == ' ' || src[i] == '\n' || src[i] == '\t')) {
-      i++;
-    }
-    if (i >= n) return null;
-    final delim = src[i];
-    if (delim != "'" && delim != '"') return null;
-    i++;
     final sb = StringBuffer();
     var fechado = false;
     while (i < n) {
@@ -199,23 +215,32 @@ _ValorCompleto? _lerValorCompleto(String src, int i) {
     if (!fechado) return null;
     partes.add(sb.toString());
 
+    // Concatenação adjacente? A próxima aspa, ignorando espaços e quebras,
+    // tem que ser de novo uma abertura. Uma aspa no fim de linha que fecha o
+    // segmento não é seguida de outra — é a distinção.
     var j = i;
     while (j < n && (src[j] == ' ' || src[j] == '\n' || src[j] == '\t')) {
       j++;
     }
-    if (j < n && (src[j] == "'" || src[j] == '"')) {
-      i = j;
+    if (j < n && (src[j] == delim || src[j] == "'" || src[j] == '"')) {
+      i = j + 1; // passa a aspa de abertura do segmento seguinte
       continue;
     }
-    return _ValorCompleto(partes.join(), i);
+    return _Valor(partes.join(), i);
   }
 }
 
-/// Quebra o texto em linhas de [largura], sem cortar dentro de uma palavra.
+/// Quebra o texto em linhas de 66 colunas, sem cortar dentro de uma palavra.
 ///
-/// O `\` do escape é aplicado **antes** de quebrar, não depois: quebrar depois
-/// deixava um apostrofo nu no fim de uma linha e o arquivo parava de
+/// **O escape é aplicado ANTES de quebrar, não depois.** Quebrar depois deixaria
+/// um apostrofo nu no fim da linha (`'…da Microsoft's…'`) e o arquivo parava de
 /// compilar com um erro de sintaxe a 200 linhas da causa.
+///
+/// **E o espaço entre segmentos vai DENTRO do literal.** O Dart concatena
+/// vizinhos sem separador, então um espaço *entre* as aspas é whitespace de
+/// código e não entra no valor — foi assim que a versão anterior colou
+/// `"…o primeiro qwen3que o app…"`. Uma versão mais nova punha o espaço depois
+/// do `'`, que dá o mesmo resultado.
 String _formatar(String texto, String indent) {
   const largura = 66;
   final palavras = _escapar(texto).split(' ');
@@ -224,25 +249,22 @@ String _formatar(String texto, String indent) {
   for (final p in palavras) {
     final cand = atual.isEmpty ? p : '$atual $p';
     if (cand.length > largura && atual.isNotEmpty) {
-      linhas.add('$atual ');
+      linhas.add(atual);
       atual = p;
     } else {
       atual = cand;
     }
   }
   if (atual.isNotEmpty) linhas.add(atual);
-
-  // **O espaço vai DENTRO do literal, no fim.** O Dart concatena literais
-  // vizinhos sem separador, então um espaço *entre* as aspas é whitespace de
-  // código e não entra no valor — foi assim que a versão anterior colou
-  // "…primeiro qwen3que o app…". Uma versão mais nova punha o espaço depois
-  // do `'`, e a falha é idêntica: `'qwen3' 'que'` são dois valores que se
-  // juntam sem nada no meio.
-  //
-  // A última linha não leva espaço, senão a descrição termina com um.
+  // **A última linha NÃO leva espaço**, e o `trimRight` do meio não resolve:
+  // ele age sobre a string do arquivo-fonte, que termina em `'`, não em
+  // branco — então o espaço ficava *dentro* do literal final e o Dart
+  // concatenava um espaço a mais na descrição. A tela não mostra, e é
+  // exatamente por isso que passaria despercebido até um teste comparar os
+  // dois idiomas.
   final ultimo = linhas.length - 1;
   return linhas
-      .map((l) => "'${l.trimRight()}${l == linhas[ultimo] ? '' : ' '}'")
+      .map((l) => "'${l}${l == linhas[ultimo] ? '' : ' '}'")
       .join('\n$indent');
 }
 

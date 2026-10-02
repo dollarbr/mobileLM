@@ -6,7 +6,7 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.5.1+2008**.
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.6.0+2009** (ainda não publicada).
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + **encoders (embeddings/rerank/classify, BERT e
@@ -191,6 +191,17 @@ dependa dela.
 **Minor = feature, patch = conteúdo.** Um catálogo maior não é feature. Antes de subir um
 minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é patch.
 
+`0.6.0` é o **seletor de idioma**: Auto / English / Português (Brasil), com
+**inglês como padrão**. A frase sai verdadeira — *antes não existia escolha de
+idioma*: era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência
+medida foram 62 fichas de modelo em inglês numa tela que se dizia portuguesa.
+Agora existem **361 chaves nos dois idiomas** e uma ficha por modelo em cada um.
+Isto está em "O idioma é escolhido, e o padrão é inglês".
+
+Não é minor "traduzir o app para inglês": a 0.5.1 já tinha metade das chaves
+traduzidas para português, e traduzir não cria nada. O que cria é **a escolha**,
+que é o que o dono pediu ao descrever o sintoma.
+
 `0.4.0` foi o **suporte a embeddings, rerank e classificação** (BERT/ModernBERT,
 servidos pelo `openai_server_service`): modelos que até 0.3.5 não rodavam nada no
 app. A frase "isto faz X, que antes não existia" saiu verdadeira — os três
@@ -357,18 +368,20 @@ que importam: `filename` (nome local), `url`, `size`, `description`, `template`
 `jni_wrapper.cpp` via `llama_model_chat_template`), `runtime` (`llama` | `litert` |
 `sd`) e, para visão, `vision: 'true'` + `mmprojUrl` + `mmprojFilename`.
 
-### A `description` é texto de tela, e ela estava em inglês — com cinco frases partidas
+### A ficha do catálogo é texto de tela nos dois idiomas
 
 As **62** descrições (46 do catálogo + 16 encoders) estavam em inglês numa tela
-`pt_BR`, e **cinco delas terminavam em meia-frase**: `"…so it has"`,
-`"…the next candidate for"`, `"…The head and the"`, `"…cls.output.weight and"`,
-`"…the app treats as"`. O `Text` da descrição em `model_view.dart:909` não tem
-`maxLines`, então a string inteira era pintada e a tela mostrava a frase partida.
-Não é dialeto: é texto faltando.
+`pt_BR`. O `Text` da ficha em `model_view.dart` não tem `maxLines`, então a
+string inteira era pintada — e uma ficha que é o nome do arquivo de alguém em vez
+da sua é texto faltando, não dialeto.
 
-**O defeito era maior do que parecia, e a regex foi o que escondeu.** **18 das
-59 descrições originais são literais adjacentes em Dart**, e o Dart concatena
-literais vizinhos em tempo de compilação:
+**Uma das 62 estava truncada de verdade, e este guia disse que cinco.** A
+correção importa mais do que o número, porque o erro tem uma forma que se repete
+neste repo: **o diagnóstico de "texto faltando" era o meu próprio bug de
+extração aparecendo como achado.** Quatro das cinco "frases partidas" terminavam
+em `"above"`, `"matters."`, `"matters."` e `"here."` — frases completas. O que
+acabava nelas era o **primeiro segmento** de um literal adjacente, e o Dart
+concatena os vizinhos em tempo de compilação:
 
 ```dart
 'description':
@@ -377,55 +390,204 @@ literais vizinhos em tempo de compilação:
     '2,07. The one to start with.',
 ```
 
-Isso derruba qualquer regex sobre o arquivo, por três motivos ao mesmo tempo: o
-valor pode ocupar **várias linhas**; pode usar **aspas simples ou duplas** (3
-entradas usam duplas, porque contêm `Microsoft's`); e `dart format` **remove o
-espaço entre os segmentos**, então `'a ' 'b'` vira `'a' 'b'`. Três versões de
-regex falharam em sequência, e a última **colou texto novo em cima do antigo** —
-`"…aparelhos compouca RAM"`, que parece traduzido e não está.
+A única truncada é a `SmolLM2 135M`, que terminava em `"before they describe
+this"` — e o `this` pendente é o que denuncia. **Uma lista de supostos defeitos
+que a próxima pessoa não vai conferir é pior do que nenhuma**, porque é o que a
+convence a não olhar; por isso o teste de hoje fixa **uma** string por idioma, com
+`endsWith` e não `contains` — a correção ficou `"…this model"`, que *contém* a
+string quebrada, e com `contains` o conserto era reprovado pelo teste que existe
+para exigi-lo.
 
-**Por isso a reescrita é um programa Dart, não uma regex.**
-`tool/rewrite_catalog_descriptions.dart` usa o scanner do próprio Dart para achar
-o valor, e `tool/catalog_pt.json` guarda as traduções em `nome<TAB>texto`. Ele
-faz três coisas que a regex não conseguia: lê **todos** os segmentos e junta,
-entende **os dois delimitadores**, e devolve **um** literal em vez de N.
+**O defeito de verdade era maior do que parecia, e a regex foi o que escondeu.**
+**18 das 62 descrições são literais adjacentes em Dart**, e isso derruba qualquer
+regex sobre o arquivo por três motivos ao mesmo tempo: o valor ocupa **várias
+linhas**; pode usar **aspas simples ou duplas** (3 entradas usam duplas, porque
+contêm `Microsoft's`); e `dart format` **remove o espaço entre os segmentos**,
+então `'a ' 'b'` vira `'a' 'b'`. Três versões de regex falharam em sequência, e a
+última **colou texto novo em cima do antigo** — `"…aparelhos compouca RAM"`, que
+parece traduzido e não está.
 
-**O detalhe do espaço é o que faz o texto colar, e ele fica DENTRO do literal.**
-O Dart concatena vizinhos sem separador, então o espaço vai antes da aspa de
-fechamento — `'texto '`, e **não** `'texto' `, que é o que o formatador produz
-quando tira o espaço entre segmentos e dá o mesmo resultado:
-`"…o primeiro qwen3que o app…"`.
+**A reescrita é um programa Dart, não uma regex.**
+`tool/rewrite_catalog_descriptions.dart` usa o scanner do próprio Dart para achar o
+valor, e ele lê **todos** os segmentos, entende **os dois delimitadores** e devolve
+**um** literal. As traduções estão em `tool/catalog_pt.json` e
+`tool/catalog_en.json`, no formato burro `nome<TAB>texto` — um JSON escrito à mão
+quebraria na primeira aspa dentro de um texto, e isso aconteceria.
+
+**O scanner errou de duas maneiras opostas, e as duas dão a mesma mensagem.**
+Deixar `i` **na** aspa de abertura (em vez de `j + 1`) devolve um segmento vazio e
+para depois do primeiro — foi assim que 18 descrições pareceram truncadas. Avançar
+a aspa **duas vezes** (uma em `j + 1` e outra lendo `delim = src[i]`) pega a
+letra seguinte e devolve `null`. A primeira simula um problema de aspas duplas; a
+segunda parece que o arquivo não fecha.
+
+**O espaço entre segmentos vai DENTRO do literal.** O Dart concatena vizinhos sem
+separador, então o espaço vai antes da aspa de fechamento — `'texto '`, e **não**
+`'texto' `, que é o que o formatador produz quando tira o espaço entre segmentos e
+dá o mesmo resultado: `"…o primeiro qwen3que o app…"`. E a última linha **não** leva
+espaço: um `trimRight` no fim do join age sobre a string do fonte, que termina em
+`'`, não em branco, e o espaço sobrava *dentro* do valor.
 
 **Não rode `dart format` no `constants.dart` nem no `model_view.dart`.** Nenhum
 dos dois está no formato do formatador no `main` — confirme com
-`dart format --output=none` antes de confiar num diff. Formatá-los reescreve
-~100 linhas sem relação com a tradução: o diff do `model_view.dart` passou de
-**9 linhas** para **129** só por isso.
+`dart format --output=none` antes de confiar num diff. Formatá-los reescreve ~100
+linhas sem relação com a tradução: o diff do `model_view.dart` passou de **9
+linhas** para **129** só por isso.
 
-**O teste de guarda que quase escrevi errado, e o motivo de ele existir.**
-`test/catalog_description_test.dart` tem cinco casos, e três deles já
-reprovaram **texto correto** antes de ficarem como estão:
+### O idioma é escolhido, e o padrão é inglês
 
-1. **Idioma, por lista de inglês** — reprovava português. Uma lista do que **não
-   pode** aparecer só funciona se o resto da lista for o universo, e o resto é
-   outro idioma. Invertido: a lista é de **português**, e a pergunta é se falta
-   uma palavra portuguesa.
-2. **Termos técnicos removidos com `replaceAll`** — tirar `encoder` de
-   `cross-encoder` deixa `cross-`, e o detector passou a acusar texto bom. A
-   divisão por palavra vem **antes** da substituição.
-3. **Meia-frase por palavra funcional** — reprovou `"…antes de valer para
-   este"` e `"…como todo E5."`, que são frases completas. A versão seguinte,
-   "não termina com ponto", reprova **todas as 59**: **nenhuma** delas termina
-   com ponto, é a convenção do catálogo, e impor pontuação seria reescrever 59
-   strings para satisfazer um estilo que ninguém pediu. Sobrou a lista das
-   **cinco strings** que não podem reaparecer.
+`LanguagePreference` (`lib/services/language_preference.dart`, puro) + um seletor
+em Configurações → Aparência. **Auto**, **English**, **Português (Brasil)**.
 
-**E um teste que passava não provava nada.** Voltei uma descrição ao inglês e
-`flutter test` deu **5 de 5 verdes**. A causa era o meu próprio comando de
-provocação: um `git checkout` antes de ler o resultado apagava a edição. Só
-descobri porque li o valor por um `flutter test` separado, e ele continuava em
-português. **Um teste verde só vale se ele viu a mudança** — e a forma de ver é
-ler o valor, não confiar que a substituição pegou.
+**O app já foi `locale: Get.deviceLocale` com `fallbackLocale: pt_BR`**, e o
+resultado medido foi: 62 fichas em inglês numa tela que se dizia portuguesa, e um
+aparelho fora do português sem poder pedir outro. Deduzir foi o que produziu o
+problema, então deduzir virou **opção explícita** e o padrão passou a ser uma
+escolha declarada.
+
+Quatro decisões que não são óbvias:
+
+1. **O padrão é `en`, não `auto`.** O GetX devolve a própria chave para uma
+   tradução que não existe, e foi assim que 38 chaves apareceram como
+   `tool_round_trips` e `mobile_lm` sem nada lançar. Um idioma sem mapa inteiro
+   renderiza 361 identificadores. `LanguagePreference.padrao` tem um teste que
+   falha se virar `auto`.
+2. **O `fallbackLocale` é `en_US`, não `pt_BR`.** Com o fallback em português, uma
+   chave que faltasse em inglês aparecia *traduzida* e ninguém notava que faltava.
+   Com o fallback no padrão ela aparece como o próprio identificador, que é o que
+   o `l10n_keys_test` transforma em falha de CI.
+3. **O `SettingsController` é lido antes do `GetMaterialApp`, não no `builder`.**
+   O `locale` é decidido antes do primeiro `build`, e a tela que muda o idioma só
+   existe depois. Ler de dentro do `builder` resolve o primeiro quadro num idioma
+   e troca depois — o flicker que ninguém pediu.
+4. **Os rótulos do seletor NÃO passam por `.tr`.** O nome de um idioma é o dado, e
+   um dado traduzido deixa de identificar o idioma: em português o item diz
+   "Português (Brasil)", em inglês "Portuguese (Brazil)". `"Automatic"` e
+   `"Automático"` é o único que se traduz, porque não é nome de idioma.
+
+**Um valor desconhecido cai em `auto`, e não em `en`.** Um valor corrompido
+virando `en` fixo transforma um bug de armazenamento numa preferência que a pessoa
+nunca fez e não sabe desfazer; `auto` é a única resposta que não está *errada*.
+Mas `EN`, `en_US` e `pt-BR` são **a mesma escolha com outra grafia** e são
+normalizados para a opção — a comparação é em minúsculas e o retorno é a grafia
+canônica. Jogar `EN` para `auto` troca o idioma da pessoa sem ela pedir, que é
+exatamente o modo de falha que a normalização existe para evitar.
+
+**O prompt de sistema segue o idioma da tela**, e a redação é "a língua que o app
+está mostrando, e a língua em que você escrever" — não o antigo "responda em
+português brasileiro", que agora seria falso metade das vezes. Um app que pede em
+português com a interface dizendo que fala inglês é a inconsistência que o seletor
+veio tirar.
+
+**Verificado no A72**: install debug, o app abre em inglês com `Hello.` /
+`How can I help today?` / `Type your message…`; o seletor aparece com os três
+chips (o `Wrap` quebra em duas linhas, como tem que); tocar em **Português (Brasil)**
+troca a tela **na hora**, sem reiniciar — `Configurações`, `Aparência`, `Idioma`,
+`Português (Brasil)` — e "English" continua escrito em inglês no chip, que é o
+comportamento certo.
+
+### Os dois campos com o idioma no nome
+
+`AiModel` tem `descriptionEn` e `descriptionPt`, e **não tem `description`**. Um
+campo só que "significa português" é conhecimento tribal de quem lê o catálogo, e
+com EN como padrão ele publica português num app inglês **sem nenhum aviso** — a
+tela mostra *alguma* descrição, e uma descrição presente não parece erro.
+`LanguagePreference.descricao()` é quem decide, e a queda é do pedido para o que
+existe, nunca para a string vazia: uma ficha em falta mostra a linha em branco num
+card que já tem nome, tamanho e template, e o vazio parece defeito do aparelho.
+
+Uma entrada antiga do Hive tem só `description` — importada antes de o catálogo
+ficar bilíngue — e ela vale nos dois idiomas. A alternativa é pintar a linha
+vazia.
+
+**`descriptionSearch` é a busca nos dois idiomas.** `isVisionModel` e
+`isUncensoredModel` procuram marcadores no texto, e um modelo não fica com visão
+nem perde a censura conforme o idioma da tela. Ler só uma metade fazia o `VL` de
+uma linha desaparecer quando o app estava em inglês.
+
+### O `.tr` que faltava: 34 textos que eram literais em português
+
+Quatro conjuntos de texto de tela **não passavam pelo mapa** e eram literais em
+português — o modo exato de falha que o seletor veio fechar, e nenhum aparecia em
+revisão de código:
+
+| onde | o que era |
+|---|---|
+| `chat_view.dart` | as **16** sugestões do estado vazio, em literais |
+| `chat_bubble.dart` | os **6** chips de resposta, rótulo **e** prompt |
+| `settings_view.dart` | os **9** rótulos de seção e os **3** modos de tema |
+| `settings_view.dart`, `server_controller.dart`, `chat_view.dart` | `"No model loaded"` |
+
+**Os chips têm rótulo e prompt como chaves separadas**, porque o prompt vai para o
+modelo: um chip que *parece* localizado e manda um prompt em português para um
+modelo em inglês é pior do que chip nenhum. E não podem ser valores `const` já
+traduzidos — `.tr` é um método de runtime sobre o locale atual, então uma lista
+`static const` congelaria a língua do boot, que não é a que a pessoa escolheu.
+
+**As 16 sugestões ficaram literais de propósito, e não um `'suggestion_$i'.tr`.**
+O `l10n_keys_test` reprova chave montada em runtime — porque uma chave dinâmica
+**não é auditada**, e a auditoria é o que impede a chave faltar. O teste pegou, e
+estava certo.
+
+**Os rótulos de seção levam `.tr` e `toUpperCase` juntos, e nessa ordem**: PT-BR e
+EN diferem na caixa de letras acentuadas, e a regra de exibição (caixa alta,
+entreletra 1.4) pertence ao estilo da seção, não à tradução.
+
+### Os 63 literais que sobraram, e a trava que mede
+
+`test/inline_english_ratchet_test.dart` conta os literais em inglês que sobraram em
+`lib/views/` e `lib/widgets/` e **falha se o número crescer**. É uma trava, não
+uma lista de defeitos: ela não diz que um texto específico está errado, diz que a
+dívida não aumenta.
+
+Os 63 são quase todos **parágrafos de ajuda** em telas secundárias — e quase todos
+são **literais adjacentes**, o mesmo formato que custou três builds no
+`constants.dart`. Reescrever 47 deles com regex é o caminho que produz
+`"…aparelhos compouca RAM"`.
+
+**Uma trava é mais útil aqui do que uma tradução apressada.** O sintoma que o dono
+do app descreveu não era falta de tradução: era um idioma que ninguém escolhia e
+literais que ninguém localizava. Os dois foram fechados. O que sobra é texto de
+referência, e a trava garante que ele não vire texto de interface sem ninguém
+perceber.
+
+<details>
+<summary>Os 63, por arquivo</summary>
+
+```
+settings_view.dart             13    litert_head_console.dart         4
+model_view.dart                13    task_view.dart                   3
+system_one_console.dart         8    hf_search_sheet.dart             2
+encoder_console.dart            7    workspace_setup_view.dart        1
+server_view.dart                6    project_picker_dialog.dart       1
+encoder_parameters_panel.dart   5
+```
+
+</details>
+
+**A contagem depende do filtro, e é por isso que o número está no código e não
+numa nota.** Uma auditoria anterior contou 51 e esta conta 63: o primeiro exigia
+letra maiúscula e um conjunto menor de palavras. Registrar o número errado é a
+mesma classe de erro que o "62" do catálogo já produziu três vezes neste repo.
+
+**Duas das chaves novas estavam em português no mapa inglês** —
+`language_changed` e `language_portuguese_brazil_detail` — e o teste de "as chaves
+são iguais nos dois idiomas" não pega, porque a chave está nos dois. Só a leitura
+do valor, idioma a idioma, pega. `test/language_preference_test.dart` faz isso nos
+dois sentidos.
+
+**Uma palavra emprestada é português.** O detector de "valor em inglês dentro do
+mapa PT" acusou `download` e `download_failed` — "Download" é palavra emprestada
+do português brasileiro, é o que a pessoa lê, e a correção seria escrever
+"Transferir" numa interface onde ninguém diz isso.
+
+**Uma provocação de teste que não muda nada é um teste que não prova nada.** A
+primeira tentativa de fazer a trava falhar trocou um literal inglês por outro
+literal inglês — a contagem não subiu e o teste passou, que era o comportamento
+certo. A segunda adicionou uma segunda string na mesma chamada de `Text`, que o
+regex não vê: ele casa a **primeira**. Só a terceira, um `Text` novo e completo,
+fez a trava fechar. **Antes de acreditar que um teste verde viu a mudança, leia o
+que ele mediu.**
 
 
 Duas regras que custam tempo se ignoradas:
@@ -1744,26 +1906,43 @@ rodar em modo `cpu_safe` desde o boot — que é o próximo passo, e é o motivo
 gate existir mesmo sem ter resolvido isto.
 
 ## Cloud features (0.3.0)
-## Tradução (PT-BR)
+## Tradução — dois idiomas, e o padrão é inglês
 
-- **Cobertura auditada, não estimada:** 184 chaves usadas com `.tr`, **315** no
-  mapa, e `test/l10n_keys_test.dart` (10 testes) falha se voltar a faltar uma.
-  Antes desta auditoria o mapa tinha 277 e **38 das chaves usadas não estavam
-  nele** — `tool_round_trips` à vista num item de Configurações, `mobile_lm` no
-  Sobre. O GetX devolve a própria chave para uma que não tem, então nada lançou:
-  cada uma renderizou como identificador inglês numa UI portuguesa.
+⚠️ **O título desta seção dizia "(PT-BR)" e o "device locale" era `pt_BR`.**
+Os dois mudaram: o app agora fala **inglês por padrão** e o idioma é uma
+**preferência salva** com três opções. Ver "O idioma é escolhido, e o padrão é
+inglês" mais acima, que tem as quatro decisões que não são óbvias.
+
+- **Cobertura auditada, não estimada:** **361 chaves**, **as mesmas nos dois
+  idiomas**, e `test/l10n_keys_test.dart` (10 testes) falha se uma faltar em
+  **qualquer** dos dois. Antes desta auditoria o mapa tinha 277 e **38 das chaves
+  usadas não estavam nele** — `tool_round_trips` à vista num item de Configurações,
+  `mobile_lm` no Sobre. O GetX devolve a própria chave para uma que não tem, então
+  nada lançou: cada uma renderizou como identificador inglês numa UI portuguesa.
   **Cada teste desse arquivo tem um irmão que prova que ele ainda vê alguma
   coisa**, porque um regex que parou de casar reportaria zero faltando e passaria.
-  O `.arb` **não** é fonte para nada: `app_pt_BR.arb` tem 112 chaves e **zero**
-  sobreposição com as que faltavam.
-- **Arquivos:** `lib/l10n/app_translation.dart` (GetX), `lib/l10n/app_en.arb`, `lib/l10n/app_pt_BR.arb`
-- **Templates traduzidos:**
-  - Sugestões de chat (16 prompts em PT-BR)
-  - Views: chat, model, settings, log, task, workspace, HF search
-  - Controllers: model, chat, settings
-  - Widgets: image_viewer
-- **Regra:** strings UI nunca em `const` — `.tr` é método runtime
-- **Device locale:** `pt_BR` (confirmado via `adb shell getprop persist.sys.locale`)
+  O `.arb` **não** é fonte para nada: `app_pt_BR.arb` e `app_en.arb` têm 113 chaves
+  cada e são um **subconjunto** do mapa, não uma terceira fonte de verdade.
+- **`readMap(lang)` recorta o mapa pelo nome dele.** Ler o arquivo inteiro
+  devolvia o `pt_BR` para as chaves que existem nos dois — porque a segunda
+  entrada sobrescreve a primeira no `Map` — e o mapa inglês nunca era auditado.
+  Passou por sorte: `pt_BR` está por último. Se alguém reordenar, o teste continua
+  verde e para de olhar o idioma padrão do app.
+- **Detectar idioma é a lista do português, não a do inglês.** Uma lista do que
+  **não pode** aparecer só funciona se o resto for o universo, e o resto é outro
+  idioma: a versão com lista de inglês acusava texto português correto.
+- **Os dois mapas são lidos valor a valor, nos dois sentidos.** Duas chaves do
+  seletor estavam com o valor em português **no mapa inglês**, e a auditoria de
+  "as chaves são iguais" não pega — a chave está nos dois. Só ler o valor pega.
+- **Arquivos:** `lib/l10n/app_translation.dart` (GetX, os dois mapas),
+  `lib/l10n/app_en.arb`, `lib/l10n/app_pt_BR.arb` (desligados),
+  `lib/services/language_preference.dart` (puro, a decisão)
+- **Regra:** strings UI nunca em `const` — `.tr` é método runtime. E um
+  `static const` de **texto já traduzido** congela a língua do boot, que não é a
+  que a pessoa escolheu: é o que os chips de resposta fazem errado se alguém
+  "otimizar" a lista.
+- **Device locale do A72:** `pt_BR`, e o app abre em **inglês** por padrão — que é
+  o ponto: o idioma não é mais deduzido do aparelho.
 
 
 - **Round-trip ceiling:** cloud = 20 hops fixo; local = `agentMaxHops` (setting).

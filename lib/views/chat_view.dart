@@ -318,7 +318,7 @@ class ChatView extends GetView<ChatController> {
             model =
                 '$backendEmoji $backendName · ${localImage.loadedModelName.value.replaceAll('.gguf', '').replaceAll('.GGUF', '')}';
           } else {
-            model = 'No model loaded';
+            model = 'no_model_loaded'.tr;
           }
           if (model.length > 24) model = '${model.substring(0, 24)}…';
         } else {
@@ -552,23 +552,29 @@ class ChatView extends GetView<ChatController> {
   // ── Empty State ──
   Widget _emptyState(BuildContext context, bool isDark) {
     // Fresh sample of four every time the empty state rebuilds.
+    // As sugestões são **chaves, e não literais**. Elas eram literais em
+    // português dentro deste arquivo, e é por isso que a build em inglês abria
+    // com "Hello." em cima de uma lista de perguntas em português: o título
+    // passava por `.tr` e os chips não. Um texto de tela que não passa pelo
+    // mapa existe numa língua só, e ninguém descobre em revisão de código —
+    // aparece em screenshot.
     final suggestions = [
-      'Explique computação quântica de forma simples',
-      'Escreva um poema curto sobre o tempo',
-      'Me ajude a depurar meu código',
-      'Resuma um tópico complexo',
-      'Que horas são em Tóquio?',
-      'Brainstorm nomes para uma cafeteria',
-      'Rascunhe um e-mail de reclamação educado',
-      'Traduza "bom dia" para 5 idiomas',
-      'Planeje uma viagem de 3 dias para Lisboa',
-      'Converta 120 km para milhas',
-      'Escreva um haikai sobre a chuva',
-      'Explique recursão como se eu tivesse 5 anos',
-      'Sugira um plano de treino para iniciantes',
-      'Me conte um fato divertido sobre o espaço',
-      'Me ajude a escrever um resumo do currículo',
-      'Multiplique 128 por 456',
+      'suggestion_1'.tr,
+      'suggestion_2'.tr,
+      'suggestion_3'.tr,
+      'suggestion_4'.tr,
+      'suggestion_5'.tr,
+      'suggestion_6'.tr,
+      'suggestion_7'.tr,
+      'suggestion_8'.tr,
+      'suggestion_9'.tr,
+      'suggestion_10'.tr,
+      'suggestion_11'.tr,
+      'suggestion_12'.tr,
+      'suggestion_13'.tr,
+      'suggestion_14'.tr,
+      'suggestion_15'.tr,
+      'suggestion_16'.tr,
     ]..shuffle();
     final picked = suggestions.take(4).toList();
     return Center(

@@ -75,9 +75,15 @@ void main() {
     test('carries a description long enough to act on', () {
       // The description is the only place the trade-off is written down — size
       // against what the model is actually for. "GGUF" is not a description.
+      //
+      // **Nos dois idiomas**, e não é redundância: a ficha que a tela mostra é
+      // uma das duas, e um CHECK que passasse em inglês deixaria metade das
+      // entradas reprovando em português.
       for (final m in encoders) {
-        expect(m['description']!.length, greaterThan(40),
-            reason: '${m['name']} has a one-word description');
+        for (final idioma in const ['descriptionEn', 'descriptionPt']) {
+          expect(m[idioma]!.length, greaterThan(40),
+              reason: '${m['name']} has a one-word $idioma');
+        }
       }
     });
   });

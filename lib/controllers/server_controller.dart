@@ -138,7 +138,7 @@ class ServerController extends GetxController {
   bool get hasLocalModel => inference.isModelLoaded.value;
 
   String get modelName => inference.loadedModelName.value.isEmpty
-      ? 'No model loaded'
+      ? 'no_model_loaded'.tr
       : inference.loadedModelName.value;
 
   Future<void> toggleServer(bool enabled) async {

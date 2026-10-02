@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../core/colors.dart';
 import '../core/constants.dart';
 import '../services/hive_service.dart';
+import '../services/language_preference.dart';
 import '../services/local_image_service.dart';
 import '../ffi/sd_ffi_bindings.dart';
 import 'package:sd_flutter_android/sd_flutter_android.dart';
@@ -70,6 +71,12 @@ class SettingsController extends GetxController {
   final imageGenGpuGuardMb = AppConstants.defaultImageGenGpuGuardMb.obs;
   final imageGenSize = AppConstants.defaultImageGenSize.obs;
   final fontScale = AppConstants.defaultFontScale.obs;
+  /// Idioma da interface: `auto` | `en` | `pt_BR`.
+  ///
+  /// **Já vem normalizado**, porque o valor vem do Hive como string e um valor
+  /// desconhecido não pode virar `Locale` com `languageCode` vazio — o
+  /// `GetMaterialApp` recebe isso antes de qualquer tela existir.
+  final language = LanguagePreference.padrao.obs;
   final appVersion = ''.obs;
 
   // Persistent text controllers for settings fields
@@ -288,6 +295,8 @@ class SettingsController extends GetxController {
     fontScale.value = _hive.getSetting(AppConstants.keyFontScale,
             defaultValue: AppConstants.defaultFontScale) ??
         AppConstants.defaultFontScale;
+    language.value = LanguagePreference.normalizar(
+        _hive.getSetting(AppConstants.keyLanguage));
     agentMaxHops.value = _hive.getSetting(AppConstants.keyAgentMaxHops,
             defaultValue: AppConstants.defaultAgentMaxHops) ??
         AppConstants.defaultAgentMaxHops;
@@ -1069,6 +1078,28 @@ class SettingsController extends GetxController {
     if (Get.isRegistered<LocalImageService>()) {
       Get.find<LocalImageService>().setBackend(backend);
     }
+  }
+
+  /// Troca o idioma **agora**, sem reiniciar.
+  ///
+  /// `Get.updateLocale` reconstrói o que depende de `.tr`, e é o que a pessoa
+  /// espera de um seletor de idioma: tocar e ver.
+  ///
+  /// O `AGENTS.md` ainda diz "algumas configurações só valem na próxima vez que
+  /// o app for aberto", e é verdade — para o que é calculado uma vez no boot.
+  /// Um idioma que só muda no próximo cold start parece quebrado na metade das
+  /// vezes: a pessoa toca, não vê nada, e abre o app de novo.
+  ///
+  /// O `Text` de uma tela já construída relê `Get.locale` a cada `build`, então
+  /// a descrição do catálogo troca junto — e é por isso que ela é lida por
+  /// `descriptionFor(Get.locale)` e não guardada num campo resolvido.
+  Future<void> setLanguage(String preference) async {
+    final alvo = LanguagePreference.normalizar(preference);
+    if (alvo == language.value) return;
+    language.value = alvo;
+    await _hive.setSetting(AppConstants.keyLanguage, alvo);
+    await Get.updateLocale(
+        LanguagePreference.resolver(alvo, Get.deviceLocale));
   }
 
   Future<void> setFontScale(double value) async {

@@ -49,28 +49,52 @@ void main() {
   /// `replaceAll('\$min', …)` — a needle written with a literal `$`.
   final needle = RegExp(r'''replaceAll\(\s*['"]\\?\$([A-Za-z0-9_]+)''');
 
-  Map<String, String> readPtBr() {
+
+  /// Um idioma só, recortado do arquivo pelo **nome do mapa**.
+  ///
+  /// **Ler o arquivo inteiro não serve desde que existem dois idiomas.** Com
+  /// `en_US` antes de `pt_BR` no fonte, um leitor sem recorte devolve o
+  /// `pt_BR` para as chaves que existem nos dois mapas — porque a segunda
+  /// entrada sobrescreve a primeira no `Map` — e o mapa inglês nunca é
+  /// auditado. Passou por sorte: `pt_BR` está por último. Se alguém reordenar,
+  /// o teste continua verde e para de olhar o idioma padrão do app.
+  Map<String, String> readMap(String lang) {
     final source = mapFile.readAsStringSync();
-    // The map is a Dart literal, not JSON: single quotes, and `\$` inside values.
-    // Reading it as text keeps this file free of an analyzer dependency.
+    // O mapa é um literal Dart, não JSON: aspas simples e `\$` dentro dos
+    // valores. Ler como texto mantém este arquivo sem depender do analyzer.
     //
-    // **Matched over the whole file, not line by line, and that is a bug this
-    // test already paid for once.** A `^\s*'key':\s*'...'` regex anchored per line
-    // silently skipped every value wrapped across two source lines — five of
-    // them, all of them mine — and the audit then reported those five keys as
-    // missing from a map they were in. A parser that quietly drops the entries
-    // it cannot see is the same failure as a map that is missing them, one level
-    // up, so the wrapping is part of the pattern and there is a test below
-    // naming the wrapped keys by hand.
+    // **Casado no arquivo inteiro, e não linha a linha — e isso é um bug que
+    // este teste já pagou uma vez.** Uma regex `^\s*'key':\s*'...'` ancorada por
+    // linha pulava silenciosamente todo valor quebrado em duas linhas de
+    // fonte — cinco deles, todos meus — e a auditoria reportava essas cinco
+    // chaves como ausentes de um mapa onde estavam. Um parser que descarta em
+    // silêncio as entradas que não consegue ver é a mesma falha que um mapa
+    // sem elas, um nível acima; por isso a quebra de linha faz parte do padrão
+    // e há um teste abaixo nomeando as chaves quebradas à mão.
+    final abre = source.indexOf("'$lang': {");
+    if (abre < 0) return const {};
+    // O fim é o fechamento do mapa: 4 espaços, `}`, e não uma chave — porque
+    // uma chave do próprio mapa também é uma linha que começa com 4 espaços e
+    // uma aspa.
+    int fim = source.length;
+    for (var i = abre; i < source.length; i++) {
+      if (source[i] == '}' &&
+          source.substring(0, i).endsWith('\n    ')) {
+        fim = i;
+        break;
+      }
+    }
+    final bloco = source.substring(abre, fim);
     final out = <String, String>{};
     final pair =
         RegExp(r'''([A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)''');
-    for (final m in pair.allMatches(source)) {
+    for (final m in pair.allMatches(bloco)) {
       out[m.group(1)!] = m.group(2)!;
     }
     return out;
   }
 
+  Map<String, String> readPtBr() => readMap('pt_BR');
   List<File> dartFiles() => libDir
       .listSync(recursive: true)
       .whereType<File>()
@@ -165,20 +189,30 @@ void main() {
     }
   });
 
-  test('every literal .tr key exists in the pt_BR map', () {
-    final map = readPtBr();
-    final faltando = <String, String>{};
-    for (final e in scanUsages().entries) {
-      if (!map.containsKey(e.key)) faltando[e.key] = e.value.first;
+  test('every literal .tr key exists in BOTH maps', () {
+    // **Os dois, e não só o pt_BR.** O GetX devolve a própria chave para uma
+    // tradução que não existe, e nenhuma exceção lançou: foi assim que 38
+    // chaves apareceram como `tool_round_trips` numa tela portuguesa sem
+    // ninguém notar. Com EN como padrão, uma chave faltando nele aparece num
+    // app que se dizbilíngue — e é metade do defeito de novo.
+    for (final lang in const ['en_US', 'pt_BR']) {
+      final map = readMap(lang);
+      expect(map, isNotEmpty,
+          reason: 'o recorte de $lang devolveu nada, e todo teste abaixo '
+              'passaria por não ter o que auditar');
+      final faltando = <String, String>{};
+      for (final e in scanUsages().entries) {
+        if (!map.containsKey(e.key)) faltando[e.key] = e.value.first;
+      }
+      expect(
+        faltando,
+        isEmpty,
+        reason: 'Estas ${faltando.length} chaves são chamadas com .tr e não '
+            'existem no mapa $lang, então o GetX devolve a própria chave e o '
+            'usuário lê o identificador na tela:\n'
+            '${faltando.entries.map((e) => '  ${e.key}  (${e.value})').join('\n')}',
+      );
     }
-    expect(
-      faltando,
-      isEmpty,
-      reason: 'Estas ${faltando.length} chaves são chamadas com .tr e não '
-          'existem no mapa, então o GetX devolve a própria chave e o usuário lê '
-          'o identificador em inglês dentro de uma UI em português:\n'
-          '${faltando.entries.map((e) => '  ${e.key}  (${e.value})').join('\n')}',
-    );
   });
 
   test('a value is never the key it answers to', () {
@@ -223,13 +257,20 @@ void main() {
         reason: 'if the needle regex stopped matching, the check below covers '
             'nothing — the same failure mode as the usage scan');
 
-    final map = readPtBr();
     final semPlaceholder = <String>[];
-    for (final e in usados.entries) {
-      for (final p in e.value) {
-        if (!map.containsKey(e.key) || !map[e.key]!.contains(p)) {
-          semPlaceholder.add('${e.key}: o código troca "\$$p", mas o valor é '
-              '"${map[e.key] ?? "(ausente)"}"');
+    // **Nos dois idiomas.** O consumidor é o mesmo código com o mesmo
+    // `replaceAll`, então um placeholder que sobrevive em português e se perde
+    // na tradução mostra `$min` cru na tela em inglês — que é metade dos
+    // usuários agora que EN é o padrão.
+    for (final lang in const ['en_US', 'pt_BR']) {
+      final porIdioma = readMap(lang);
+      for (final e in usados.entries) {
+        for (final p in e.value) {
+          if (!porIdioma.containsKey(e.key) ||
+              !porIdioma[e.key]!.contains(p)) {
+            semPlaceholder.add('$lang ${e.key}: o código troca "\$$p", mas o '
+                'valor é "${porIdioma[e.key] ?? "(ausente)"}"');
+          }
         }
       }
     }
@@ -240,14 +281,18 @@ void main() {
   });
 
   test('the map the app registers is the one this file audits', () {
-    // The app resolves `locale: Get.deviceLocale` with a pt_BR fallback, and
-    // English UI text is inline literals. If the registered key were renamed,
-    // every value here would be a lookup miss at runtime and this suite would
-    // still be green.
+    // The app resolves `locale:` from a **saved preference**, not from
+    // `Get.deviceLocale`, and registers **two** maps. If either registered key
+    // were renamed, every value here would be a lookup miss at runtime and this
+    // suite would still be green — so the check is on the registered names, not
+    // on the file.
     final t = AppTranslation().keys;
     expect(t.keys, contains('pt_BR'));
+    expect(t.keys, contains('en_US'));
     expect(t['pt_BR'], isNotNull);
+    expect(t['en_US'], isNotNull);
     expect(t['pt_BR']!.length, greaterThanOrEqualTo(300));
+    expect(t['en_US']!.length, greaterThanOrEqualTo(300));
   });
 
   test('the coverage boundary: keys assembled at runtime are not checked', () {

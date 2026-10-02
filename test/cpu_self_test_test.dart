@@ -156,7 +156,7 @@ void main() {
           filename: '$name.gguf',
           url: 'https://example.test/$name.gguf',
           size: '0.1 GB',
-          description: '',
+          descriptionEn: '',
           template: 'chatml',
           runtime: runtime,
           isBenchmark: bench,
@@ -224,9 +224,15 @@ void main() {
         return g != null && g < benchGb;
       });
       for (final m in lighter) {
-        expect(m['description'], contains('benchmark'),
-            reason: '${m['name']} is lighter than the benchmark, so it has to '
-                'say it is a candidate for it and not a replacement');
+        // **Nos dois idiomas.** A ficha que a tela mostra é uma de duas, e o
+        // defeito — dizer que o modelo substitui o benchmark — aparece em
+        // o idioma que a pessoa está lendo.
+        for (final idioma in const ['descriptionEn', 'descriptionPt']) {
+          expect(m[idioma], contains('benchmark'),
+              reason: '${m['name']} is lighter than the benchmark, so its '
+                  '$idioma has to say it is a candidate for it and not a '
+                  'replacement');
+        }
       }
     });
 

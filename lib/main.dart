@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 // import 'firebase_options.dart';
 import 'controllers/settings_controller.dart';
+import 'services/language_preference.dart';
 import 'controllers/cloud_model_controller.dart';
 import 'controllers/server_controller.dart';
 import 'controllers/model_controller.dart';
@@ -245,8 +246,32 @@ class MobileLMApp extends StatelessWidget {
       return GetMaterialApp(
         title: 'mobileLM',
         translations: AppTranslation(),
-        locale: Get.deviceLocale,
-        fallbackLocale: Locale('pt', 'BR'),
+        // ── O idioma é uma PREFERÊNCIA LIDA, não o deviceLocale deduzido ──────
+        //
+        // Este era `locale: Get.deviceLocale` com `fallbackLocale: pt_BR`, e o
+        // resultado foi 62 fichas de modelo em inglês numa tela que se dizia
+        // portuguesa — mais um aparelho em outro idioma vendo português sem
+        // poder pedir outro. Deduzir foi o que produziu o problema, então
+        // deduzir virou a opção "auto" e o padrão passou a ser uma escolha
+        // declarada (inglês).
+        //
+        // `SettingsController` é lido aqui e não dentro do `builder`, e a razão
+        // é de ordem: o `locale` do `GetMaterialApp` é decidido **antes** do
+        // primeiro `build`, e a tela que muda o idioma só existe depois.
+        // Ler a preferência de dentro do `builder` resolve o primeiro quadro
+        // com um idioma e troca depois — o flicker que ninguém pediu.
+        locale: LanguagePreference.resolver(
+          Get.isRegistered<SettingsController>()
+              ? Get.find<SettingsController>().language.value
+              : LanguagePreference.padrao,
+          Get.deviceLocale,
+        ),
+        // O fallback é **o idioma padrão**, não português. Com o fallback em
+        // pt_BR, uma chave que faltasse em inglês aparecia traduzida e
+        // ninguém notava que faltava; com o fallback no padrão ela aparece
+        // como a própria chave, que é o que o `l10n_keys_test` transforma em
+        // falha de CI.
+        fallbackLocale: const Locale('en', 'US'),
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,

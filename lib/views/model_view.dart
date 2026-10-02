@@ -906,7 +906,10 @@ class ModelView extends GetView<ModelController> {
                           fontSize: 11, color: Theme.of(ctx).hintColor)),
                 ]),
                 const SizedBox(height: 6),
-                Text(model.description,
+                // O idioma vem de `Get.locale` e não de uma preferência lida
+                // de novo: é o mesmo `Locale` que o `GetMaterialApp` empurrou
+                // para a árvore, então os dois não podem discordar.
+                Text(model.descriptionFor(Get.locale),
                     style: GoogleFonts.inter(
                         fontSize: 12, color: Theme.of(ctx).hintColor)),
                 const SizedBox(height: 10),
@@ -2964,7 +2967,11 @@ class ModelView extends GetView<ModelController> {
     final controller = Get.find<ModelController>();
     final nameController = TextEditingController(text: model.name);
     final urlController = TextEditingController(text: model.url);
-    final descController = TextEditingController(text: model.description);
+    // Abre no idioma que a tela está mostrando: um campo de edição que
+      // começa em inglês numa tela portuguesa faz a pessoa traduzir a própria
+      // ficha antes de poder mexer no resto.
+      final descController = TextEditingController(
+          text: model.descriptionFor(Get.locale));
     final templateController = TextEditingController(text: model.template);
 
     showModalBottomSheet(
@@ -3055,8 +3062,15 @@ class ModelView extends GetView<ModelController> {
                         url: urlController.text.trim().isEmpty
                             ? model.url
                             : urlController.text.trim(),
-                        description: descController.text.trim().isEmpty
-                            ? model.description
+                        // Campo vazio NÃO apaga a ficha que existiu — e a edição vale
+                        // nos dois idiomas, porque quem escreveu a ficha não
+                        // necessariamente sabe em que língua o catálogo a
+                        // mostra.
+                        descriptionEn: descController.text.trim().isEmpty
+                            ? model.descriptionEn
+                            : descController.text.trim(),
+                        descriptionPt: descController.text.trim().isEmpty
+                            ? model.descriptionPt
                             : descController.text.trim(),
                         template: templateController.text.trim().isEmpty
                             ? model.template
@@ -3315,7 +3329,7 @@ class ModelView extends GetView<ModelController> {
                           _buildModelBadges(context, model),
                           const SizedBox(height: 6),
                           Text(
-                            model.description,
+                            model.descriptionFor(Get.locale),
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               color: Theme.of(context)

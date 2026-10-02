@@ -8,7 +8,7 @@ void main() {
       filename: 'Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf',
       url: 'https://example.invalid/model.gguf',
       size: '1.80 GB',
-      description: 'Vision',
+      descriptionEn: 'Vision',
       template: 'chatml',
       isVision: true,
       mmprojUrl: 'https://example.invalid/mmproj.gguf',
@@ -21,7 +21,7 @@ void main() {
         filename: 'llama.gguf',
         url: 'https://example.invalid/llama.gguf',
         size: '1 GB',
-        description: '',
+        descriptionEn: '',
         template: 'chatml',
       );
       expect(plain.needsMmproj, isFalse);
@@ -41,7 +41,7 @@ void main() {
         filename: 'llama.gguf',
         url: 'u',
         size: '1 GB',
-        description: '',
+        descriptionEn: '',
         template: 'chatml',
       ).toMap();
       expect(map.containsKey('mmprojUrl'), isFalse);

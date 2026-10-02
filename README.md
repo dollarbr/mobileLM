@@ -16,6 +16,12 @@ scheduled tasks that keep running with the app closed.
 
 ## What it does
 
+- **Two languages, and you pick** — English and Brazilian Portuguese, 361
+  translated keys each, plus a per-model description in both languages. The
+  default is **English**; **Settings → Appearance → Language** offers Automatic
+  (follow the phone), English and Português (Brasil), and the switch applies
+  immediately — no restart. The system prompt follows the screen language, so the
+  assistant answers in the language you are reading.
 - **Local inference, no cloud required** — GGUF models on llama.cpp and
   `.litertlm` models on LiteRT-LM. The accelerator ladder (NPU → GPU → CPU)
   lives in the native layer and reports the backend that *actually ran*, not the

@@ -273,13 +273,24 @@ class ChatBubble extends StatelessWidget {
   }
 
   /// Predefined quick prompts shown as chips below assistant responses.
+  /// Quick prompts shown as the chips below an assistant response.
+  ///
+  /// **Os dois campos são CHAVES, e o `.tr` acontece em tempo de build.**
+  /// Eram literais em português, e é por isso que a build em inglês mostrava
+  /// "Explique melhor" embaixo de toda resposta — e, pior, um chip que *parece*
+  /// localizado mas manda um prompt em português para um modelo em inglês.
+  ///
+  /// Não podem ser valores `const` já traduzidos: `.tr` é um método de runtime
+  /// sobre o locale atual, então uma lista `static const` de textos traduzidos
+  /// congelaria a língua do momento em que a classe foi tocada pela primeira
+  /// vez — que é o idioma do boot, não o que a pessoa escolheu.
   static const _chips = [
-    {'label': 'Explique melhor', 'prompt': 'Explique isso de forma mais detalhada e didática.'},
-    {'label': 'Resuma', 'prompt': 'Resuma a resposta anterior de forma concisa.'},
-    {'label': 'Traduza', 'prompt': 'Traduza a resposta anterior para inglês.'},
-    {'label': 'Continue', 'prompt': 'Continue a explicação anterior.'},
-    {'label': 'Exemplo', 'prompt': 'Dê um exemplo prático sobre esse assunto.'},
-    {'label': 'Simplifique', 'prompt': 'Explique de forma mais simples, como para iniciantes.'},
+    {'label': 'chip_expand', 'prompt': 'chip_expand_prompt'},
+    {'label': 'chip_summarise', 'prompt': 'chip_summarise_prompt'},
+    {'label': 'chip_translate', 'prompt': 'chip_translate_prompt'},
+    {'label': 'chip_continue', 'prompt': 'chip_continue_prompt'},
+    {'label': 'chip_example', 'prompt': 'chip_example_prompt'},
+    {'label': 'chip_simplify', 'prompt': 'chip_simplify_prompt'},
   ];
 
   Widget _suggestionChips(BuildContext context, String answer) {
@@ -307,7 +318,7 @@ class ChatBubble extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               onTap: () {
                 final controller = Get.find<ChatController>();
-                controller.sendQuickMessage(chip['prompt'] as String);
+                controller.sendQuickMessage((chip['prompt'] as String).tr);
               },
               child: Container(
                 padding:
@@ -318,7 +329,7 @@ class ChatBubble extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Text(
-                  chip['label'] as String,
+                  (chip['label'] as String).tr,
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     color: chipText,

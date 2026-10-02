@@ -1,3 +1,7 @@
+import 'dart:ui' show Locale;
+
+import '../services/language_preference.dart';
+
 class AiModel {
   static const runtimeLlama = 'llama';
   static const runtimeLiteRt = 'litert';
@@ -26,7 +30,15 @@ class AiModel {
   final String filename;
   final String url;
   final String size;
-  final String description;
+
+  /// A ficha do modelo **nos dois idiomas**, com o idioma no nome do campo.
+  ///
+  /// Não há campo `description` aqui, e é deliberado: com um campo só, "ele
+  /// significa português" vira conhecimento tribal de quem lê o catálogo — e o
+  /// primeiro lugar a pagar por isso foi a tela, que mostrava 62 fichas
+  /// inglesas num app que se dizia português.
+  final String descriptionEn;
+  final String descriptionPt;
   final String template;
   final String runtime;
   final bool isVision;
@@ -60,23 +72,31 @@ class AiModel {
     required this.filename,
     required this.url,
     required this.size,
-    required this.description,
+    required this.descriptionEn,
     required this.template,
     String? runtime,
+    String? descriptionPt,
     this.isVision = false,
     this.isImported = false,
     this.isCustom = false,
     this.mmprojUrl = '',
     this.mmprojFilename = '',
     this.isBenchmark = false,
-  }) : runtime = runtime ?? runtimeFromFilename(filename, template: template);
+  })  : // Uma entrada antiga do Hive tem só `description` — importada antes de
+        // o catálogo ficar bilíngue. Ela vale nos dois idiomas: a alternativa
+        // é pintar uma linha vazia num card que já tem nome, tamanho e
+        // template, e vazio parece defeito do aparelho em vez de falta de
+        // tradução.
+        descriptionPt = descriptionPt ?? descriptionEn,
+        runtime = runtime ?? runtimeFromFilename(filename, template: template);
 
   factory AiModel.fromMap(Map<String, String> map) => AiModel(
         name: map['name'] ?? '',
         filename: map['filename'] ?? '',
         url: map['url'] ?? '',
         size: map['size'] ?? '',
-        description: map['description'] ?? '',
+        descriptionEn: map['descriptionEn'] ?? map['description'] ?? '',
+        descriptionPt: map['descriptionPt'],
         template: map['template'] ?? 'chatml',
         runtime: map['runtime'],
         isVision: map['vision'] == 'true',
@@ -87,12 +107,37 @@ class AiModel {
         mmprojFilename: map['mmprojFilename'] ?? '',
       );
 
+  /// A descrição no idioma pedido, pela regra de [LanguagePreference].
+  ///
+  /// **A tela passa por aqui, e não por um campo único.** Um campo `description`
+  /// que "significa português" é o que existia, e com EN como padrão ele
+  /// publica português num app inglês sem nenhum aviso.
+  String descriptionFor(Locale? locale) => LanguagePreference.descricao(
+        en: descriptionEn,
+        pt: descriptionPt,
+        locale: locale,
+      );
+
+  /// As duas descrições, para **casamento de palavra-chave**.
+  ///
+  /// `isVisionModel` e `isUncensoredModel` procuram marcadores no texto, e um
+  /// modelo não fica com visão nem perde a censura conforme o idioma da tela.
+  /// Ler só uma das metades fazia o `VL` de uma linha desaparecer quando o
+  /// app estava em inglês.
+  String get descriptionSearch => descriptionEn == descriptionPt
+      ? descriptionEn
+      : '$descriptionEn $descriptionPt';
+
   Map<String, String> toMap() => {
         'name': name,
         'filename': filename,
         'url': url,
         'size': size,
-        'description': description,
+        // `description` continua no mapa porque é o que a leitura antiga e a
+        // busca esperavam; o valor é o inglês, que é o idioma padrão.
+        'description': descriptionEn,
+        if (descriptionPt != descriptionEn) 'descriptionEn': descriptionEn,
+        if (descriptionPt != descriptionEn) 'descriptionPt': descriptionPt,
         'template': template,
         'runtime': runtime,
         if (isVision) 'vision': 'true',
@@ -121,7 +166,8 @@ class AiModel {
     String? filename,
     String? url,
     String? size,
-    String? description,
+    String? descriptionEn,
+    String? descriptionPt,
     String? template,
     String? runtime,
     bool? isVision,
@@ -136,7 +182,8 @@ class AiModel {
       filename: filename ?? this.filename,
       url: url ?? this.url,
       size: size ?? this.size,
-      description: description ?? this.description,
+      descriptionEn: descriptionEn ?? this.descriptionEn,
+      descriptionPt: descriptionPt ?? this.descriptionPt,
       template: template ?? this.template,
       runtime: runtime ?? this.runtime,
       isVision: isVision ?? this.isVision,
