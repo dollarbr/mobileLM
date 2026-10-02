@@ -175,9 +175,17 @@ enum Schedule {
 // Native typedefs
 // ---------------------------------------------------------------------------
 
+// The two callbacks take a trailing `Pointer<Void>` and return `void`, which is
+// exactly what `NativeCallable.listener` requires — the analyzer enforces the
+// return type, and the C trampolines in `sd_jni_wrapper.cpp` declare the same
+// shape. The reason is in that file: the ggml workers that call these are
+// process threads belonging to no isolate, and a `Pointer.fromFunction` can only
+// ever be invoked from the isolate that made it. Getting this wrong aborts the
+// process with SIGABRT, not an exception.
 typedef ProgressCallbackNative = Void Function(
-    Int32 step, Int32 steps, Float time);
-typedef LogCallbackNative = Void Function(Int32 level, Pointer<Utf8> text);
+    Int32 step, Int32 steps, Float time, Pointer<Void> userData);
+typedef LogCallbackNative = Void Function(
+    Int32 level, Pointer<Utf8> text, Pointer<Void> userData);
 
 typedef SdFfiSetProgressCallbackNative = Void Function(
     Pointer<NativeFunction<ProgressCallbackNative>> cb);
@@ -281,7 +289,15 @@ typedef SdFfiGetCores = int Function();
 
 SendPort? _globalSendPort;
 
-void _staticProgressCallback(int step, int steps, double time) {
+// `user_data` is unused on this side and that is deliberate: it is the VM's
+// handle for the callable, not payload, and reading it as anything would be a
+// reinterpretation of memory the Dart side does not own.
+//
+// The send is guarded on a null port rather than assumed: the native side can
+// outlive the isolate that registered it during teardown, and a `!` here would
+// throw on a worker thread, where an unhandled Dart error has nowhere to go.
+void _staticProgressCallback(
+    int step, int steps, double time, Pointer<Void> userData) {
   _globalSendPort?.send({
     'type': 'progress',
     'step': step,
@@ -290,7 +306,8 @@ void _staticProgressCallback(int step, int steps, double time) {
   });
 }
 
-void _staticLogCallback(int level, Pointer<Utf8> text) {
+void _staticLogCallback(
+    int level, Pointer<Utf8> text, Pointer<Void> userData) {
   _globalSendPort?.send({
     'type': 'log',
     'level': level,
@@ -324,8 +341,13 @@ class SdFfiBindings {
   static late SdFfiGenerate generate;
   static late SdFfiGetCores getCores;
 
-  static Pointer<NativeFunction<ProgressCallbackNative>>? _progressPtr;
-  static Pointer<NativeFunction<LogCallbackNative>>? _logPtr;
+  // The callables are held in fields rather than being built and dropped, for
+  // two reasons that both cost a crash or a leak: `NativeCallable.listener`
+  // registers a trampoline in the VM that is only released by `close()`, and
+  // the native side holds a bare function pointer that would outlive the Dart
+  // object it points into.
+  static NativeCallable<ProgressCallbackNative>? _progressCallable;
+  static NativeCallable<LogCallbackNative>? _logCallable;
 
   /// Initialize FFI bindings for a specific backend.
   /// Call this before using any other functions.
@@ -380,20 +402,47 @@ class SdFfiBindings {
         .lookupFunction<SdFfiGetCoresNative, SdFfiGetCores>('sd_ffi_get_cores');
   }
 
+  /// Registers the native callbacks with this isolate's message port.
+  ///
+  /// `NativeCallable.listener`, not `Pointer.fromFunction`: the ggml workers
+  /// that drive these callbacks are process threads with no isolate attached,
+  /// and the VM aborts the whole process with SIGABRT if one of them reaches a
+  /// `Pointer.fromFunction` — `Cannot invoke native callback outside an
+  /// isolate`. A listener keeps the isolate as the owner while letting the VM
+  /// marshal the call in from anywhere.
   static void setupCallbacks(SendPort sendPort) {
     _globalSendPort = sendPort;
 
-    _progressPtr ??=
-        Pointer.fromFunction<ProgressCallbackNative>(_staticProgressCallback);
-    _logPtr ??= Pointer.fromFunction<LogCallbackNative>(_staticLogCallback);
+    // Rebuild on every registration. `clearCallbacks` closes the previous
+    // pair, so `??=` here would hand the native side a pointer to a callable
+    // the VM had already torn down — the crash this replaces, in a quieter
+    // costume.
+    _progressCallable?.close();
+    _logCallable?.close();
 
-    setProgressCallback(_progressPtr!);
-    setLogCallback(_logPtr!);
+    _progressCallable = NativeCallable<ProgressCallbackNative>.listener(
+      _staticProgressCallback,
+    );
+    _logCallable =
+        NativeCallable<LogCallbackNative>.listener(_staticLogCallback);
+
+    setProgressCallback(_progressCallable!.nativeFunction);
+    setLogCallback(_logCallable!.nativeFunction);
   }
 
+  /// Detaches the native side and releases the VM's trampolines.
+  ///
+  /// The order matters and is not symmetric: the native pointers are cleared
+  /// **before** `close()`, so no worker can land on a closed callable in
+  /// between. Doing it the other way round leaves a window where the library
+  /// holds a pointer into a trampoline that no longer exists.
   static void clearCallbacks() {
     setProgressCallback(Pointer.fromAddress(0));
     setLogCallback(Pointer.fromAddress(0));
     _globalSendPort = null;
+    _progressCallable?.close();
+    _logCallable?.close();
+    _progressCallable = null;
+    _logCallable = null;
   }
 }

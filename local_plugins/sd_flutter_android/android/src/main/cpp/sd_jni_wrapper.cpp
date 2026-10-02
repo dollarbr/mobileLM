@@ -385,21 +385,40 @@ static sd_ctx_t* g_ffi_sd_ctx = nullptr;
 static std::string g_ffi_model_path;
 
 // FFI callback function pointers (C-style, no JVM involved)
-typedef void (*sd_ffi_progress_fn)(int step, int steps, float time);
-typedef void (*sd_ffi_log_fn)(int level, const char* text);
+//
+// The trailing `void* user_data` is NOT decoration. Dart's
+// `NativeCallable.listener` — the only kind that may be invoked from a thread
+// with no isolate attached — requires the Dart function to accept that
+// user_data as its final argument. A `void(*)(int,int,float)` cannot be one,
+// which is why the previous `Pointer.fromFunction` pair aborted the process:
+//
+//   Fatal signal 6 (SIGABRT) in tid (DartWorker)
+//   runtime_entry.cc: 5327: error: Cannot invoke native callback outside an isolate.
+//
+// That abort came from the Dart VM's own guard, not from a C++ check. The
+// ggml worker threads that drive `sd_set_progress_callback` are plain process
+// threads and belong to no isolate, so they can never satisfy
+// `Pointer.fromFunction`, which is bound to the isolate that created it.
+//
+// `sd_progress_cb` below (the JNI path) does not have this problem and shows
+// the shape of the fix: it uses a `thread_local JniEnvGuard`. There is no
+// equivalent for the Dart VM, because the constraint is the VM's isolate
+// ownership, not the thread.
+typedef void (*sd_ffi_progress_fn)(int step, int steps, float time, void* user_data);
+typedef void (*sd_ffi_log_fn)(int level, const char* text, void* user_data);
 
 static sd_ffi_progress_fn g_ffi_progress = nullptr;
 static sd_ffi_log_fn g_ffi_log = nullptr;
 
 static void sd_ffi_progress_trampoline(int step, int steps, float time, void* data) {
     if (g_ffi_progress) {
-        g_ffi_progress(step, steps, time);
+        g_ffi_progress(step, steps, time, data);
     }
 }
 
 static void sd_ffi_log_trampoline(enum sd_log_level_t level, const char* text, void* data) {
     if (g_ffi_log) {
-        g_ffi_log((int)level, text);
+        g_ffi_log((int)level, text, data);
     }
 }
 
@@ -572,9 +591,11 @@ SD_FFI_API uint8_t* sd_ffi_generate(void* ctx,
          params.prompt, params.width, params.height, steps, (long)seed, cfg_scale,
          sample_method, schedule);
 
-    // Fire step-0 callback immediately (upstream only calls after step 1 completes)
+    // Fire step-0 callback immediately (upstream only calls after step 1 completes).
+    // The trailing nullptr is the user_data `NativeCallable.listener` expects;
+    // the Dart side ignores it, and passing nothing here does not compile.
     if (g_ffi_progress) {
-        g_ffi_progress(0, steps, 0.0f);
+        g_ffi_progress(0, steps, 0.0f, nullptr);
     }
 
     LOGI("[FFI] [PHASE] Calling generate_image()...");

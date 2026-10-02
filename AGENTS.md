@@ -1413,23 +1413,97 @@ não tem equivalente: `Pointer.fromFunction` **não** tem como ser chamado de um
 thread arbitrária, e nenhum guard nativo resolve, porque o problema é a VM do Dart
 não a thread.
 
-**Três formas de consertar, e a escolha não é minha para fazer aqui:**
+**Consertado, e a correção tocou os dois lados.** `NativeCallable.listener` no
+Dart e um `void*` a mais no typedef C — porque o `listener` exige o `user_data`
+como último argumento, e a assinatura antiga de 3 argumentos não é um deles.
 
-1. **`NativeCallable.listener`** em vez de `Pointer.fromFunction`. É o que o Dart
-   oferece justamente para callback vindo de thread arbitrária — o isolate continua
-   sendo o dono, mas a VM cria uma porta de entrada para chamadas de fora. Uma
-   linha nos dois callbacks, e é a mudança menor.
-2. **`NativeCallable.isolateLocal`** **não serve** e é o erro óbvio: ele exige a
-   thread do isolate, que é exatamente o que não existe aqui.
-3. **Não registrar callback pelo FFI** e reportar progresso por outro caminho
-   (o `progress` observable já existe do lado Dart). Mais trabalho e perde o log
-   nativo, que é onde se diagnostica uma carga que falha.
+O detalhe que custou uma volta: **o `listener` quer retorno `void`, não
+`Pointer<Void>`.** Escrevi o contrário com base no nome da API e o analyzer
+disse *"The return type of the function passed to 'NativeCallable.listener' must
+be 'void' rather than 'Pointer<Void>'"*. A correção no C foi a mesma: `void(*)`
+com `void*` no fim, não `void*(*)` com `void*` no fim.
 
-**O que medir depois do conserto, porque é o que interessa:** o RSS com
-`Q4_K` carregado contra o previsto de **0,772 GB**, e o tempo de **1 passo** a
-**256 px**. Sem isso o seletor de quantização é uma tela de promessas — o número
-que a tela mostra é derivado do código nativo e está certo, e nenhuma imagem jamais
-saiu para confirmá-lo.
+O `user_data` que o C passa é `nullptr` na chamada de passo 0 e o `data` do
+ggml nos trampolines. **O lado Dart não o usa**, e é o certo: ele é o handle da
+VM para o callable, não carga útil.
+
+**Três coisas no conserto que só a leitura do arquivo inteiro mostra:**
+
+1. **Havia um terceiro call site** do callback, `g_ffi_progress(0, steps, 0.0f)`,
+   na linha 596 — o "passo 0 imediato" que o upstream não dá. Ele **não** está
+   ao lado dos outros dois, e o `grep` por `g_ffi_progress(` acha três linhas.
+   **O compilador do NDK achou em segundos**, com `-fsyntax-only` e sem link.
+2. **`setupCallbacks` recria os callables, e não é `??=`.** O `clearCallbacks`
+   fecha o par anterior, então guardar o ponteiro e reaproveitar deixaria o
+   nativo apontando para um callable que a VM já desregistrou — **o mesmo
+   crash, de outro jeito**.
+3. **A ordem em `clearCallbacks` não é simétrica.** Os ponteiros nativos são
+   zerados **antes** do `close()`. Ao contrário, existe uma janela em que a
+   biblioteca segura o ponteiro de um trampoline que não existe mais.
+
+O `jni-syntax.sh` deste repo **não cobre este arquivo** — ele compila o
+`jni_wrapper.cpp` do llama.cpp. O comando que cobre o SD, e que achou o erro da
+linha 596:
+
+```sh
+/opt/android-sdk/ndk/*/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang++ \
+  -fsyntax-only -std=c++17 \
+  -Ilocal_plugins/sd_flutter_android/android/src/main/cpp \
+  -Ilocal_plugins/sd_flutter_android/android/src/main/cpp/stable-diffusion.cpp/include \
+  local_plugins/sd_flutter_android/android/src/main/cpp/sd_jni_wrapper.cpp
+```
+
+**Verificado no A72 depois do conserto:** o mesmo modelo que matava o processo
+agora carrega e o processo fica de pé.
+
+### A previsão de memória erra para baixo em tudo que é quantizado — e por quê
+
+Medido no A72, `DreamShaper8_LCM` (1,99 GB, sha256 conferido nos dois lados),
+mesmo aparelho, mesmo build, mudando só a quantização. RSS lido de
+`/proc/<pid>/status`, com o app sem modelo em 455–472 MB de base:
+
+| quantização | RSS real (delta) | previsto (só pesos) | erro |
+|---|---|---|---|
+| FP16 | **1809 MB** | 1987 MB | −178 MB (−9%) |
+| Q4_K | **1377 MB** | 792 MB | **+585 MB (+74%)** |
+| Q2_K | **1300 MB** | 574 MB | **+726 MB (+126%)** |
+
+**O FP16 quase acerta.** A previsão erra 9% para cima num caso em que não há
+conversão nenhuma, o que faz sentido: ela mede pesos e o processo tem mais coisas
+que pesos.
+
+**O Q4_K erra 74%, e o Q2_K erra 126% — o erro cresce na direção oposta ao que a
+previsão assume.** Os três números juntos contam a história sem ambiguidade:
+
+```
+FP16 -> Q4_K   economiza  432 MB de verdade   (previsto dizia 1195 MB)
+Q4_K -> Q2_K   economiza   77 MB de verdade   (previsto dizia  218 MB)
+```
+
+**A primeira quantização paga quase todo o ganho, e cada seguinte compra cada vez
+menos.** Essa é a assinatura de um **piso que não vem dos pesos** — algo que
+independe do formato. O candidato óbvio é o que a previsão nunca incluiu:
+**ativações, o buffer de decode do VAE e o backend de cálculo**, que existem
+de qualquer jeito. Com o FP16 os pesos dominam e a previsão quase acerta; conforme
+os pesos encolhem, o piso fixo engole a diferença.
+
+**A consequência para a tela, e ela é de produto:** a previsão de `sd_weight_estimate.dart`
+é **correta sobre os pesos** e **não serve como número de "isto cabe no seu
+aparelho"**. Ela acerta a ordem e acerta o FP16, e erra de 74% a 126% no que a
+pessoa realmente pergunta, que é se cabe. **Oferecer a lista com esses números
+seria dizer uma coisa verificavelmente falsa.**
+
+Duas saídas, e a escolha é sua:
+
+1. **Mostrar o peso previsto e uma linha de "isto não é o total".** Honesto, e
+   mantém o dado derivado do código nativo — mas não responde "cabe?".
+2. **Trocar a régua: mostrar o RSS medido de uma tabela de referência**, com
+   DreamShaper8_LCM como ponto de ancoragem e uma regra para extrapolar. É o que
+   responde a pergunta, e é o que a seção "a hipótese da quantização" da fila já
+   pede para o caso GGUF.
+
+O que **não** é aceitável é o que eu estava prestes a construir: a lista de
+opções com "0,77 GB previsto" e a pessoa decidindo se o telefone aguenta.
 
 **E o filtro de exibição é o que escondeu isso.** Os 5 modelos de imagem são
 SD 1.5 FP16 de 1,99 GB, `maxModelBytes` no A72 é **1,19 GB**
