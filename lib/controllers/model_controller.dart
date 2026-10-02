@@ -8,6 +8,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/download_service.dart';
+import '../services/text_interpolation.dart';
 import '../services/inference_service.dart';
 import '../services/local_image_service.dart';
 import '../services/hive_service.dart';
@@ -62,9 +63,33 @@ class ModelBlock {
 
 /// One heading in the Models tab.
 class ModelSection {
+  /// A **chave** da seção, e é em inglês de propósito.
+  ///
+  /// `expandedSections` é um `Set<String>` **persistido em Hive**, e
+  /// `toggleSection`/`isSectionExpanded` comparam por este valor. Traduzir aqui
+  /// faria uma seção expandida em inglês **colapsar** quando o app passa para
+  /// português, e o conjunto salvo ficaria com as chaves antigas — o defeito
+  /// aparece como "a tela perdeu o que eu tinha aberto" e não como erro.
+  ///
+  /// **GGUF, LiteRT e TFLite não têm chave de tradução** porque não precisam: são
+  /// o nome do formato e o do repositório de origem, e traduzi-los diria algo
+  /// diferente do que o arquivo é.
   final String title;
+
+  /// A chave de tradução do rótulo, ou `null` quando [title] já é o que a tela
+  /// mostra.
+  final String? labelKey;
+
   final List<ModelBlock> blocks;
-  const ModelSection(this.title, this.blocks);
+  const ModelSection(this.title, this.blocks, [this.labelKey]);
+
+  /// O texto que a tela mostra.
+  ///
+  /// A chave vem **depois** do `.tr`, nunca antes: o GetX devolve a própria chave
+  /// para uma tradução que não existe, e sem o mapa carregado o chip dizia
+  /// `mv_section_downloaded` no lugar de `DOWNLOADED` — o identificador no lugar
+  /// do texto, que é o mesmo defeito de sempre.
+  String get label => (labelKey ?? title).tr;
 
   int get count => blocks.fold(0, (n, b) => n + b.models.length);
 }
@@ -142,7 +167,6 @@ class ModelController extends GetxController {
     if (ignore) await setLocalCatalogueHidden(false);
   }
 
-
   List<AiModel> get displayedModels {
     final active = _inference.loadedModelName.value;
     // The catalogue can be hidden entirely, leaving only what is on the device.
@@ -155,7 +179,8 @@ class ModelController extends GetxController {
     // and hiding them would strand the files.
     final models = localCatalogueHidden.value
         ? availableModels
-            .where((m) => m.isImported || m.isCustom || isDownloaded(m.filename))
+            .where(
+                (m) => m.isImported || m.isCustom || isDownloaded(m.filename))
             .toList()
         : [...availableModels];
     models.sort((a, b) {
@@ -227,17 +252,21 @@ class ModelController extends GetxController {
     }
 
     return [
-      ModelSection('Downloaded', _byModality(downloaded)),
+      ModelSection(
+          'Downloaded', _byModality(downloaded), 'mv_section_downloaded'),
       ModelSection('GGUF', _byModality(gguf)),
       ModelSection('LiteRT', _byModality(litert)),
       // Its own heading rather than a badge inside LiteRT: the two runtimes
       // have nothing in common but a name in Google's Maven repository, and
       // the heading is where the user learns that.
       ModelSection('TFLite', _byModality(tflite)),
-      ModelSection('Image', _byModality(image)),
-      ModelSection('Custom GGUF Models', _byModality(customGguf)),
-      ModelSection('Custom LiteRT Models', _byModality(customLitert)),
-      ModelSection('Custom TFLite Models', _byModality(customTflite)),
+      ModelSection('Image', _byModality(image), 'mv_section_image'),
+      ModelSection('Custom GGUF Models', _byModality(customGguf),
+          'mv_section_custom_gguf'),
+      ModelSection('Custom LiteRT Models', _byModality(customLitert),
+          'mv_section_custom_litert'),
+      ModelSection('Custom TFLite Models', _byModality(customTflite),
+          'mv_section_custom_tflite'),
     ].where((s) => s.count > 0).toList();
   }
 
@@ -256,7 +285,9 @@ class ModelController extends GetxController {
       final label = isImageModel(m)
           ? 'Image generation'
           : isVisionModel(m)
-              ? modalityLabel(m) == 'MULTIMODAL' ? 'Multimodal' : 'Vision'
+              ? modalityLabel(m) == 'MULTIMODAL'
+                  ? 'Multimodal'
+                  : 'Vision'
               : 'Text';
       blocks.putIfAbsent(label, () => []).add(m);
     }
@@ -313,8 +344,7 @@ class ModelController extends GetxController {
     availableModels.value = [
       ...encoders,
       ...AppConstants.availableModels.map((m) => AiModel.fromMap(m)),
-    ]
-      ..addAll(customModels);
+    ]..addAll(customModels);
     refreshDownloaded();
     _loadMmprojOverrides();
   }
@@ -360,7 +390,7 @@ class ModelController extends GetxController {
           url: '',
           size: _formatModelSize(file),
           descriptionEn: 'Imported from local storage',
-            descriptionPt: 'Importado do armazenamento local',
+          descriptionPt: 'Importado do armazenamento local',
           template: isLiteRt ? 'litert' : 'chatml',
           runtime: runtime,
           isImported: true,
@@ -398,7 +428,7 @@ class ModelController extends GetxController {
     }
     final expectedBytes = _declaredModelBytes(model);
     if (expectedBytes <= 0) return false;
-    // Relax threshold to 85% to comfortably accommodate HuggingFace decimal-scaled catalog sizes 
+    // Relax threshold to 85% to comfortably accommodate HuggingFace decimal-scaled catalog sizes
     // and rounded metadata sizes (e.g. 770.3MB listed as 0.8GB) while still blocking failed downloads.
     return fileBytes < (expectedBytes * 0.85).round();
   }
@@ -430,8 +460,8 @@ class ModelController extends GetxController {
     // GGUF models see through a projector: without a paired mmproj file the
     // weights alone cannot read an image, however the model is named.
     if (!isLiteRtModel(model)) return model.needsMmproj;
-    final lower =
-        '${model.name} ${model.filename} ${model.descriptionSearch}'.toLowerCase();
+    final lower = '${model.name} ${model.filename} ${model.descriptionSearch}'
+        .toLowerCase();
     return model.isVision || AiModel.hasVisionMarker(lower);
   }
 
@@ -668,7 +698,8 @@ class ModelController extends GetxController {
   /// Updates a custom model's metadata (name, description, url, template, etc.)
   /// in both [customModels] and [availableModels], then persists to Hive.
   Future<void> updateCustomModel(AiModel updated) async {
-    final index = customModels.indexWhere((m) => m.filename == updated.filename);
+    final index =
+        customModels.indexWhere((m) => m.filename == updated.filename);
     if (index != -1) {
       customModels[index] = updated;
     } else {
@@ -769,7 +800,8 @@ class ModelController extends GetxController {
     final id = externalDownloadId.value;
     if (id != null) {
       try {
-        await _androidImportChannel.invokeMethod('cancelDownloadToDownloads', {'downloadId': id});
+        await _androidImportChannel
+            .invokeMethod('cancelDownloadToDownloads', {'downloadId': id});
       } catch (e) {
         Get.find<AppLogService>().error('Cancel download failed', details: e);
       }
@@ -825,8 +857,8 @@ class ModelController extends GetxController {
       _mmprojOverrides[modelFilename] = ref;
     }
     try {
-      await Get.find<HiveService>().setSetting(_mmprojOverridesKey,
-          jsonEncode(_mmprojOverrides));
+      await Get.find<HiveService>()
+          .setSetting(_mmprojOverridesKey, jsonEncode(_mmprojOverrides));
     } catch (_) {}
   }
 
@@ -886,8 +918,7 @@ class ModelController extends GetxController {
     final size = _fileSizes[filename] ?? 0;
     final clamped = copied.clamp(0, size);
     backupFile.value = filename;
-    backupCopiedBytes.value =
-        (_backupOffsets[filename] ?? 0) + clamped;
+    backupCopiedBytes.value = (_backupOffsets[filename] ?? 0) + clamped;
     backupTotalBytes.value = _backupOffsets.values.isEmpty
         ? 0
         : _backupOffsets.entries
@@ -957,9 +988,7 @@ class ModelController extends GetxController {
               .join('');
         }
         final basename = await LlamaModelMeta.get('general.basename');
-        if (basename != null &&
-            basename.trim().isNotEmpty &&
-            family.isEmpty) {
+        if (basename != null && basename.trim().isNotEmpty && family.isEmpty) {
           family = basename.split('/').last;
         }
       } catch (_) {}
@@ -1001,16 +1030,16 @@ class ModelController extends GetxController {
     try {
       // Models follow the user's on-disk tree (Vendor/Family/file); configs
       // live in <root>/settings so they never mix with weights.
-      settingsDoc = await _download.ensureBackupPath(
-          treeUri: treeUri, segments: const ['settings']);
+      settingsDoc = await _download
+          .ensureBackupPath(treeUri: treeUri, segments: const ['settings']);
       if (settingsDoc == null) {
         throw Exception('Could not create the settings folder');
       }
 
       // Configs first: small, and the part that makes the copy meaningful.
       final template = await buildConfigTemplate();
-      final tmp = File(
-          '${(await getTemporaryDirectory()).path}/mobilelm-config.json');
+      final tmp =
+          File('${(await getTemporaryDirectory()).path}/mobilelm-config.json');
       await tmp.writeAsString(jsonEncode(template));
       _fileSizes = {'mobilelm-config.json': await tmp.length()};
       _backupOffsets = {'mobilelm-config.json': 0};
@@ -1041,9 +1070,7 @@ class ModelController extends GetxController {
           if (!File(src).existsSync() || !seenPaths.add(src)) continue;
           final segs = await classifyModelPath(src);
           entries.add((src, segs));
-          final model = allModels
-              .where((m) => m.filename == name)
-              .firstOrNull;
+          final model = allModels.where((m) => m.filename == name).firstOrNull;
           if (model != null &&
               model.needsMmproj &&
               model.mmprojFilename.isNotEmpty) {
@@ -1147,7 +1174,7 @@ class ModelController extends GetxController {
       Get.snackbar(
           'Restore',
           'Configs applied ($settingsCount value(s)) · '
-          '$restored model file(s) restored',
+              '$restored model file(s) restored',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
       final restart = await _askRestart();
@@ -1179,7 +1206,8 @@ class ModelController extends GetxController {
     var confirmed = false;
     await Get.dialog(AlertDialog(
       title: Text('restore_backup'.tr),
-      content: Text('$settingsCount saved value(s) will overwrite the current ones.'),
+      content:
+          Text(preencher('mc_restore_will_overwrite', {'s': '$settingsCount'})),
       actions: [
         TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
         FilledButton(
@@ -1296,11 +1324,8 @@ class ModelController extends GetxController {
       'mmprojOverrides': _mmprojOverrides,
       'modelParams': {
         for (final key in hive.settingsBox.keys)
-          if (key
-              .toString()
-              .startsWith(AppConstants.modelParamsKeyPrefix))
-            key.toString():
-                jsonDecode(hive.settingsBox.get(key).toString()),
+          if (key.toString().startsWith(AppConstants.modelParamsKeyPrefix))
+            key.toString(): jsonDecode(hive.settingsBox.get(key).toString()),
       },
     };
   }
@@ -1321,13 +1346,12 @@ class ModelController extends GetxController {
       final overrides = config['mmprojOverrides'];
       if (overrides is Map) {
         _mmprojOverrides = overrides.cast<String, String>();
-        await hive.setSetting(_mmprojOverridesKey,
-            jsonEncode(_mmprojOverrides));
+        await hive.setSetting(
+            _mmprojOverridesKey, jsonEncode(_mmprojOverrides));
       }
       final params = config['modelParams'];
       if (params is Map) {
-        params.forEach((key, value) =>
-            hive.setSetting(key, jsonEncode(value)));
+        params.forEach((key, value) => hive.setSetting(key, jsonEncode(value)));
       }
     }
     log.info('Restore: $applied setting(s), '
@@ -1340,16 +1364,12 @@ class ModelController extends GetxController {
   Future<String?> _findSiblingMmproj(String modelPath) async {
     try {
       final dir = Directory(File(modelPath).parent.path);
-      final candidates = dir
-          .listSync()
-          .whereType<File>()
-          .where((f) {
-            final name = f.path.split('/').last.toLowerCase();
-            return name.endsWith('.gguf') &&
-                name.contains('mmproj') &&
-                f.path != modelPath;
-          })
-          .toList()
+      final candidates = dir.listSync().whereType<File>().where((f) {
+        final name = f.path.split('/').last.toLowerCase();
+        return name.endsWith('.gguf') &&
+            name.contains('mmproj') &&
+            f.path != modelPath;
+      }).toList()
         ..sort((a, b) => a.lengthSync().compareTo(b.lengthSync()));
       if (candidates.isEmpty) return null;
       print('[ModelController] Sibling projector found: '
@@ -1406,8 +1426,7 @@ class ModelController extends GetxController {
       final actual = DownloadService.formatBytes(fileBytes);
       Get.find<AppLogService>().error(
         'Incomplete model file blocked',
-        details:
-            '$filename is $actual, expected about ${model.size}',
+        details: '$filename is $actual, expected about ${model.size}',
       );
       Get.snackbar(
         'Incomplete Model File',
@@ -1483,14 +1502,15 @@ class ModelController extends GetxController {
           url: '',
           size: '',
           descriptionEn: '',
-            descriptionPt: '',
+          descriptionPt: '',
           template: '',
         ))) {
       // Auto-download TAESD for fast VAE decode if not present
       String? taesdPath;
       try {
         const taesdFilename = 'taesd.safetensors';
-        const taesdUrl = 'https://huggingface.co/madebyollin/taesd/resolve/main/diffusion_pytorch_model.safetensors';
+        const taesdUrl =
+            'https://huggingface.co/madebyollin/taesd/resolve/main/diffusion_pytorch_model.safetensors';
         final hasTaesd = await _download.isModelDownloaded(taesdFilename);
         if (!hasTaesd) {
           print('[ModelController] TAESD not found, downloading...');
@@ -1501,12 +1521,14 @@ class ModelController extends GetxController {
         }
         taesdPath = await _download.modelPath(taesdFilename);
       } catch (e) {
-        print('[ModelController] TAESD download failed (will use standard VAE): $e');
+        print(
+            '[ModelController] TAESD download failed (will use standard VAE): $e');
       }
 
       // Show loading dialog with live logs
       _showImageModelLoadingDialog(filename);
-      final result = await _localImage.loadModel(path, modelName: filename, taesdPath: taesdPath);
+      final result = await _localImage.loadModel(path,
+          modelName: filename, taesdPath: taesdPath);
       // Close loading dialog
       if (Get.isDialogOpen ?? false) Get.back();
 
@@ -1558,9 +1580,8 @@ class ModelController extends GetxController {
       if (mmprojPath == null) {
         final ref = mmprojRefFor(filename);
         if (ref != null && ref.isNotEmpty) {
-          mmprojPath = ref.startsWith('/')
-              ? ref
-              : await _download.modelPath(ref);
+          mmprojPath =
+              ref.startsWith('/') ? ref : await _download.modelPath(ref);
         }
       }
       mmprojPath ??= await _findSiblingMmproj(path);
@@ -1574,8 +1595,9 @@ class ModelController extends GetxController {
       );
       if (_inference.isModelLoaded.value) {
         final fallbackToText = result.toLowerCase().contains('text-only');
-        _inference.isVisionLoaded.value =
-            fallbackToText ? false : (model == null ? false : isVisionModel(model));
+        _inference.isVisionLoaded.value = fallbackToText
+            ? false
+            : (model == null ? false : isVisionModel(model));
         await _settings.setInferenceMode('local');
         Get.snackbar('Model Loaded', result,
             snackPosition: SnackPosition.BOTTOM);
@@ -1586,12 +1608,15 @@ class ModelController extends GetxController {
             builder: (context, setState) {
               final friendlyMsg = _getFriendlyErrorMessage(result);
               final isDark = Theme.of(context).brightness == Brightness.dark;
-              final detailBg = isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC);
-              final detailBorder = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
-              
+              final detailBg =
+                  isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC);
+              final detailBorder =
+                  isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+
               return AlertDialog(
                 backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
                 titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
                 contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
                 actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
@@ -1600,7 +1625,10 @@ class ModelController extends GetxController {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.error.withValues(alpha: isDark ? 0.15 : 0.08),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .error
+                            .withValues(alpha: isDark ? 0.15 : 0.08),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
@@ -1630,7 +1658,7 @@ class ModelController extends GetxController {
                       Text(
                         friendlyMsg,
                         style: GoogleFonts.inter(
-                          fontSize: 14, 
+                          fontSize: 14,
                           height: 1.5,
                           color: isDark ? Colors.white70 : Colors.black87,
                           fontWeight: FontWeight.w500,
@@ -1642,15 +1670,22 @@ class ModelController extends GetxController {
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
-                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.8),
                           letterSpacing: 1.0,
                         ),
                       ),
                       const SizedBox(height: 10),
-                      _buildTipRow(context, Icons.delete_outline_rounded, 'Delete the model and try redownloading it completely.'),
-                      _buildTipRow(context, Icons.memory_rounded, 'Ensure your device has at least 2-3 GB of free RAM.'),
-                      if (result.toLowerCase().contains('litert') || filename.toLowerCase().endsWith('.litertlm'))
-                        _buildTipRow(context, Icons.settings_suggest_rounded, 'Double check if this LiteRT-LM file matches your architecture.'),
+                      _buildTipRow(context, Icons.delete_outline_rounded,
+                          'Delete the model and try redownloading it completely.'),
+                      _buildTipRow(context, Icons.memory_rounded,
+                          'Ensure your device has at least 2-3 GB of free RAM.'),
+                      if (result.toLowerCase().contains('litert') ||
+                          filename.toLowerCase().endsWith('.litertlm'))
+                        _buildTipRow(context, Icons.settings_suggest_rounded,
+                            'Double check if this LiteRT-LM file matches your architecture.'),
                       const SizedBox(height: 12),
 
                       // Technical Details Toggle Button
@@ -1658,20 +1693,25 @@ class ModelController extends GetxController {
                         onTap: () => setState(() => showDetails = !showDetails),
                         borderRadius: BorderRadius.circular(8),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 6, horizontal: 4),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                showDetails ? 'Hide Technical Details' : 'Show Technical Details',
+                                showDetails
+                                    ? 'Hide Technical Details'
+                                    : 'Show Technical Details',
                                 style: GoogleFonts.inter(
-                                  fontSize: 12, 
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
                               ),
                               Icon(
-                                showDetails ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                                showDetails
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
                                 size: 16,
                                 color: Theme.of(context).colorScheme.primary,
                               ),
@@ -1689,13 +1729,15 @@ class ModelController extends GetxController {
                                 children: [
                                   const SizedBox(height: 8),
                                   Container(
-                                    constraints: const BoxConstraints(maxHeight: 180),
+                                    constraints:
+                                        const BoxConstraints(maxHeight: 180),
                                     width: double.maxFinite,
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
                                       color: detailBg,
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: detailBorder, width: 1),
+                                      border: Border.all(
+                                          color: detailBorder, width: 1),
                                     ),
                                     child: SingleChildScrollView(
                                       child: SelectableText(
@@ -1703,7 +1745,9 @@ class ModelController extends GetxController {
                                         style: GoogleFonts.firaCode(
                                           fontSize: 11,
                                           height: 1.4,
-                                          color: isDark ? const Color(0xFFFDA4AF) : const Color(0xFF9F1239),
+                                          color: isDark
+                                              ? const Color(0xFFFDA4AF)
+                                              : const Color(0xFF9F1239),
                                         ),
                                       ),
                                     ),
@@ -1719,8 +1763,10 @@ class ModelController extends GetxController {
                   TextButton(
                     onPressed: () => Get.back(),
                     style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                     child: Text(
                       'close'.tr,
@@ -1748,11 +1794,10 @@ class ModelController extends GetxController {
     await Get.dialog<void>(
       AlertDialog(
         title: Text('restart_required'.tr),
-        content: Text(
-          'You already used $currentLabel in this app session. '
-          'Switching to $targetLabel without restarting can crash the native runtime.\n\n'
-          'Restart the app, then load this model.',
-        ),
+        content: Text(preencher('mc_switch_needs_restart', {
+          'c': currentLabel,
+          't': targetLabel,
+        })),
         actions: [
           TextButton(
             onPressed: () => Get.back(),
@@ -1856,7 +1901,7 @@ class ModelController extends GetxController {
       }
 
       // Note: We intentionally DO NOT allow standard TFLite models starting with 'TFL3' at offset 4
-      // if they lack the 'LITERTLM' container header, because the native LiteRT-LM engine 
+      // if they lack the 'LITERTLM' container header, because the native LiteRT-LM engine
       // strictly expects the .litertlm conversational bundle structure and will crash with a
       // SIGABRT native assert check failure if it is not present.
       return false;
@@ -1912,7 +1957,8 @@ class ModelController extends GetxController {
 
     final result = await Get.dialog<_ModelLoadAction>(
       AlertDialog(
-        title: Text(isCriticallyLow ? 'Restart recommended' : 'Load model?'),
+        title: Text(
+            (isCriticallyLow ? 'mc_restart_recommended' : 'mc_load_model').tr),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1929,8 +1975,7 @@ class ModelController extends GetxController {
                     ? 'This model is already loaded.'
                     : 'Already loaded: $loadedName',
               ),
-              if (!isSameModelLoaded)
-                Text('unload_before_loading_another'.tr),
+              if (!isSameModelLoaded) Text('unload_before_loading_another'.tr),
             ],
             const SizedBox(height: 12),
             Text(warning),
@@ -1986,12 +2031,10 @@ class ModelController extends GetxController {
     final modeLabel = mode == 'gpu_fast' ? 'GPU Fast' : 'Auto Fast';
     final confirmed = await Get.dialog<bool>(
       AlertDialog(
-        title: Text('$modeLabel LiteRT speed'),
-        content: const Text(
-          'GPU can make LiteRT models much faster, closer to Edge Gallery speed. '
-          'On some phones GPU/OpenCL can crash the app while loading. '
-          'If that happens, Auto Fast will use CPU on the next load.',
-        ),
+        title: Text(preencher('mc_litert_speed_title', {'m': modeLabel})),
+        // **Sem `const`**: `'chave'.tr` é método de runtime sobre o locale
+        // atual, e o `const Text` que era aqui não aceita.
+        content: Text('mc_gpu_may_crash'.tr),
         actions: [
           TextButton(
             onPressed: () => Get.back(result: false),
@@ -2054,8 +2097,7 @@ class ModelController extends GetxController {
               'Memory Optimized',
               'Unloaded "$loadedName" to free memory for the new model.',
               snackPosition: SnackPosition.BOTTOM,
-              backgroundColor:
-                  const Color(0xFFFF9500).withValues(alpha: 0.15),
+              backgroundColor: const Color(0xFFFF9500).withValues(alpha: 0.15),
               colorText: const Color(0xFFFF9500),
               duration: const Duration(seconds: 4),
             );
@@ -2211,9 +2253,10 @@ class ModelController extends GetxController {
             !lower.endsWith('.litertlm') &&
             !lower.endsWith('.tflite') &&
             !lower.endsWith('.safetensors')) {
-          Get.snackbar('Unsupported Model',
+          Get.snackbar(
+              'Unsupported Model',
               'Only .gguf, .litertlm, .tflite, and .safetensors files can be '
-              'imported.',
+                  'imported.',
               snackPosition: SnackPosition.BOTTOM);
           return;
         }
@@ -2374,10 +2417,11 @@ class ModelController extends GetxController {
       Builder(
         builder: (context) {
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          
+
           return AlertDialog(
             backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
             contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
             actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
@@ -2386,7 +2430,10 @@ class ModelController extends GetxController {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: isDark ? 0.15 : 0.08),
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: isDark ? 0.15 : 0.08),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -2409,7 +2456,7 @@ class ModelController extends GetxController {
               ],
             ),
             content: Text(
-              'A model file named "$filename" is already imported in your local app storage. Would you like to replace it?',
+              preencher('mc_model_already_imported', {'f': filename}),
               style: GoogleFonts.inter(
                 fontSize: 14,
                 height: 1.5,
@@ -2421,8 +2468,10 @@ class ModelController extends GetxController {
               TextButton(
                 onPressed: () => Get.back(result: false),
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
                 child: Text(
                   'Cancel',
@@ -2436,8 +2485,10 @@ class ModelController extends GetxController {
               FilledButton(
                 onPressed: () => Get.back(result: true),
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                   backgroundColor: Theme.of(context).colorScheme.primary,
                 ),
                 child: Text(
@@ -2513,7 +2564,10 @@ class ModelController extends GetxController {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: isDark ? 0.15 : 0.08),
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: isDark ? 0.15 : 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(

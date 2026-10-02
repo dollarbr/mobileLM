@@ -125,7 +125,7 @@ class ApiConsoleClient {
     }
   }
 
-    /// One call. Returns the decoded body with `__status` folded in.
+  /// One call. Returns the decoded body with `__status` folded in.
   ///
   /// **Does not throw on a non-200 by default.** The caller decides what a `422`
   /// means, and for a decision model it means the answer is on the screen. A
@@ -210,7 +210,8 @@ class ApiCallPlan {
   final String? payload;
 
   @override
-  String toString() => '$method $uri${payload == null ? '' : ' +${payload!.length}B'}';
+  String toString() =>
+      '$method $uri${payload == null ? '' : ' +${payload!.length}B'}';
 }
 
 /// Build the call. Throws when there is no address, with a message that says so.
@@ -296,7 +297,6 @@ class ConsolePalette {
       : card = null,
         field = null;
 
-
   /// A palette built from colours a caller **already has in hand**.
   ///
   /// This exists so a screen that already resolved its own colours can adopt the
@@ -312,8 +312,7 @@ class ConsolePalette {
   /// heuristic doing a hard job — and it removes the temptation to pass a
   /// `isDark` that is a lie, which the three-argument form invited.
   factory ConsolePalette.explicit(Color card, Color field) => ConsolePalette._(
-        isDark:
-            ThemeData.estimateBrightnessForColor(card) == Brightness.dark,
+        isDark: ThemeData.estimateBrightnessForColor(card) == Brightness.dark,
         card: card,
         field: field,
       );
@@ -380,7 +379,8 @@ Widget consoleCard({
         child,
         if (note != null) ...[
           const SizedBox(height: 8),
-          Text(note, style: GoogleFonts.inter(fontSize: 11, color: palette.muted)),
+          Text(note,
+              style: GoogleFonts.inter(fontSize: 11, color: palette.muted)),
         ],
       ],
     ),
@@ -452,8 +452,9 @@ Widget consoleMono({
   return Container(
     width: double.infinity,
     padding: const EdgeInsets.all(10),
-    constraints:
-        maxHeight == null ? null : BoxConstraints(maxHeight: maxHeight.toDouble()),
+    constraints: maxHeight == null
+        ? null
+        : BoxConstraints(maxHeight: maxHeight.toDouble()),
     // **The colour lives inside the `decoration`, never in `color:` beside it.**
     // A `Container` asserts that it was given both — "Cannot provide both a color
     // and a decoration" — and adding [radius] here put the colour in both places.
@@ -501,7 +502,8 @@ Widget consoleProblem(String message) {
   return Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const Icon(Icons.warning_amber_rounded, size: 15, color: AppColors.warning),
+      const Icon(Icons.warning_amber_rounded,
+          size: 15, color: AppColors.warning),
       const SizedBox(width: 6),
       Expanded(
         child: Text(message,

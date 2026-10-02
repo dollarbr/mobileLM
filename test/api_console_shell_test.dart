@@ -1,7 +1,11 @@
 import 'dart:io' show HttpHeaders;
 
+import 'dart:ui' show Locale;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
+import 'package:mobilelm/l10n/app_translation.dart';
 import 'package:mobilelm/views/api_console_shell.dart';
 
 /// The shared console transport's **decisions** — the parts that can be wrong in
@@ -24,7 +28,31 @@ import 'package:mobilelm/views/api_console_shell.dart';
 ///
 /// Hence [apiPlan] and [apiReply] being pure. The socket keeps only what only a
 /// socket can do.
+
 void main() {
+
+  /// Registra as traduções antes de cada montagem.
+  ///
+  /// **Sem isto, `.tr` devolve a própria chave** e todas as asserções deste
+  /// arquivo — que procuram o **texto em inglês que aparece na tela** — falham
+  /// sem que nada tenha mudado. É a mesma razão pela qual 38 chaves apareceram
+  /// como identificadores: o GetX não tem o que mostrar quando o mapa não está
+  /// carregado.
+  ///
+  /// E registrar o mapa **verdadeiro** é o que faz o teste checar o texto real
+  /// em vez do identificador: se a tradução sair errada, a tela mostra outra
+  /// coisa e a asserção pega.
+  ///
+  /// `Get.locale = ...` e **não** `Get.updateLocale(...)`: o segundo é
+  /// assíncrono e reconstrói a árvore, o que dentro de `setUp` dispara
+  /// `'inTest': is not true` do binding — e `Get.testMode = false` para
+  /// contornar piora, porque é ele que permite tocar em ciclo de vida fora de
+  /// um teste.
+  setUp(() {
+    Get.addTranslations(AppTranslation().keys);
+    Get.locale = const Locale('en', 'US');
+  });
+
   const bearer = {HttpHeaders.authorizationHeader: 'Bearer k'};
 
   group('apiPlan — the method travels with the call', () {

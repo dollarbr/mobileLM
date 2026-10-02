@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AttachmentPreview extends StatelessWidget {
@@ -146,7 +147,6 @@ class AttachmentPreview extends StatelessWidget {
     return null;
   }
 
-
   static String formatFileSize(int bytes) {
     if (bytes >= 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
@@ -170,8 +170,20 @@ class AttachmentPreview extends StatelessWidget {
     }
     if (ext == 'pdf') return 'pdf';
     if ([
-      'txt', 'md', 'json', 'csv', 'log', 'yaml', 'yml', 'xml',
-      'dart', 'kt', 'java', 'js', 'ts', 'py'
+      'txt',
+      'md',
+      'json',
+      'csv',
+      'log',
+      'yaml',
+      'yml',
+      'xml',
+      'dart',
+      'kt',
+      'java',
+      'js',
+      'ts',
+      'py'
     ].contains(ext)) {
       return 'text';
     }
@@ -180,31 +192,46 @@ class AttachmentPreview extends StatelessWidget {
 
   String _labelForType(String type) {
     switch (type) {
-      case 'image':  return 'Image';
-      case 'pdf':    return 'PDF';
-      case 'audio':  return 'Audio';
-      case 'text':   return 'Text file';
-      default:       return 'Attachment';
+      case 'image':
+        return 'Image';
+      case 'pdf':
+        return 'PDF';
+      case 'audio':
+        return 'Audio';
+      case 'text':
+        return 'ap_text_file'.tr;
+      default:
+        return 'Attachment';
     }
   }
 
   IconData _iconForType(String type) {
     switch (type) {
-      case 'image':  return Icons.image_outlined;
-      case 'pdf':    return Icons.picture_as_pdf_outlined;
-      case 'audio':  return Icons.graphic_eq_rounded;
-      case 'text':   return Icons.description_outlined;
-      default:       return Icons.insert_drive_file_outlined;
+      case 'image':
+        return Icons.image_outlined;
+      case 'pdf':
+        return Icons.picture_as_pdf_outlined;
+      case 'audio':
+        return Icons.graphic_eq_rounded;
+      case 'text':
+        return Icons.description_outlined;
+      default:
+        return Icons.insert_drive_file_outlined;
     }
   }
 
   Color _colorForType(String type, bool isDark) {
     switch (type) {
-      case 'image':  return isDark ? const Color(0xFFB9F53E) : const Color(0xFFB9F53E);
-      case 'pdf':    return const Color(0xFFFF3B30);
-      case 'audio':  return const Color(0xFFFF9500);
-      case 'text':   return isDark ? const Color(0xFF64D2FF) : const Color(0xFF5AC8FA);
-      default:       return isDark ? const Color(0xFF98989D) : const Color(0xFF8E8E93);
+      case 'image':
+        return isDark ? const Color(0xFFB9F53E) : const Color(0xFFB9F53E);
+      case 'pdf':
+        return const Color(0xFFFF3B30);
+      case 'audio':
+        return const Color(0xFFFF9500);
+      case 'text':
+        return isDark ? const Color(0xFF64D2FF) : const Color(0xFF5AC8FA);
+      default:
+        return isDark ? const Color(0xFF98989D) : const Color(0xFF8E8E93);
     }
   }
 }

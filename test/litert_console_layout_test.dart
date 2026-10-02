@@ -17,9 +17,12 @@
 // And the one that is specific to this screen: a 1024-value feature vector and a
 // logits row per class are both content whose width nobody chose.
 
+import 'dart:ui' show Locale;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
+import 'package:mobilelm/l10n/app_translation.dart';
 import 'package:mobilelm/views/litert_head_console.dart';
 
 /// Drain every exception the framework has queued for this test.
@@ -39,7 +42,31 @@ int _drain(WidgetTester t) {
   }
 }
 
+
 void main() {
+
+  /// Registra as traduções antes de cada montagem.
+  ///
+  /// **Sem isto, `.tr` devolve a própria chave** e todas as asserções deste
+  /// arquivo — que procuram o **texto em inglês que aparece na tela** — falham
+  /// sem que nada tenha mudado. É a mesma razão pela qual 38 chaves apareceram
+  /// como identificadores: o GetX não tem o que mostrar quando o mapa não está
+  /// carregado.
+  ///
+  /// E registrar o mapa **verdadeiro** é o que faz o teste checar o texto real
+  /// em vez do identificador: se a tradução sair errada, a tela mostra outra
+  /// coisa e a asserção pega.
+  ///
+  /// `Get.locale = ...` e **não** `Get.updateLocale(...)`: o segundo é
+  /// assíncrono e reconstrói a árvore, o que dentro de `setUp` dispara
+  /// `'inTest': is not true` do binding — e `Get.testMode = false` para
+  /// contornar piora, porque é ele que permite tocar em ciclo de vida fora de
+  /// um teste.
+  setUp(() {
+    Get.addTranslations(AppTranslation().keys);
+    Get.locale = const Locale('en', 'US');
+  });
+
   // A viewport that is narrower than the A72's ~393 dp and a text scale that
   // makes every label wider. Both are hostile on purpose: at a comfortable size
   // none of these would fail, and a layout test that cannot fail proves nothing.

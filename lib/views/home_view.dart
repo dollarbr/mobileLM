@@ -14,23 +14,23 @@ class HomeView extends GetView<HomeController> {
   const HomeView({super.key});
 
   List<_NavItem> get _tabs => [
-    _NavItem(
-        icon: Icons.bubble_chart_outlined,
-        activeIcon: Icons.bubble_chart,
-        label: 'chat'.tr),
-    _NavItem(
-        icon: Icons.arrow_downward_rounded,
-        activeIcon: Icons.arrow_downward_rounded,
-        label: 'models'.tr),
-    _NavItem(
-        icon: Icons.workspace_premium_outlined,
-        activeIcon: Icons.workspace_premium,
-        label: 'workspace'.tr),
-    _NavItem(
-        icon: Icons.settings_outlined,
-        activeIcon: Icons.settings,
-        label: 'settings'.tr),
-  ];
+        _NavItem(
+            icon: Icons.bubble_chart_outlined,
+            activeIcon: Icons.bubble_chart,
+            label: 'chat'.tr),
+        _NavItem(
+            icon: Icons.arrow_downward_rounded,
+            activeIcon: Icons.arrow_downward_rounded,
+            label: 'models'.tr),
+        _NavItem(
+            icon: Icons.workspace_premium_outlined,
+            activeIcon: Icons.workspace_premium,
+            label: 'workspace'.tr),
+        _NavItem(
+            icon: Icons.settings_outlined,
+            activeIcon: Icons.settings,
+            label: 'settings'.tr),
+      ];
 
   bool get _isWide {
     if (kIsWeb) return true;

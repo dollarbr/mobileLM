@@ -57,7 +57,8 @@ class _ImageViewerState extends State<ImageViewer> {
     } on GalException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${'failed_to_save_image'.tr}: ${e.type.message}')),
+          SnackBar(
+              content: Text('${'failed_to_save_image'.tr}: ${e.type.message}')),
         );
       }
     } catch (e) {
@@ -109,7 +110,8 @@ class _ImageViewerState extends State<ImageViewer> {
                 _bytes,
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const Center(
-                  child: Icon(Icons.broken_image_rounded, color: Colors.white, size: 64),
+                  child: Icon(Icons.broken_image_rounded,
+                      color: Colors.white, size: 64),
                 ),
               ),
             ),
@@ -140,7 +142,8 @@ class _ImageViewerState extends State<ImageViewer> {
               alignment: Alignment.bottomCenter,
               child: Container(
                 margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(16),
@@ -150,7 +153,7 @@ class _ImageViewerState extends State<ImageViewer> {
                   children: [
                     _ActionButton(
                       icon: Icons.download_rounded,
-                      label: 'Download',
+                      label: 'iv_download'.tr,
                       isLoading: _isSaving,
                       onTap: _download,
                     ),

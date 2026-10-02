@@ -10,6 +10,7 @@ import '../controllers/server_controller.dart';
 import '../core/colors.dart';
 import '../services/litert_model.dart';
 import '../services/litert_service.dart';
+import '../services/text_interpolation.dart';
 import '../utils/server_auth.dart';
 import 'api_console_shell.dart';
 
@@ -406,8 +407,9 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
         if (loaded != null && '${loaded['path']}'.endsWith(name)) {
           if (!mounted) return;
           setState(() {
-            _requested =
-                ((loaded['requested'] as List?) ?? const []).map((e) => '$e').toList();
+            _requested = ((loaded['requested'] as List?) ?? const [])
+                .map((e) => '$e')
+                .toList();
             _executed = loaded['executed_accelerator'] as String?;
             _executedNote = loaded['executed_accelerator_note'] as String?;
             _raw = const JsonEncoder.withIndent('  ').convert(loaded);
@@ -466,7 +468,8 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
         }
         body['auxiliary_inputs'] = {
           for (final e in aux.entries)
-            '${e.key}': _parseNumbers('${e.value}', 'auxiliary_inputs.${e.key}'),
+            '${e.key}':
+                _parseNumbers('${e.value}', 'auxiliary_inputs.${e.key}'),
         };
       }
       final json = await _post('/v1/classify', body);
@@ -515,10 +518,10 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
   /// a constant looks like a broken runtime rather than an uninformative input.
   /// This is a sine sweep with two frequencies: deterministic, varied in
   /// magnitude, and it exercises more of the graph than a ramp would.
-  String _sampleVector(int n) =>
-      [for (var i = 0; i < n; i++) (math.sin(i * 0.37) * 0.5 + math.cos(i * 0.11) * 0.25)]
-          .map((v) => v.toStringAsFixed(4))
-          .join(', ');
+  String _sampleVector(int n) => [
+        for (var i = 0; i < n; i++)
+          (math.sin(i * 0.37) * 0.5 + math.cos(i * 0.11) * 0.25)
+      ].map((v) => v.toStringAsFixed(4)).join(', ');
 
   @override
   Widget build(BuildContext context) {
@@ -549,71 +552,71 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
       child: Material(
         type: MaterialType.transparency,
         child: Column(
-        children: [
-          _bar(isDark, card),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-              children: [
-                if (_target == null)
-                  _panel(
-                    card,
-                    Icons.inventory_2_outlined,
-                    'No .tflite to work on',
-                    'A .tflite in the models directory now gets a card in '
-                        'Models — open its console from there, or POST '
-                        '/v1/litert/load with a filename first.',
-                  ),
-                if (_error != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
+          children: [
+            _bar(isDark, card),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+                children: [
+                  if (_target == null)
+                    _panel(
+                      card,
+                      Icons.inventory_2_outlined,
+                      'No .tflite to work on',
+                      'A .tflite in the models directory now gets a card in '
+                          'Models — open its console from there, or POST '
+                          '/v1/litert/load with a filename first.',
                     ),
-                    child: Text(_error!,
+                  if (_error != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(_error!,
+                          style: GoogleFonts.inter(
+                              fontSize: 12, color: AppColors.error)),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  _screenPanel(isDark, field, card, head),
+                  const SizedBox(height: 12),
+                  _acceleratorPanel(isDark, field, card),
+                  if (head != null) ...[
+                    const SizedBox(height: 12),
+                    _inputPanel(isDark, field, head),
+                  ],
+                  const SizedBox(height: 14),
+                  _buttons(isDark),
+                  if (_logits != null) ...[
+                    const SizedBox(height: 14),
+                    _resultPanel(isDark, field, card),
+                  ],
+                  if (_raw != null) ...[
+                    const SizedBox(height: 14),
+                    Text('lhc_response_tap'.tr,
                         style: GoogleFonts.inter(
-                            fontSize: 12, color: AppColors.error)),
-                  ),
-                  const SizedBox(height: 12),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white54 : Colors.black45)),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: _raw!));
+                        Get.snackbar(
+                            'copied', 'the JSON response is on the clipboard',
+                            snackPosition: SnackPosition.BOTTOM,
+                            duration: const Duration(seconds: 2));
+                      },
+                      child: _mono(_raw!, field, maxHeight: 240),
+                    ),
+                  ],
                 ],
-                _screenPanel(isDark, field, card, head),
-                const SizedBox(height: 12),
-                _acceleratorPanel(isDark, field, card),
-                if (head != null) ...[
-                  const SizedBox(height: 12),
-                  _inputPanel(isDark, field, head),
-                ],
-                const SizedBox(height: 14),
-                _buttons(isDark),
-                if (_logits != null) ...[
-                  const SizedBox(height: 14),
-                  _resultPanel(isDark, field, card),
-                ],
-                if (_raw != null) ...[
-                  const SizedBox(height: 14),
-                  Text('response — tap to copy',
-                      style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.white54 : Colors.black45)),
-                  const SizedBox(height: 6),
-                  InkWell(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: _raw!));
-                      Get.snackbar('copied',
-                          'the JSON response is on the clipboard',
-                          snackPosition: SnackPosition.BOTTOM,
-                          duration: const Duration(seconds: 2));
-                    },
-                    child: _mono(_raw!, field, maxHeight: 240),
-                  ),
-                ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -625,8 +628,8 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
       padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
       child: Row(
         children: [
-          Icon(Icons.hexagon_outlined, size: 16,
-              color: isDark ? Colors.white54 : Colors.black45),
+          Icon(Icons.hexagon_outlined,
+              size: 16, color: isDark ? Colors.white54 : Colors.black45),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -641,7 +644,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
             IconButton(
               onPressed: widget.onClose,
               icon: const Icon(Icons.close_fullscreen_rounded, size: 16),
-              tooltip: 'show the conversation',
+              tooltip: 'lhc_show_conversation'.tr,
             ),
         ],
       ),
@@ -670,25 +673,24 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
             ),
             Expanded(
               child: Text(v,
-                  style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10, color: color)),
+                  style: GoogleFonts.jetBrainsMono(fontSize: 10, color: color)),
             ),
           ]),
         );
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-          color: card, borderRadius: BorderRadius.circular(12)),
+      decoration:
+          BoxDecoration(color: card, borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('what the file says about itself',
+          Text('enc_what_file_says'.tr,
               style:
                   GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           if (info == null)
-            Text('not screened yet',
+            Text('lhc_not_screened'.tr,
                 style: GoogleFonts.inter(fontSize: 11, color: dim))
           else ...[
             line('version', '${info.version}'),
@@ -704,24 +706,38 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
                       fontSize: 10, fontWeight: FontWeight.w700)),
               line('  subgraph', '${s.subgraphIndex}'),
               for (final t in s.inputs)
-                line('  in ${t.name}',
+                line(
+                    '  in ${t.name}',
                     '${t.type.label} ${t.shapeLabel}'
-                    '${t.hasDynamicDimension ? '  dynamic' : ''}'),
+                        '${t.hasDynamicDimension ? '  dynamic' : ''}'),
               for (final t in s.outputs)
                 line('  out ${t.name}', '${t.type.label} ${t.shapeLabel}'),
               if (!s.bindable)
-                Text('  not bindable — ${s.unusableReason}',
+                Text(
+                    preencher(
+                        'lhc_not_bindable', {'r': s.unusableReason ?? ''}),
                     style: GoogleFonts.inter(
                         fontSize: 10,
                         color: isDark ? Colors.orange : Colors.deepOrange)),
             ],
             if (head != null) ...[
               const SizedBox(height: 8),
+              // **Um literal, três chaves.** A frase tinha um ternário aninhado com
+              // literais em inglês dentro da própria interpolação, e um ternário
+              // dentro de um `@valor` não é traduzível: a escolha acontece em
+              // Dart e o texto dos dois ramos precisa existir nos dois idiomas.
               Text(
-                'The feature vector fills "${head.features.name}" '
-                '(${head.featureCount} values) — the largest input. '
-                '${head.auxiliary.isEmpty ? 'There are no other inputs.' : 'The other inputs are yours to supply: '
-                    '${head.auxiliary.map((t) => t.name).join(", ")}. They are never filled with zeros.'}',
+                [
+                  preencher('lhc_feature_vector', {
+                    'n': head.features.name,
+                    'c': '${head.featureCount}',
+                  }),
+                  head.auxiliary.isEmpty
+                      ? 'lhc_no_auxiliary'.tr
+                      : preencher('lhc_auxiliary', {
+                          't': head.auxiliary.map((t) => t.name).join(', '),
+                        }),
+                ].join(' '),
                 style: GoogleFonts.inter(fontSize: 10, color: dim),
               ),
             ],
@@ -752,12 +768,12 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
     // chips.
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-          color: card, borderRadius: BorderRadius.circular(12)),
+      decoration:
+          BoxDecoration(color: card, borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('accelerator — what to ask for',
+          Text('lhc_accelerator'.tr,
               style:
                   GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
@@ -770,20 +786,39 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
             children: [
               for (final e in options.entries)
                 ChoiceChip(
-                  label: Text(e.key,
-                      style: GoogleFonts.inter(fontSize: 11)),
+                  label: Text(e.key, style: GoogleFonts.inter(fontSize: 11)),
                   selected: _accelerator.join(',') == e.value.join(','),
                   onSelected: (_) => setState(() => _accelerator = e.value),
                 ),
             ],
           ),
           const SizedBox(height: 8),
+          // **Quatro linhas, quatro chaves, e a quebra entre elas.** Um literal
+          // só com `\n` no meio tem a quebra fixa nos dois idiomas — o que
+          // funciona, e é o que o app já faz em dois outros lugares. Aqui não:
+          // três dos quatro ramos têm um "(not read yet)" condicional que precisa
+          // existir nos dois idiomas, e um ternário **dentro** de um `@valor`
+          // não é traduzível — a escolha acontece em Dart e o texto dos dois
+          // ramos tem que estar no mapa. Uma chave por linha deixa a ordem fixa.
           Text(
-            'device reports: ${_available.isEmpty ? "(not read yet)" : _available.join(", ")}\n'
-            'requested: ${_requested.isEmpty ? "(not loaded yet)" : _requested.join(", ")}\n'
-            'executed: ${_executed ?? "unknown"} — '
-            '${_executedNote ?? "LiteRT 2.2.0 does not expose the accelerator it used, so this console cannot say. On the device, LITERT_CL or CPU in the log is the answer."}'
-            '${_statusError == null ? "" : "\nstatus call failed: $_statusError"}',
+            [
+              preencher('lhc_status_available', {
+                'a': _available.isEmpty
+                    ? 'lhc_never_read_yet'.tr
+                    : _available.join(', '),
+              }),
+              preencher('lhc_status_requested', {
+                'q': _requested.isEmpty
+                    ? 'lhc_not_loaded_yet'.tr
+                    : _requested.join(', '),
+              }),
+              preencher('lhc_status_executed', {
+                'e': _executed ?? 'lhc_unknown'.tr,
+                'n': _executedNote ?? 'lhc_accelerator_not_exposed'.tr,
+              }),
+              if (_statusError != null)
+                preencher('lhc_status_failed', {'e': _statusError!}),
+            ].join('\n'),
             style: GoogleFonts.inter(
                 fontSize: 10,
                 color: _statusError == null
@@ -812,7 +847,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
           _field(
             field,
             'auxiliary_inputs — JSON object, '
-                '${head.auxiliary.map((t) => '"${t.name}": ${t.elementCount} floats').join(", ")}',
+            '${head.auxiliary.map((t) => '"${t.name}": ${t.elementCount} floats').join(", ")}',
             _auxiliary,
             maxLines: 3,
             onFirstBuild: () => _auxiliary.text = '{'
@@ -821,9 +856,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
           ),
           const SizedBox(height: 8),
           Text(
-            'These are not filled with zeros by the app. A head that needs them '
-            'and does not get them is refused by name — a logit computed on '
-            'invented features comes back wearing a confident label.',
+            'lhc_not_zeros'.tr,
             style: GoogleFonts.inter(fontSize: 10, color: dim),
           ),
         ],
@@ -870,15 +903,16 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : Icon(_serverUp
-                  ? Icons.play_arrow_rounded
-                  : Icons.warning_amber_rounded,
+              : Icon(
+                  _serverUp
+                      ? Icons.play_arrow_rounded
+                      : Icons.warning_amber_rounded,
                   size: 18),
           label: Text(_busy
               ? 'running'
               : _serverUp
                   ? 'run'
-                  : 'run — server is off'),
+                  : 'enc_run_server_off'.tr),
         ),
       ],
     );
@@ -887,9 +921,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
   Widget _resultPanel(bool isDark, Color field, Color card) {
     final logits = _logits!;
     final top = _topIndex ?? 0;
-    final mx = logits.isEmpty
-        ? 0.0
-        : logits.reduce((a, b) => a > b ? a : b);
+    final mx = logits.isEmpty ? 0.0 : logits.reduce((a, b) => a > b ? a : b);
     // Bars scaled across the result set rather than from zero: with logits
     // straddling zero — which they do, that is what a logit is — a bar from zero
     // makes the larger of two negative numbers look like the loser.
@@ -900,8 +932,8 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-          color: card, borderRadius: BorderRadius.circular(12)),
+      decoration:
+          BoxDecoration(color: card, borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -932,7 +964,8 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
                         FractionallySizedBox(
                           widthFactor: span == 0
                               ? 0
-                              : ((logits[i] - low).abs() / span).clamp(0.0, 1.0),
+                              : ((logits[i] - low).abs() / span)
+                                  .clamp(0.0, 1.0),
                           child: Container(
                             height: 12,
                             decoration: BoxDecoration(
@@ -961,10 +994,10 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
             ),
           const SizedBox(height: 6),
           Text(
-            'top_index $top by argmax of ${mx.toStringAsFixed(4)}. That is an '
-            'argmax and not a prediction: it is the right reading only for a '
-            'head trained to work that way, and there is no label here because '
-            'only the caller knows what class 0 is.',
+            preencher('lhc_top_index_note', {
+              't': '$top',
+              'm': mx.toStringAsFixed(4),
+            }),
             style: GoogleFonts.inter(
                 fontSize: 10, color: isDark ? Colors.white38 : Colors.black45),
           ),
@@ -1037,8 +1070,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
       children: [
         Text(label,
             style: GoogleFonts.inter(
-                fontSize: 11,
-                color: isDark ? Colors.white54 : Colors.black45)),
+                fontSize: 11, color: isDark ? Colors.white54 : Colors.black45)),
         const SizedBox(height: 4),
         TextField(
           controller: ctrl,

@@ -105,7 +105,8 @@ class ChatBubble extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: GestureDetector(
-                    onTap: () => ImageViewer.show(context, message.imageBase64!),
+                    onTap: () =>
+                        ImageViewer.show(context, message.imageBase64!),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                       child: Image.memory(
@@ -115,7 +116,6 @@ class ChatBubble extends StatelessWidget {
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
                         errorBuilder: (_, __, ___) => Container(
-
                           height: 100,
                           decoration: BoxDecoration(
                             color: isDark
@@ -123,7 +123,9 @@ class ChatBubble extends StatelessWidget {
                                 : Colors.black.withValues(alpha: 0.05),
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          child: const Center(child: Icon(Icons.broken_image_rounded, size: 28)),
+                          child: const Center(
+                              child:
+                                  Icon(Icons.broken_image_rounded, size: 28)),
                         ),
                       ),
                     ),
@@ -222,7 +224,8 @@ class ChatBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (message.imageGenDurationMs != null && message.imageGenDurationMs! > 0)
+                  if (message.imageGenDurationMs != null &&
+                      message.imageGenDurationMs! > 0)
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: Text(
@@ -301,9 +304,7 @@ class ChatBubble extends StatelessWidget {
     final chipBorder = isDark
         ? Colors.white.withValues(alpha: 0.15)
         : Colors.black.withValues(alpha: 0.12);
-    final chipText = isDark
-        ? const Color(0xFFB9F53E)
-        : const Color(0xFF1B5E20);
+    final chipText = isDark ? const Color(0xFFB9F53E) : const Color(0xFF1B5E20);
 
     return SizedBox(
       height: 32,
@@ -349,7 +350,8 @@ class ChatBubble extends StatelessWidget {
     final color = Theme.of(context).colorScheme.onSurface;
     final muted = Theme.of(context).hintColor;
     final base = GoogleFonts.inter(fontSize: 15, color: color, height: 1.5);
-    final codeBlockBg = isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE5E5EA);
+    final codeBlockBg =
+        isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE5E5EA);
 
     return MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
       p: base,
@@ -370,7 +372,9 @@ class ChatBubble extends StatelessWidget {
       blockquoteDecoration: BoxDecoration(
         border: Border(
           left: BorderSide(
-            color: isDark ? Colors.white.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.15),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.15)
+                : Colors.black.withValues(alpha: 0.15),
             width: 3,
           ),
         ),
@@ -392,7 +396,8 @@ class ChatBubble extends StatelessWidget {
       code: GoogleFonts.firaCode(
         fontSize: 11,
         color: muted,
-        backgroundColor: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE5E5EA),
+        backgroundColor:
+            isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE5E5EA),
       ),
       codeblockDecoration: BoxDecoration(
         color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFE5E5EA),

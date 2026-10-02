@@ -46,42 +46,42 @@ class WorkspaceView extends GetView<WorkspaceService> {
           ],
         );
       }),
-      floatingActionButton: Obx(() =>
-          controller.isReady
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    FloatingActionButton.extended(
-                      heroTag: 'new-folder',
-                      onPressed: () => _createFolder(context),
-                      icon: const Icon(Icons.create_new_folder),
-                      label: Text('folder'.tr),
-                      backgroundColor: Colors.blue,
-                    ),
-                    const SizedBox(height: 12),
-                    FloatingActionButton.extended(
-                      heroTag: 'new-file',
-                      onPressed: () => _createFile(context),
-                      icon: const Icon(Icons.description),
-                      label: Text('file'.tr),
-                      backgroundColor: Colors.green,
-                    ),
-                  ],
-                )
-              : const SizedBox.shrink()),
+      floatingActionButton: Obx(() => controller.isReady
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'new-folder',
+                  onPressed: () => _createFolder(context),
+                  icon: const Icon(Icons.create_new_folder),
+                  label: Text('folder'.tr),
+                  backgroundColor: Colors.blue,
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton.extended(
+                  heroTag: 'new-file',
+                  onPressed: () => _createFile(context),
+                  icon: const Icon(Icons.description),
+                  label: Text('file'.tr),
+                  backgroundColor: Colors.green,
+                ),
+              ],
+            )
+          : const SizedBox.shrink()),
     );
   }
 
   Future<void> _createFolder(BuildContext context) async {
-    final name = await _promptName(context, 'New folder', 'Folder name');
+    final name = await _promptName(context, 'wv_new_folder'.tr, 'Folder name');
     if (name == null || name.isEmpty) return;
     final ok = await controller.createFolder(name);
     if (!ok) _showError('Could not create folder (name may be taken).');
   }
 
   Future<void> _createFile(BuildContext context) async {
-    final name = await _promptName(context, 'New file', 'File name (e.g. notes.md)');
+    final name = await _promptName(
+        context, 'wv_new_file'.tr, 'File name (e.g. notes.md)');
     if (name == null || name.isEmpty) return;
     final ok = await controller.createFile(name, content: '');
     if (!ok) _showError('Could not create file (name may be taken).');
@@ -99,8 +99,7 @@ class WorkspaceView extends GetView<WorkspaceService> {
           decoration: InputDecoration(hintText: hint),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
           FilledButton(
             onPressed: () => Get.back(result: ctrl.text.trim()),
             child: Text('create'.tr),
@@ -189,7 +188,8 @@ class _DirList extends StatelessWidget {
           _ItemTile(
             entry: f,
             relPath: service.childRelPath(f.name),
-            onOpen: () => _openFile(context, service, f, service.childRelPath(f.name)),
+            onOpen: () =>
+                _openFile(context, service, f, service.childRelPath(f.name)),
             onRename: () => _rename(context, f.name),
             onDelete: () => _delete(context, f.name),
           ),
@@ -198,7 +198,8 @@ class _DirList extends StatelessWidget {
   }
 
   Future<void> _rename(BuildContext context, String name) async {
-    final newName = await WorkspaceView._promptName(context, 'Rename', 'New name');
+    final newName =
+        await WorkspaceView._promptName(context, 'Rename', 'New name');
     if (newName == null || newName.isEmpty || newName == name) return;
     final ok = await service.renameItem(service.childRelPath(name), newName);
     if (!ok) {
@@ -213,7 +214,9 @@ class _DirList extends StatelessWidget {
         title: Text('confirm_delete'.tr),
         content: Text('${'delete_name'.tr}'.replaceAll('\$name', '$name')),
         actions: [
-          TextButton(onPressed: () => Get.back(result: false), child: Text('cancel'.tr)),
+          TextButton(
+              onPressed: () => Get.back(result: false),
+              child: Text('cancel'.tr)),
           TextButton(
             onPressed: () => Get.back(result: true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -225,7 +228,7 @@ class _DirList extends StatelessWidget {
     if (confirmed != true) return;
     final ok = await service.deleteItem(service.childRelPath(name));
     if (!ok) {
-      Get.snackbar('Workspace', 'Delete failed.',
+      Get.snackbar('Workspace', 'wv_delete_failed'.tr,
           snackPosition: SnackPosition.BOTTOM);
     }
   }
@@ -258,14 +261,16 @@ class _DirList extends StatelessWidget {
                             fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                   IconButton(
-                      onPressed: () => Get.back(), icon: const Icon(Icons.close)),
+                      onPressed: () => Get.back(),
+                      icon: const Icon(Icons.close)),
                 ],
               ),
               const Divider(),
               Expanded(
                 child: SingleChildScrollView(
                   child: SelectableText(content,
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 13)),
                 ),
               ),
             ],
@@ -300,11 +305,8 @@ class _ItemTile extends StatelessWidget {
           entry.isDir ? Icons.folder : Icons.insert_drive_file,
           color: entry.isDir ? Colors.blue : Colors.grey,
         ),
-        title: Text(entry.name,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(entry.isDir
-            ? 'Folder'
-            : _formatSize(entry.size)),
+        title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(entry.isDir ? 'folder'.tr : _formatSize(entry.size)),
         onTap: onOpen,
         trailing: PopupMenuButton<String>(
           onSelected: (v) {

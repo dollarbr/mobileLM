@@ -195,7 +195,7 @@ minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é 
 **inglês como padrão**. A frase sai verdadeira — *antes não existia escolha de
 idioma*: era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência
 medida foram 62 fichas de modelo em inglês numa tela que se dizia portuguesa.
-Agora existem **361 chaves nos dois idiomas** e uma ficha por modelo em cada um.
+Agora existem **596 chaves nos dois idiomas** e uma ficha por modelo em cada um.
 Isto está em "O idioma é escolhido, e o padrão é inglês".
 
 Não é minor "traduzir o app para inglês": a 0.5.1 já tinha metade das chaves
@@ -450,7 +450,7 @@ Quatro decisões que não são óbvias:
 1. **O padrão é `en`, não `auto`.** O GetX devolve a própria chave para uma
    tradução que não existe, e foi assim que 38 chaves apareceram como
    `tool_round_trips` e `mobile_lm` sem nada lançar. Um idioma sem mapa inteiro
-   renderiza 361 identificadores. `LanguagePreference.padrao` tem um teste que
+   renderiza 596 identificadores. `LanguagePreference.padrao` tem um teste que
    falha se virar `auto`.
 2. **O `fallbackLocale` é `en_US`, não `pt_BR`.** Com o fallback em português, uma
    chave que faltasse em inglês aparecia *traduzida* e ninguém notava que faltava.
@@ -533,150 +533,224 @@ estava certo.
 EN diferem na caixa de letras acentuadas, e a regra de exibição (caixa alta,
 entreletra 1.4) pertence ao estilo da seção, não à tradução.
 
-### Os 63 literais que sobraram, e a trava que mede
+### Os literais de tela: 63 → 102 → 123 → 0, e uma classe que recusa ser automática
 
-`test/inline_english_ratchet_test.dart` conta os literais em inglês que sobraram em
-`lib/views/` e `lib/widgets/` e **falha se o número crescer**. É uma trava, não
-uma lista de defeitos: ela não diz que um texto específico está errado, diz que a
-dívida não aumenta.
+O `AGENTS.md` dizia que sobravam **63**. Eram **102**, depois **123**, e a
+contagem esteve errada **cinco vezes**, sempre pelo mesmo motivo: **a trava
+media menos do que dizia.** A tabela é o registro, e cada linha é uma omissão
+diferente.
 
-Os 63 são quase todos **parágrafos de ajuda** em telas secundárias — e quase todos
-são **literais adjacentes**, o mesmo formato que custou três builds no
-`constants.dart`. Reescrever 47 deles com regex é o caminho que produz
-`"…aparelhos compouca RAM"`.
+| contagem | o que a media mal |
+|---|---|
+| 51 | filtro mais frouxo que o atual |
+| 63 | o regex só casava `Text(`; `title:`, `label:`, `labelText:` e `hintText:` usam **dois-pontos**. Faltavam 39 |
+| 102 | `Text` é **sufixo** de `labelText`, `hintText` e `tooltip`. Sem `(?<![A-Za-z_])` o mesmo literal contava 2-3 vezes. Eram 112 posições |
+| 123 | a varredura só olhava o **primeiro** argumento depois de `subtitle:`. Quase todo tile deste app tem `subtitle: cond ? 'a' : 'b'` e **os dois ramos eram invisíveis** |
+| **0 (com o teto em zero e a tela em inglês)** | **`subtitle` não estava na lista de call sites.** Três legendas em inglês ao lado de um teto em zero |
 
-**Uma trava é mais útil aqui do que uma tradução apressada.** O sintoma que o dono
-do app descreveu não era falta de tradução: era um idioma que ninguém escolhia e
-literais que ninguém localizava. Os dois foram fechados. O que sobra é texto de
-referência, e a trava garante que ele não vire texto de interface sem ninguém
-perceber.
+**A última linha é a que importa.** As três legendas eram `subtitle:` de
+`ListTile`, e a lista de call sites — o que a trava conta — não tinha o nome. Um
+teto em zero é a **mesma falha** que um teto alto: o número parou de ser
+informação, e só o aparelho diz. Foi o A72 que disse, com o build instalado e
+`dump` na tela.
 
-<details>
-<summary>Os 63, por arquivo</summary>
+**A lista de call sites tem que incluir todo parâmetro que PINTA texto**:
+`subtitle`, `helperText`, `prefixText`, `suffixText`, `errorText`,
+`semanticCounterText`. `message` e `hint` **não** entram: aparecem em código que
+não é tela, e a lista é o que a trava conta — broaden aqui é o caminho para o
+teto subir sem ninguém traduzir.
 
-```
-settings_view.dart             13    litert_head_console.dart         4
-model_view.dart                13    task_view.dart                   3
-system_one_console.dart         8    hf_search_sheet.dart             2
-encoder_console.dart            7    workspace_setup_view.dart        1
-server_view.dart                6    project_picker_dialog.dart       1
-encoder_parameters_panel.dart   5
-```
+#### Duas varreduras, e por que duas
 
-</details>
+`tool/inline_english_scan.dart` é **estreita de propósito**: só o primeiro
+argumento de `Text`, `title:`, `subtitle:` e companhia, e ignora o que tem `$`.
+É o conjunto que a máquina pode reescrever, porque **o valor no fonte é o valor
+na tela**. `tool/inline_english_broad.dart` olha **todo** literal e é o que
+mostrou que a dívida era de duas ordens de grandeza maior.
 
-**A contagem depende do filtro, e é por isso que o número está no código e não
-numa nota.** Uma auditoria anterior contou 51 e esta conta 63: o primeiro exigia
-letra maiúscula e um conjunto menor de palavras. Registrar o número errado é a
-mesma classe de erro que o "62" do catálogo já produziu três vezes neste repo.
+Os números que saem:
 
-**Duas das chaves novas estavam em português no mapa inglês** —
-`language_changed` e `language_portuguese_brazil_detail` — e o teste de "as chaves
-são iguais nos dois idiomas" não pega, porque a chave está nos dois. Só a leitura
-do valor, idioma a idioma, pega. `test/language_preference_test.dart` faz isso nos
-dois sentidos.
+| varredura | total | de que é |
+|---|---|---|
+| estreita | **0** | nada sobrou reescrevível |
+| ampla, `views` + `widgets` | **195** | **0 de texto de tela**; o resto é identificador, dado, rota, exemplo e comentário |
+| ampla, **+ `lib/controllers`** | **61 de texto** | títulos e corpos de **snackbar e diálogo** — tela, e é o bloco seguinte |
 
-**Uma palavra emprestada é português.** O detector de "valor em inglês dentro do
-mapa PT" acusou `download` e `download_failed` — "Download" é palavra emprestada
-do português brasileiro, é o que a pessoa lê, e a correção seria escrever
-"Transferir" numa interface onde ninguém diz isso.
+**`lib/controllers` entrou porque o A72 mostrou `DOWNLOADED` numa tela em
+português.** O título da seção do catálogo é texto de tela e vivia no controller,
+com `section.title.toUpperCase()` na view — e **as duas varreduras só andavam em
+`views` e `widgets`**, então nenhuma via. É a mesma classe de erro pela quinta
+vez, e agora por **omissão de pasta** em vez de omissão de parâmetro.
 
-**Uma provocação de teste que não muda nada é um teste que não prova nada.** A
-primeira tentativa de fazer a trava falhar trocou um literal inglês por outro
-literal inglês — a contagem não subiu e o teste passou, que era o comportamento
-certo. A segunda adicionou uma segunda string na mesma chamada de `Text`, que o
-regex não vê: ele casa a **primeira**. Só a terceira, um `Text` novo e completo,
-fez a trava fechar. **Antes de acreditar que um teste verde viu a mudança, leia o
-que ele mediu.**
+**`section.title` é chave persistida, e é em inglês de propósito.**
+`expandedSections` é um `Set<String>` no Hive e `toggleSection` compara por esse
+valor: traduzir faria uma seção expandida em inglês **colapsar** quando o app
+passa para português, e o conjunto salvo ficaria com as chaves antigas. O
+defeito aparece como "a tela perdeu o que eu tinha aberto" e não como erro.
+`ModelSection` por isso tem `title` (a chave) e `labelKey` (a tradução), e a view
+pinta `section.label.toUpperCase()`.
 
+**GGUF, LiteRT e TFLite não têm chave de tradução** porque não precisam: são o
+nome do formato e o do repositório de origem, e traduzi-los diria algo diferente
+do que o arquivo é.
 
-Duas regras que custam tempo se ignoradas:
+**O teto da varredura ampla é 61, não zero, e a escolha é deliberada.** Um teto
+em zero com 61 linhas reais seria um teste que passa pelo motivo errado — a mesma
+falha do teto alto. **Zero em `views`/`widgets` está na asserção seguinte**, com
+a razão escrita: se um literal aparecer aí, é regressão e não dívida.
 
-- **O `mmprojFilename` tem que ser único.** O app baixa e guarda o projector por
-  esse nome (`model_controller.dart`), não pelo nome do arquivo na URL. Os repos
-  do Qwen3.5, por exemplo, publicam todos o projector como `mmproj-F16.gguf`, e
-  dois modelos da mesma família sobrescrevem o projector um do outro em silêncio —
-  195 MB virando 637 MB, com o modelo pequeno recebendo o projector do grande.
-  Nome local específico, URL real.
-- **Verifique a URL antes de commitar.** Um 404 só aparece na hora do download e
-  não tem outro sintoma:
-  `curl -sI "<url>" | grep -iE "^HTTP|content-length"` — o `content-length` tem que
-  bater com o campo `size`. As 21 URLs do lote 2026-09-27 foram conferidas assim.
+**Os 83 da ampla não se traduzem, e a lista diz por quê.** `TextLanguage.naoTexto`
+tem 20 entradas, cada uma com o motivo: `'local'` é identificador de runtime
+comparado com `==`, `json['loaded']` é chave de payload, `frequency.startsWith(
+'every')` é comparação, `'List models'` é chave de exemplo JSON, `'# 202, then
+poll …'` é comentário de shell. **Traduzir qualquer um deles muda comportamento
+sem erro nenhum** — o item some da lista, o acesso devolve `null` e o `??` cobre.
+Uma lista de exclusão sem motivo é uma lista que ninguém confere, e o efeito é
+o oposto do pretendido.
 
-**Todo workflow que compila precisa liberar disco antes.** Os nativos vendorizados
-— llama.cpp com backend Vulkan e seus ~300 objetos de shader, LiteRT, Stable
-Diffusion — enchem os ~14 GB livres do runner com intermediários, e o release ainda
-soma R8. O `release.yml` ficou a vida toda sem esse passo (nunca havia rodado) e
-morreria em `No space left on device` na primeira tag; corrigido em `ea9a828`.
+Cinco regras de contexto, cada uma com forma própria de detecção: **dentro de
+comentário** (`//` no começo da linha), **dentro de exemplo de comando** (`curl `,
+`client =`, `#`), **dentro de caso de teste do encoder** (`query:` e `documents:`
+são o que o modelo recebe), **a própria linha de um exemplo de shell**, e
+**fragmento entre dois trechos** (`'x'.split('\n')` casava `).first;\n  model =`
+como literal).
 
-**Assinatura: release sempre com a chave de release, nunca com a de debug.**
+**O filtro de não-texto mora em `lib/services/text_language.dart` e é o mesmo
+para a ferramenta e para a trava**, junto com a lista de palavras. Duas listas em
+dois arquivos divergem em silêncio — foi o que a auditoria de overflow, a de
+overflow de linha e a de descrição de catálogo fizeram neste repo — e aqui a
+divergência foi **contada**: a ferramenta via `Text('READY')` e a trava não; a
+trava via `'No project'` e a ferramenta não.
 
-O `build.gradle.kts` lança exceção em dois casos, e ambos são fatais de propósito:
+#### A reescrita casa por TEXTO, e a linha é a coisa errada
 
-1. `isReleaseBuild` e sem `GITHUB_ACTIONS`/`CI` — release só no CI.
-2. `isReleaseBuild` e sem `android/key.properties` — **não há mais fallback para a
-   chave de debug.** Um escape que existe é um escape que alguém ativa, e a falha
-   que ele causa é invisível até alguém conferir um certificado.
+`tool/catalog_inline.tsv` é `texto-em-inglês<TAB>chave<TAB>português`. **A primeira
+versão era `arquivo:linha`**, e a linha se move: reescrever um literal adjacente
+de três linhas como `'chave'.tr` **apaga duas linhas** e empurra todas as de
+baixo. Depois de uma reescrita de 102 literais, as 21 posições medidas antes
+apontavam para o lugar errado — e a ferramenta aceitou, porque ela confia na
+posição. **Foi o único erro deste trabalho que não dava aviso nenhum.**
 
-Não reintroduza `MOBILELM_ALLOW_DEBUG_RELEASE_SIGNING`. Ele existia, o
-`release.yml` o definia como `"true"` incondicionalmente, e por isso **todo APK
-publicado até 0.3.3 saiu com `CN=Android Debug`** — ou seja, falsificável, já que
-a chave de debug é pública. Os três secrets `RELEASE_*` estavam configurados no
-repo e nenhum workflow os lia. O keystore nunca esteve errado; ninguém o usava.
+O texto é seguro como chave porque **os nove textos repetidos têm tradução
+idêntica nas duas chaves** ("Show API key" em dois cartões, "System One test",
+"Context Size"). O escritor **recusa** um texto repetido com traduções
+diferentes, e o recusa dizendo isso: o casamento por texto não distingue os dois,
+e a segunda tradução é a que a tela mostra.
 
-Hoje o `release.yml` materializa o keystore dos secrets, e o passo
-"The APK is signed with the release key" confere **três** coisas no APK pronto:
-o SHA-256 do certificado tem que ser `1cd43cb7…`, não pode ser
-`CN=Android Debug`, e tem que haver exatamente 1 signer.
+**O inglês nunca é digitado.** `tool/catalog_inline_en.json` é extraído pela
+própria ferramenta do fonte, e o escritor **confere** cada valor contra ele antes
+de escrever os mapas. Um arquivo de traduções com uma coluna de inglês é uma
+segunda cópia que diverge em silêncio, e a divergência apareceria como uma ficha
+errada na tela em vez de um erro aqui.
 
-O pin do fingerprint é o que importa e o que é fácil de não entender. As outras
-duas checagens **passam tranquilamente para uma chave nova** — que é exatamente a
-forma do bug original: uma release que compila, assina e fica verde sendo assinada
-pela chave errada. Testado com um keystore descartável de mesmo DN
-(`CN=dollarbr, OU=mobileLM, O=mobileLM, C=BR`) e fingerprint
-`1904a3bc…`: a checagem antiga aceitava, a nova rejeita. Só o fingerprint separa
-"a nossa chave" de "alguma outra chave que não é de debug".
+#### Oito defeitos da ferramenta, e a razão de ela ser Dart
 
-É essa checagem que converte "toda release da 0.3.4 em diante é assinada com a
-mesma chave" de algo que precisa lembrar para algo que o build exige. **Rotacionar
-a chave de propósito significa mudar o `EXPECTED_CERT` no mesmo commit que troca o
-secret** — e essa fricção é o ponto, não um obstáculo. A chave e a senha também
-estão no Bitwarden, na entrada `mobileLM` (keystore em base64 num campo, porque
-anexo é feature Premium).
+Cada um custou um ciclo:
 
-O alias da chave é **descoberto do próprio keystore** no CI, não guardado num
-quarto secret — um secret que precisa ficar em sincronia com um arquivo acaba
-dessincronizando, e um alias errado aparece como "keystore password was
-incorrect", indistinguível de senha errada. E a descoberta parseia a saída
-**não-verbose** de `keytool -list`: a verbose é traduzida ("Nome do alias:" em
-pt_BR), a linha de entrada `alias, <data>, PrivateKeyEntry,` não é.
+1. **`reversed` não é ordem inversa de posição.** A lista de achados é montada
+   percorrendo os rótulos um a um — todos os `Text`, depois todos os `title`.
+   Reverter inverte a ordem *dos rótulos*, e uma substituição cedo foi aplicada
+   sobre índices que já não valiam: **111.828 linhas inseridas** em catorze
+   arquivos.
+2. **`novo` já continha o prefixo**, que também era prefixado de novo: o começo
+   do arquivo era escrito duas vezes por substituição. O sintoma é o buffer
+   dobrando na primeira e não voltando.
+3. **O `const` qualificador é removido e o construtor **reposto**. A primeira
+   versão tirava `const ` e **não** repunha `Text(`, o que deu **118 erros de
+   sintaxe** em vez de 29 de `const`.
+4. **A busca do `const` vai para trás a partir do literal**, pulando branco,
+   **exigindo uma abertura de construtor**, e para só no fim do statement. Uma
+   versão anterior parava na primeira linha acima e não achava
+   `subtitle: const Text(` com a string na linha seguinte, `decoration: const
+   InputDecoration(`, `const _SectionLabel(`, `return const [` — 16 sobraram.
+   **Linha de argumento não encerra a busca**: `labelText: 'Value',` fica entre o
+   `const` e o literal.
+5. **`src[k + 1]` não desescapa.** Para `\n` grava a letra `n`, e o texto saía
+   `"…tasks arenscheduled…"` — uma frase sem separador, que passa em revisão de
+   código e só aparece na tela.
+6. **Escapar duas vezes.** O `\n` chegava como dois caracteres e o escritor
+   dobrava: `\\n` no fonte, que o Dart lê como barra mais `n`. A versão que
+   resolvia de um lado e não do outro escreveu **uma quebra de linha real dentro
+   de um literal**, que não compila, e o erro apontava para a linha 491 de um
+   arquivo de 1200 linhas.
+7. **Um literal que JÁ é `.tr` não é texto em inglês.** Sem a guarda,
+   `'settings'.tr` virou `'nav_settings'.tr.tr` — que **compila**, porque o
+   segundo `.tr` é só mais uma chamada, e mostra a chave no lugar do texto.
+   Nenhum teste reclamou: o analyzer não tem o que dizer e a chave existe no mapa.
+8. **`.tr.tr` e `src[k+1]` produzem o mesmo tipo de erro**: uma leitura é
+   idêntica ao texto em duas formas, e só a checagem seguinte olha.
 
-**Os três secrets vivem no environment `release`, não no repositório.** E o job
-declara `environment: release`. Duas coisas decorrem, e as duas são o ponto:
+**Um `setUp` que registra as traduções, e o motivo de ele ser o conserto e não a
+edição das asserções.** Três testes de layout procuram **o texto em inglês que
+aparece na tela**. Sem `Get.addTranslations`, `.tr` devolve a própria chave e
+todos falham sem que nada tenha mudado. Trocar as asserções para a chave faria o
+teste parar de checar o texto real.
 
-- Só um job que declara aquele environment lê os secrets. No nível de repositório
-  eles eram visíveis para **todo** workflow do repo, inclusive o `debug-apk.yml`,
-  que roda a cada push.
-- O environment tem política de ref customizada **só para tags**. Push em branch
-  não chega perto da chave. Verificado: um run disparado por branch é rejeitado
-  em 2s com `Branch "..." is not allowed to deploy to release due to environment
-  protection rules`, e um disparado por tag abre os secrets e o certificado confere.
+`Get.addTranslations(AppTranslation().keys)` — o **mapa**, não a classe
+`Translations`. E `Get.locale = const Locale('en', 'US')` e **não**
+`Get.updateLocale(...)`: o segundo é assíncrono e reconstrói a árvore, o que
+dentro de `setUp` dispara `'inTest': is not true`.
 
-`gh secret list --repo` deve voltar **vazio**. Se aparecer algo ali, o environment
-não está protegendo nada.
+#### A classe que recusa ser automática: o literal interpolado
 
-**Required reviewers NÃO funciona neste repositório.** A API responde `App not
-installed on organization`: revisão obrigatória em environment é feature de
-organização, e `dollarbr/mobileLM` é de conta pessoal. A restrição por tag cobre
-o cenário concreto (alguém faz push), mas não dá o portão humano que um org
-permitiria. Se um dia o repo mover para uma org, vale adicionar.
+`looksEnglish` devolve **falso** para qualquer texto com `$`, e está certo: o
+valor no fonte não é o valor na tela, e trocar o literal inteiro por uma chave
+apagaria a parte que muda. A consequência é que a varredura **não vê nada
+disso** — e havia **35** em telas, todos no mesmo formato: um trecho fixo em volta
+de um ou dois valores.
 
-**Secret scanning está ligado** (`secret_scanning` e
-`secret_scanning_push_protection`, ambos `enabled`). Grátis em repo público, e é a
-rede contra alguém um dia fazer `git add -f` de um secret.
+A trava é a mesma, com uma regra a mais: **o idioma é do que SOBRA depois de
+tirar a interpolação.** Passar o literal inteiro a `looksEnglish` dava zero
+sempre, e a trava passava com a tela em inglês.
 
-Debug APK continua com chave de debug — é o correto, elas não são distribuídas e
-precisam instalar por cima de qualquer build.
+A solução é `lib/services/text_interpolation.dart`, e a função **`preencher`**
+troca `@nome` por valor. O GetX tem `trParams`, e ele é o padrão dele — mas
+substitui por uma chave só, e metade destes textos tem **dois** valores, um no
+meio e outro no fim. **E `trParams` não serve dentro de uma interpolação**: é um
+método de `String`, e o resultado de `'chave'.tr` é um `String` estático para o
+analyzer.
+
+**Um `@nome` que sobra é erro, e a conferência é ANTES da troca.** Um `@n`
+esquecido apareceria na tela como `@n` — o mesmo defeito do GetX devolvendo o
+próprio identificador. E conferir **depois** da troca recusa texto legítimo: um
+valor com `@` no meio (um email, um nome de arquivo como `meu@model.gguf`) cria
+um placeholder que ninguém pediu. O conjunto de placeholders vem da
+**tradução**, que é onde ele está escrito.
+
+**Um ternário dentro de um `@valor` não é traduzível.** A escolha acontece em
+Dart e o texto dos dois ramos tem que existir nos dois idiomas — foi o que
+aconteceu no relatório de status do console `.tflite`, que virou quatro chaves
+com a quebra de linha em Dart, e no vetor de features, que tinha um ternário
+aninhado com literais próprios dentro da interpolação e virou três.
+
+#### O que a guarda de idioma pegou logo depois de escrevê-las, e era verdade
+
+- `nav_settings` e `nav_appearance` estavam com o valor **em inglês** no mapa PT.
+  A auditoria de "as chaves são iguais nos dois idiomas" não pega: a chave está
+  nos dois. E as duas eram **duplicatas** de `settings` e `appearance`, que já
+  existiam — a rodada anterior criou chave nova para texto que já tinha.
+- **Uma palavra emprestada é português**, e a segunda vez: `Template` é a mesma
+  palavra nos dois idiomas, e `https://searx.example.org/search` é exemplo de URL.
+- **Palavras que são as duas línguas.** `do` é a forma auxiliar do inglês
+  ("**Do** not suggest this again") e uma das palavras mais comuns do português;
+  `no` é o "não" do inglês e uma preposição do português. Sem uma lista de
+  colisões, o detector acusa a frase **inglesa** como portuguesa.
+
+#### Chave repetida: o Dart aceita, a tela funciona, e o arquivo mente
+
+Um literal de mapa aceita chave repetida, e `flutter analyze` **não reclama**. A
+segunda sobrescreve a primeira, o app funciona e a linha errada continua no
+arquivo. Aconteceu com `set_hops_one` e `set_hops_many`: uma inserção por
+`replace` casou as duas ocorrências da âncora, uma no mapa EN e outra no PT.
+
+O resultado na tela estava **certo** — a última vence — e a contagem de chaves
+também batia, porque `Map` já havia perdido a multiplicidade e um `Set` de
+chaves não vê duplicata. `nenhuma chave é repetida` lê o **fonte**, contando
+ocorrências, e é a única forma de ver isso.
+
+**O `l10n_keys_test` lia comentário.** O padrão `'x'.tr` casava o exemplo na
+explicação de um `const` removido, e acusava duas chaves que só existem num
+comentário. Nenhuma das duas é uma chave, e o teste as pedia no mapa.
 
 ## Aparelhos de teste
 
@@ -1913,7 +1987,7 @@ Os dois mudaram: o app agora fala **inglês por padrão** e o idioma é uma
 **preferência salva** com três opções. Ver "O idioma é escolhido, e o padrão é
 inglês" mais acima, que tem as quatro decisões que não são óbvias.
 
-- **Cobertura auditada, não estimada:** **361 chaves**, **as mesmas nos dois
+- **Cobertura auditada, não estimada:** **596 chaves**, **as mesmas nos dois
   idiomas**, e `test/l10n_keys_test.dart` (10 testes) falha se uma faltar em
   **qualquer** dos dois. Antes desta auditoria o mapa tinha 277 e **38 das chaves
   usadas não estavam nele** — `tool_round_trips` à vista num item de Configurações,

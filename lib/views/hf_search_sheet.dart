@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mobilelm/services/text_interpolation.dart';
 import 'package:get/get.dart';
 
 import '../controllers/model_controller.dart';
@@ -143,7 +144,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
       setState(() {
         _busy = false;
         _loadingMore = false;
-        _error = 'Search failed: $e';
+        _error = preencher('hf_search_failed', {'e': '$e'});
       });
     }
   }
@@ -327,7 +328,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
               onChanged: _onQueryChanged,
               onSubmitted: (_) => _load(reset: true),
               decoration: InputDecoration(
-                hintText: 'Search the GGUF index',
+                hintText: 'hf_search_index'.tr,
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _field.text.isEmpty
                     ? null
@@ -350,8 +351,8 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
           if (_error.isNotEmpty && !_busy)
             Padding(
               padding: const EdgeInsets.only(top: 16),
-              child:
-                  Text(_error, style: TextStyle(color: theme.colorScheme.error)),
+              child: Text(_error,
+                  style: TextStyle(color: theme.colorScheme.error)),
             ),
           Flexible(
             child: _busy
@@ -419,7 +420,8 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
     final hidden = _files.length - visible.length;
     return ListView.builder(
       shrinkWrap: true,
-      itemCount: visible.length + (hidden > 0 ? 1 : 0) + (_config == null ? 0 : 1),
+      itemCount:
+          visible.length + (hidden > 0 ? 1 : 0) + (_config == null ? 0 : 1),
       itemBuilder: (_, i) {
         if (_config != null && i == 0) return _configBanner(theme);
         final j = i - (_config == null ? 0 : 1);
@@ -428,10 +430,10 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
             padding: const EdgeInsets.only(top: 12),
             child: Text(
               '$hidden file${hidden == 1 ? '' : 's'} hidden — larger than this '
-              'phone can load. Turn off "Fits my device" in Filters to see '
+              'phone can load. Turn off "hf_fits_device".tr in Filters to see '
               'them.',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.hintColor),
+              style:
+                  theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
             ),
           );
         }
@@ -480,7 +482,9 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
     if (!isEncoderRepo) return const SizedBox.shrink();
     final color = c.declaresClassificationHead
         ? Colors.green
-        : (theme.brightness == Brightness.dark ? Colors.orange : Colors.deepOrange);
+        : (theme.brightness == Brightness.dark
+            ? Colors.orange
+            : Colors.deepOrange);
     final pooling = c.poolingType;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -501,7 +505,9 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text('the checkpoint says: ${c.architectures.join(', ')}',
+            child: Text(
+                preencher(
+                    'hf_checkpoint_says', {'a': c.architectures.join(', ')}),
                 style: theme.textTheme.bodySmall
                     ?.copyWith(fontWeight: FontWeight.w600, color: color)),
           ),
@@ -510,10 +516,11 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
         Text(c.verdict, style: theme.textTheme.bodySmall),
         if (pooling != null) ...[
           const SizedBox(height: 4),
-          Text('emb_pooler: ${c.embPooler} (llama.cpp pooling $pooling). '
+          Text(
+              'emb_pooler: ${c.embPooler} (llama.cpp pooling $pooling). '
               '${c.ggufPoolingNote}',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.hintColor)),
+              style:
+                  theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
         ],
       ]),
     );
@@ -558,8 +565,8 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
                 if (isRecommended) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primary,
                       borderRadius: BorderRadius.circular(6),
@@ -711,8 +718,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       ChoiceChip(
                         label: Text(e.value),
                         selected: _f.pipelineTag == e.key,
-                        onSelected: (_) =>
-                            setState(() => _f = _f.copyWith(pipelineTag: e.key)),
+                        onSelected: (_) => setState(
+                            () => _f = _f.copyWith(pipelineTag: e.key)),
                       ),
                   ],
                 ),
@@ -797,9 +804,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   onChanged: (v) =>
                       setState(() => _f = _f.copyWith(quantAware: v)),
                   title: Text('quantisation_aware_only'.tr),
-                  subtitle: const Text(
-                      'QAT, QAD, QAFT — trained for 4-bit, so a Q4_0 build '
-                      'holds much closer to full precision'),
+                  subtitle: Text('hf_qat_explained'.tr),
                 ),
                 _label(theme, 'THIS DEVICE'),
                 SwitchListTile(
@@ -809,8 +814,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   onChanged: (v) =>
                       setState(() => _f = _f.copyWith(fitsDevice: v)),
                   title: Text('fits_my_device'.tr),
-                  subtitle: const Text(
-                      'Hide GGUFs too large for this phone\'s memory'),
+                  subtitle: Text('hf_hide_too_large'.tr),
                 ),
               ],
             ),
@@ -846,8 +850,8 @@ class _FiltersSheetState extends State<_FiltersSheet> {
         for (final step in _paramSteps)
           DropdownMenuItem<double?>(
             value: step,
-            child: Text(
-                '${step == step.roundToDouble() ? step.round() : step}B'),
+            child:
+                Text('${step == step.roundToDouble() ? step.round() : step}B'),
           ),
       ],
       onChanged: onChanged,

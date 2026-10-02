@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:mobilelm/services/text_interpolation.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -47,6 +48,7 @@ class ChatView extends GetView<ChatController> {
   static const double _minInputBarHeight = 64;
 
   @override
+
   /// The message list, extracted so the encoder branch can reuse it verbatim
   /// when the console sits below the conversation instead of replacing it.
   Widget _messageList(BuildContext context, bool isDark) {
@@ -211,8 +213,8 @@ class ChatView extends GetView<ChatController> {
                   // name has not changed, which keeps this to one JNI round
                   // trip per load.
                   _inference.loadedModelName.value;
-                  controller.ensureEncoderRoleFor(
-                      _inference.loadedModelName.value);
+                  controller
+                      .ensureEncoderRoleFor(_inference.loadedModelName.value);
                   // An encoder cannot chat. A BERT has no LM head, so the
                   // message list would fill with whatever its output layer
                   // produces and render it as a reply — measured on the Edge
@@ -369,7 +371,11 @@ class ChatView extends GetView<ChatController> {
                           : _appleBlue(context))),
               const SizedBox(width: 5),
               Flexible(
-                  child: Text('$model · ${isLocal ? "Local" : "Cloud"}',
+                  child: Text(
+                      preencher('chat_model_origin', {
+                        'm': '$model',
+                        'o': isLocal ? 'local'.tr : 'cloud'.tr,
+                      }),
                       style: GoogleFonts.inter(
                           fontSize: 12,
                           color: Theme.of(context).hintColor,
@@ -413,7 +419,8 @@ class ChatView extends GetView<ChatController> {
     return Obx(() {
       final project = controller.currentProjectPath.value;
       final bound = project != null;
-      final accent = bound ? const Color(0xFFB9F53E) : Theme.of(context).hintColor;
+      final accent =
+          bound ? const Color(0xFFB9F53E) : Theme.of(context).hintColor;
       return InkWell(
         onTap: controller.changeProjectForCurrentSession,
         borderRadius: BorderRadius.circular(10),
@@ -429,7 +436,7 @@ class ChatView extends GetView<ChatController> {
             const SizedBox(width: 3),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 90),
-              child: Text(project ?? 'No project',
+              child: Text(project ?? 'chat_no_project'.tr,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                       fontSize: 10,
@@ -460,7 +467,7 @@ class ChatView extends GetView<ChatController> {
                 child: CircularProgressIndicator(
                     strokeWidth: 1.5, color: _appleBlue(context))),
             const SizedBox(width: 8),
-            Text('Loading model… $pct%',
+            Text(preencher('chat_loading_pct', {'p': '$pct'}),
                 style: GoogleFonts.inter(
                     fontSize: 12,
                     color: Theme.of(context).hintColor,
@@ -488,12 +495,12 @@ class ChatView extends GetView<ChatController> {
       final active = controller.currentSessionId.value.isNotEmpty &&
           controller.messages.isNotEmpty;
       if (!active) return const SizedBox.shrink();
-      
+
       // Context bar for both local and cloud
       int total = 0;
       int used = 0;
       final isCloud = settings.inferenceMode.value != 'local';
-      
+
       if (isCloud) {
         // Cloud: use detected context window and token count
         final provider = settings.cloudProvider.value;
@@ -513,7 +520,7 @@ class ChatView extends GetView<ChatController> {
             .clamp(0, total)
             .toInt();
       }
-      
+
       if (total == 0) return const SizedBox.shrink();
       final pct = (used / total).clamp(0.0, 1.0).toDouble();
       final warn = pct >= 0.75;
@@ -616,8 +623,7 @@ class ChatView extends GetView<ChatController> {
                         fontWeight: FontWeight.w600,
                         color: isDark ? Colors.white : Colors.black)),
                 const SizedBox(height: 6),
-                Text(
-                    'you_need_to_download_a_model'.tr,
+                Text('you_need_to_download_a_model'.tr,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                         fontSize: 14, color: Theme.of(context).hintColor)),
@@ -641,9 +647,8 @@ class ChatView extends GetView<ChatController> {
             spacing: 10,
             runSpacing: 10,
             alignment: WrapAlignment.center,
-            children: picked
-                .map((s) => _suggestionChip(context, s, isDark))
-                .toList(),
+            children:
+                picked.map((s) => _suggestionChip(context, s, isDark)).toList(),
           );
         }),
       ]),
@@ -739,8 +744,7 @@ class ChatView extends GetView<ChatController> {
                 if (tps <= 0) return const SizedBox.shrink();
                 return Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                        '${tps.toStringAsFixed(1)} tok/s',
+                    child: Text('${tps.toStringAsFixed(1)} tok/s',
                         style: GoogleFonts.inter(
                             fontSize: 10,
                             color: _appleBlue(context),
@@ -953,7 +957,8 @@ class ChatView extends GetView<ChatController> {
                 final isLocalVision = isLocal &&
                     (inf.loadedModelRuntime.value == 'litert'
                         ? inf.isVisionLoaded.value
-                        : inf.ggufVisionLoaded.value || inf.ggufAudioLoaded.value);
+                        : inf.ggufVisionLoaded.value ||
+                            inf.ggufAudioLoaded.value);
                 if (!isCloud && !isLocalVision) return const SizedBox.shrink();
                 return _AttachButton(
                   isDark: isDark,
@@ -1304,7 +1309,7 @@ class _AttachButton extends StatelessWidget {
                   icon: Icons.photo_library_rounded,
                   color: const Color(0xFF30D158),
                   label: 'Photo',
-                  sub: 'From gallery',
+                  sub: 'chat_from_gallery'.tr,
                   isDark: isDarkSheet,
                   onTap: () {
                     Navigator.pop(_);
@@ -1315,7 +1320,7 @@ class _AttachButton extends StatelessWidget {
                 _SheetTile(
                   icon: Icons.attach_file_rounded,
                   color: const Color(0xFFB9F53E),
-                  label: 'File',
+                  label: 'file'.tr,
                   sub: isCloud ? 'PDF, DOCX, text…' : 'PDF, DOCX, text…',
                   isDark: isDarkSheet,
                   onTap: () {

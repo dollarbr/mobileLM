@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' show Locale;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,30 @@ import 'package:mobilelm/services/language_preference.dart';
 ///    derruba a árvore inteira em vez de cair num idioma.
 /// 3. **Metade das traduções.** Um idioma guardado em partes é metade do
 ///    defeito de novo, e a parte que falta é a que ninguém lê no código.
+/// As chaves **como estão no fonte**, com repetição, do mapa pedido.
+///
+/// O `Map` que `AppTranslation().keys` entrega já perdeu a multiplicidade: uma
+/// chave repetida vira uma só, e é por isso que a contagem de chaves e a
+/// auditoria de cobertura não conseguem ver uma duplicata. Este lê o arquivo.
+///
+/// **A região vai de um cabeçalho de mapa ao outro**, e não até o primeiro `}`:
+/// um `}` aparece dentro de um valor — `Max 2.0K tokens` não, mas `'}'` de um
+/// exemplo de API sim — e cortar no primeiro erra o fim e mistura os dois mapas.
+/// `en_US` vem antes de `pt_BR`, então a região do primeiro é o intervalo e a do
+/// segundo é o resto do arquivo.
+List<String> _chavesDoFonte(String lang) {
+  final src = File('lib/l10n/app_translation.dart').readAsStringSync();
+  final ini = src.indexOf("'$lang': {");
+  expect(ini, greaterThan(-1), reason: 'mapa $lang não encontrado');
+  final comecando = ini + "$lang': {".length;
+  final outro = lang == 'en_US' ? src.indexOf("'pt_BR': {", comecando) : -1;
+  final corpo = src.substring(comecando, outro < 0 ? src.length : outro);
+  return RegExp(r"^\s*'([A-Za-z0-9_]+)':", multiLine: true)
+      .allMatches(corpo)
+      .map((m) => m.group(1)!)
+      .toList();
+}
+
 void main() {
   // Os dois mapas são lidos **no corpo de `main`**, e não dentro do `group`.
   // Uma variável declarada dentro de um closure de teste só existe naquele
@@ -191,6 +216,36 @@ void main() {
       expect(en.length, pt.length);
     });
 
+    test('nenhuma chave é repetida, porque a última vence em silêncio', () {
+      // **Um literal de mapa aceita chave repetida, e `flutter analyze` não
+      // reclama.** A segunda sobrescreve a primeira, o app funciona e a linha
+      // errada continua no arquivo. Aconteceu com `set_hops_one` e
+      // `set_hops_many`: uma inserção por `replace` casou as duas ocorrências
+      // da âncora, uma no mapa EN e outra no PT, e cada mapa ficou com o par
+      // duas vezes — o EN em cima do PT no mapa PT. O resultado na tela estava
+      // **certo**, porque a última vence, e a contagem de chaves também
+      // batia. Foi a contagem de `Map` que mascarou as duas, e nenhum teste
+      // olhava a multiplicidade.
+      //
+      // A chave repetida também quebra a auditoria de cobertura: um
+      // `Set` de chaves não vê duplicata, então "as chaves são as mesmas nos
+      // dois idiomas" passa com uma chave a mais num idioma.
+      for (final lang in const ['en_US', 'pt_BR']) {
+        final contagem = <String, int>{};
+        for (final chave in _chavesDoFonte(lang)) {
+          contagem[chave] = (contagem[chave] ?? 0) + 1;
+        }
+        final repetidas = contagem.entries
+            .where((e) => e.value > 1)
+            .map((e) => '${e.key} x${e.value}')
+            .toList();
+        expect(repetidas, isEmpty,
+            reason: 'chave repetida no mapa $lang — o Dart aceita e a última '
+                'vence, então o app funciona e o arquivo mente:\n'
+                '  ${repetidas.take(5).toList()}');
+      }
+    });
+
     test('nenhum valor é vazio, porque vazio é um bug sem mensagem', () {
       for (final mapa in [en, pt]) {
         for (final entrada in mapa.entries) {
@@ -248,15 +303,70 @@ void main() {
       // **A lista é de português de propósito**, pela mesma razão do teste do
       // catálogo: uma lista do que não pode aparecer só funciona se o resto
       // for o universo.
+      // **Palavras que são as duas línguas.** `do` é a forma auxiliar do
+      // inglês ("Do not suggest this again") e uma das palavras mais comuns do
+      // português; `no` é o "não" do inglês e uma preposição do português; `a`
+      // é artigo nos dois. Sem esta lista, o detector acusa a frase **inglesa**
+      // "Do not suggest this again" como portuguesa — e o aviso passa a ser
+      // ruído, que é como um aviso deixa de ser lido.
+      const colisoes = <String>{'do', 'no', 'a', 'o', 'so', 'se'};
       const palavras = <String>{
-        'de', 'do', 'da', 'dos', 'das', 'com', 'sem', 'para', 'nenhum',
-        'nenhuma', 'nunca', 'sempre', 'telefone', 'aparelho', 'tela',
-        'estou', 'está', 'esta', 'este', 'então', 'mas', 'muito', 'pouco',
-        'tudo', 'todo', 'toda', 'todos', 'todas', 'cada', 'quando', 'como',
-        'porque', 'porem', 'portanto', 'voce', 'você', 'aqui', 'ali',
-        'agora', 'ja', 'ainda', 'assim', 'entao', 'mudou', 'alterado',
-        'funcionar', 'funciona', 'mostrar', 'mostra', 'falar', 'fala',
-        'português', 'portugues', 'ingles', 'inglês', 'automatico',
+        'de',
+        'do',
+        'da',
+        'dos',
+        'das',
+        'com',
+        'sem',
+        'para',
+        'nenhum',
+        'nenhuma',
+        'nunca',
+        'sempre',
+        'telefone',
+        'aparelho',
+        'tela',
+        'estou',
+        'está',
+        'esta',
+        'este',
+        'então',
+        'mas',
+        'muito',
+        'pouco',
+        'tudo',
+        'todo',
+        'toda',
+        'todos',
+        'todas',
+        'cada',
+        'quando',
+        'como',
+        'porque',
+        'porem',
+        'portanto',
+        'voce',
+        'você',
+        'aqui',
+        'ali',
+        'agora',
+        'ja',
+        'ainda',
+        'assim',
+        'entao',
+        'mudou',
+        'alterado',
+        'funcionar',
+        'funciona',
+        'mostrar',
+        'mostra',
+        'falar',
+        'fala',
+        'português',
+        'portugues',
+        'ingles',
+        'inglês',
+        'automatico',
       };
       final suspitas = <String>[];
       for (final e in en.entries) {
@@ -264,11 +374,19 @@ void main() {
         // Um valor é suspeito quando tem uma palavra portuguesa **e nenhuma
         // marca de inglês**. Sem a segunda condição, "English" e "Portuguese
         // (Brazil)" — que é o que o seletor mostra de propósito — acusariam.
+        // **Um acerto só vale se NÃO for uma das palavras que existem nas duas
+        // línguas.** `do` é a forma auxiliar do inglês ("Do not suggest this
+        // again") e uma das palavras mais comuns do português; `no` é o "não"
+        // do inglês e uma preposição do português; `a` é artigo nos dois. Sem
+        // esta condição o detector acusa a frase **inglesa** como portuguesa, e
+        // um aviso que dá falso positivo deixa de ser lido.
         final temPt = palavras.any((w) =>
+            !colisoes.contains(w) &&
             texto.contains(RegExp('\\b${RegExp.escape(w)}\\b')));
         if (!temPt) continue;
         final marca = RegExp(r'\b(the|and|with|for|always|whatever|phone|'
-                r'screen|language|changed)\b').hasMatch(texto);
+                r'screen|language|changed)\b')
+            .hasMatch(texto);
         if (marca) continue;
         suspitas.add('${e.key} = "${e.value}"');
       }
@@ -287,11 +405,40 @@ void main() {
       // existia cobre só a forma `foo_bar` de uma chave vazada — não uma
       // frase em inglês.
       const palavras = <String>{
-        'the', 'and', 'with', 'for', 'from', 'this', 'that', 'your', 'you',
-        'will', 'would', 'should', 'always', 'never', 'phone', 'screen',
-        'language', 'changed', 'settings', 'model', 'models', 'load',
-        'delete', 'cancel', 'save', 'answer', 'reply', 'question',
-        'summarise', 'summarize', 'explain', 'convert', 'translate', 'tell',
+        'the',
+        'and',
+        'with',
+        'for',
+        'from',
+        'this',
+        'that',
+        'your',
+        'you',
+        'will',
+        'would',
+        'should',
+        'always',
+        'never',
+        'phone',
+        'screen',
+        'language',
+        'changed',
+        'settings',
+        'model',
+        'models',
+        'load',
+        'delete',
+        'cancel',
+        'save',
+        'answer',
+        'reply',
+        'question',
+        'summarise',
+        'summarize',
+        'explain',
+        'convert',
+        'translate',
+        'tell',
       };
       // **`download` saiu da lista de propósito.** "Download" é palavra
       // emprestada do português brasileiro — `download`, `download falhou`, "o
@@ -301,8 +448,8 @@ void main() {
       final suspitas = <String>[];
       for (final e in pt.entries) {
         final texto = e.value.toLowerCase();
-        if (!palavras.any((w) =>
-            texto.contains(RegExp('\\b${RegExp.escape(w)}\\b')))) {
+        if (!palavras
+            .any((w) => texto.contains(RegExp('\\b${RegExp.escape(w)}\\b')))) {
           continue;
         }
         // Marca de português: acentos, cedilha, ou uma palavra da lista de
@@ -375,13 +522,12 @@ void main() {
     // do resultado ser lido, e apagava a edição. Desde então a provocação é
     // feita e conferida na mesma volta.
     test('a contagem de chaves é a que o catálogo tem hoje', () {
-      // 361 = 314 do mapa herdado + 6 do seletor de idioma + 16 sugestões do
-      // estado vazio do chat + 12 de rótulo/prompt dos chips de resposta + 13 de
-      // Este número já esteve errado três vezes neste repo (45, 62, 10
-      // seção e tema.
-      // Este número já esteve errado três vezes neste repo (45, 62, 10
-      // encoders), então o teste afirma em vez de descrever.
-      expect(en.length, 361);
+      // 535 = 361 do que já existia + 139 literais de tela em telas
+      // secundárias (`tool/inline_english_scan.dart`) + 35 interpolados
+      // (`lib/services/text_interpolation.dart`). Este número já esteve errado
+      // cinco vezes neste repo (45, 62, 10 encoders, 484, 522), então o teste
+      // afirma em vez de descrever.
+      expect(en.length, 596);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

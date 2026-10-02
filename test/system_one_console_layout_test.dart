@@ -1,6 +1,9 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
+import 'package:mobilelm/l10n/app_translation.dart';
 import 'package:mobilelm/services/system_one.dart';
 import 'package:mobilelm/views/system_one_console.dart';
 
@@ -52,6 +55,33 @@ void main() {
     signature: 'serving_default',
     auxiliary: [HeadAuxiliary('feats', 4)],
   );
+
+  /// Registra as traduções antes de cada montagem.
+  ///
+  /// **Sem isto, `.tr` devolve a própria chave** e todas as asserções deste
+  /// arquivo — que procuram o **texto em inglês que aparece na tela** — falham
+  /// sem que nada tenha mudado. É a mesma razão pela qual 38 chaves apareceram
+  /// como identificadores: o GetX não tem o que mostrar quando o mapa não está
+  /// carregado.
+  ///
+  /// E registrar o mapa **verdadeiro** é o que faz o teste checar o texto real
+  /// em vez do identificador: se a tradução sair errada, a tela mostra outra
+  /// coisa e a asserção pega.
+  setUp(() {
+    // `addTranslations` quer o MAPA, nao a classe `Translations` — passar a
+    // classe da um erro de tipo que fala de Map e nao do que esta errado.
+    Get.addTranslations(AppTranslation().keys);
+    // **O locale também precisa ser fixado.** Registrar o mapa não diz ao GetX
+    // qual deles usar: sem `fallbackLocale` nem `locale` ele devolve a própria
+    // chave, e as asserções deste arquivo — que procuram o texto em inglês que
+    // aparece na tela — não acham nada sem que nada tenha mudado.
+    //
+    // `Get.locale = ...` e **não** `Get.updateLocale(...)`: o segundo é
+    // assíncrono e reconstrói a árvore, o que dentro de `setUp` dispara
+    // `'inTest': is not true` do binding. `Get.testMode = false` para contornar
+    // piora: ele é o que permite tocar em ciclo de vida fora de um teste.
+    Get.locale = const Locale('en', 'US');
+  });
 
   Future<void> hostile(WidgetTester tester,
       {SystemOneShape shape = SystemOneShape.decision,

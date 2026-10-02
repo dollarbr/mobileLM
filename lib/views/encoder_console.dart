@@ -11,6 +11,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart'
 import '../controllers/server_controller.dart';
 import '../core/colors.dart';
 import '../services/inference_service.dart';
+import '../services/text_interpolation.dart';
 import '../utils/server_auth.dart';
 import 'system_one_console.dart';
 
@@ -130,9 +131,9 @@ class _EncoderConsoleState extends State<EncoderConsole> {
   /// before spending 100 ms of inference on it.
   List<({String label, String query, String documents})> get _templates {
     if (_role == 'reranker') {
-      return const [
+      return [
         (
-          label: 'the answer is obvious',
+          label: 'enc_case_obvious'.tr,
           query: 'how much storage does the offline map cache use',
           documents:
               'The offline map tiles for the whole region take about 1,4 GB of internal storage.\n'
@@ -143,47 +144,43 @@ class _EncoderConsoleState extends State<EncoderConsole> {
         (
           label: 'all four are on topic',
           query: 'why does my app crash on Android 15',
-          documents:
-              'Android 15 enforces 16 KB page alignment and a library built without it fails to load.\n'
-                  'Android 15 restricts background activity launches and needs new PendingIntent flags.\n'
-                  'Android 15 delivers notifications more slowly to save battery.\n'
-                  'Android 15 adds predictive back for apps that opt in.',
+          documents: 'Android 15 enforces 16 KB page alignment and a library built without it fails to load.\n'
+              'Android 15 restricts background activity launches and needs new PendingIntent flags.\n'
+              'Android 15 delivers notifications more slowly to save battery.\n'
+              'Android 15 adds predictive back for apps that opt in.',
         ),
         (
-          label: 'off domain — scores should flatten',
+          label: 'enc_case_off_domain'.tr,
           query: 'how to bake sourdough bread at home',
-          documents:
-              'Android 15 enforces 16 KB page alignment.\n'
-                  'The map cache holds about 340 MB per city.\n'
-                  'Predictive back is opt-in on Android 15.\n'
-                  'Internal storage shows under Settings, Apps, Storage.',
+          documents: 'Android 15 enforces 16 KB page alignment.\n'
+              'The map cache holds about 340 MB per city.\n'
+              'Predictive back is opt-in on Android 15.\n'
+              'Internal storage shows under Settings, Apps, Storage.',
         ),
         (
           label: 'em português',
           query: 'quanto espaço o cache de mapas ocupa no aparelho',
-          documents:
-              'Os tiles do mapa inteiro ocupam cerca de 1,4 GB de armazenamento interno.\n'
-                  'O cache guarda tiles vetoriais e um índice pequeno, uns 340 MB por cidade.\n'
-                  'O economizador de bateria reduz a atividade de rede em segundo plano.\n'
-                  'Uma receita de pão de fermentação natural com farinha integral.',
+          documents: 'Os tiles do mapa inteiro ocupam cerca de 1,4 GB de armazenamento interno.\n'
+              'O cache guarda tiles vetoriais e um índice pequeno, uns 340 MB por cidade.\n'
+              'O economizador de bateria reduz a atividade de rede em segundo plano.\n'
+              'Uma receita de pão de fermentação natural com farinha integral.',
         ),
         (
-          label: 'self-match — the top of the range',
+          label: 'enc_case_self_match'.tr,
           query: 'a cross-encoder scores a query against a document',
-          documents:
-              'a cross-encoder scores a query against a document',
+          documents: 'a cross-encoder scores a query against a document',
         ),
       ];
     }
     if (_role == 'embedding') {
-      return const [
+      return [
         (
-          label: 'a paraphrase and an unrelated pair',
+          label: 'enc_case_paraphrase'.tr,
           query: 'the cat sat on the sofa',
           documents: '',
         ),
         (
-          label: 'how much storage does the offline map cache use',
+          label: 'enc_case_storage'.tr,
           query: 'how much storage does the offline map cache use',
           documents: '',
         ),
@@ -197,8 +194,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
     return const [];
   }
 
-  void _applyTemplate(
-      String query, String documents) {
+  void _applyTemplate(String query, String documents) {
     _query.text = query;
     if (_role == 'reranker') {
       _documents.text = documents;
@@ -327,7 +323,8 @@ class _EncoderConsoleState extends State<EncoderConsole> {
         throw StateError('the API server has not reported an address yet — '
             'open Settings, API server, and start it');
       }
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5);
       final req = await client.postUrl(Uri.parse('$_base$path'));
       req.headers.contentType = ContentType.json;
       for (final e in _auth.entries) {
@@ -391,25 +388,21 @@ class _EncoderConsoleState extends State<EncoderConsole> {
         children: [
           _panel(
             card,
-            Icon(Icons.rule, color: isDark ? Colors.white54 : Colors.black45,
-                size: 34),
+            Icon(Icons.rule,
+                color: isDark ? Colors.white54 : Colors.black45, size: 34),
             'Not an encoder',
             'This console scores one query against a model, so it needs a BERT\n'
-            'or ModernBERT. A GGUF without that shape cannot be tested here.',
+                'or ModernBERT. A GGUF without that shape cannot be tested here.',
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: _openSystemOne,
             icon: const Icon(Icons.rule, size: 16),
-            label: const Text('Test it as a decision instead'),
+            label: Text('enc_test_as_decision'.tr),
           ),
           const SizedBox(height: 8),
           Text(
-            'A decision model answers a structured question with a class, and it '
-            'is an ordinary GGUF: Tev1-0.8B loads as qwen35 and carries no flag '
-            'saying so. This window shows it options and reports the letter back '
-            '— which is the test, and it is also how you find out whether a model '
-            'behaves like one at all.',
+            'enc_decision_model_explains'.tr,
             style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
           ),
         ],
@@ -490,7 +483,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
             if (widget.onClose != null)
               IconButton(
                 visualDensity: VisualDensity.compact,
-                tooltip: 'hide the console, show the conversation',
+                tooltip: 'enc_hide_console'.tr,
                 icon: const Icon(Icons.close_rounded, size: 18),
                 onPressed: widget.onClose,
               ),
@@ -513,7 +506,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
           _field(field, 'Text', _query, maxLines: 3)
         else ...[
           if (_templates.isNotEmpty) ...[
-            _label('templates', 'tap to fill'),
+            _label('templates', 'enc_tap_to_fill'.tr),
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
@@ -521,8 +514,8 @@ class _EncoderConsoleState extends State<EncoderConsole> {
               children: [
                 for (final t in _templates)
                   ActionChip(
-                    label: Text(t.label,
-                        style: GoogleFonts.inter(fontSize: 11)),
+                    label:
+                        Text(t.label, style: GoogleFonts.inter(fontSize: 11)),
                     onPressed: () => _applyTemplate(t.query, t.documents),
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -560,15 +553,19 @@ class _EncoderConsoleState extends State<EncoderConsole> {
           ),
           icon: _busy
               ? const SizedBox(
-                  width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-              : Icon(_serverUp
-                  ? Icons.play_arrow_rounded
-                  : Icons.warning_amber_rounded, size: 18),
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : Icon(
+                  _serverUp
+                      ? Icons.play_arrow_rounded
+                      : Icons.warning_amber_rounded,
+                  size: 18),
           label: Text(_busy
               ? 'running'
               : _serverUp
                   ? 'run'
-                  : 'run — server is off'),
+                  : 'enc_run_server_off'.tr),
         ),
 
         if ((_info.value?.maxInputTokens ?? 0) > 0) ...[
@@ -600,12 +597,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
           _label('ranked', '$_ms ms  ·  spread ${_spread.toStringAsFixed(4)}'),
           const SizedBox(height: 4),
           Text(
-            'Bar is scaled across this result set, not from zero. A cross-encoder '
-            'logit has no absolute scale — the GTE measured here runs '
-            '0,46 to 0,87 on the sigmoid over a set where one document is the '
-            'answer and three are not, so a bar from zero would draw all four '
-            'nearly full and hide the only thing worth looking at, which is the '
-            'gap. The numbers are the absolute ones.',
+            'enc_bar_scaled'.tr,
             style: GoogleFonts.inter(
                 fontSize: 10, color: isDark ? Colors.white38 : Colors.black45),
           ),
@@ -619,9 +611,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'The scores are identical. Nothing in this set discriminates — '
-                'either the query is unrelated to every document, or the model '
-                'is not scoring. The ranking below is the input order.',
+                'enc_scores_identical'.tr,
                 style: GoogleFonts.inter(fontSize: 11, color: AppColors.error),
               ),
             ),
@@ -646,9 +636,10 @@ class _EncoderConsoleState extends State<EncoderConsole> {
               field),
           if (_vector!.length > 24) ...[
             const SizedBox(height: 4),
-            Text('… ${_vector!.length - 24} more',
+            Text(preencher('enc_more_items', {'n': '${_vector!.length - 24}'}),
                 style: GoogleFonts.inter(
-                    fontSize: 10, color: isDark ? Colors.white38 : Colors.black45)),
+                    fontSize: 10,
+                    color: isDark ? Colors.white38 : Colors.black45)),
           ],
         ],
 
@@ -660,7 +651,8 @@ class _EncoderConsoleState extends State<EncoderConsole> {
             onTap: () {
               Clipboard.setData(ClipboardData(text: _raw!));
               Get.snackbar('copied', 'the JSON response is on the clipboard',
-                  snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
+                  snackPosition: SnackPosition.BOTTOM,
+                  duration: const Duration(seconds: 2));
             },
             child: _mono(_raw!, field, maxHeight: 260),
           ),
@@ -687,8 +679,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
             SizedBox(
               width: 74,
               child: Text(k,
-                  style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10, color: dim)),
+                  style: GoogleFonts.jetBrainsMono(fontSize: 10, color: dim)),
             ),
             Expanded(
               child: Text(v,
@@ -704,33 +695,32 @@ class _EncoderConsoleState extends State<EncoderConsole> {
     return [
       Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        decoration: BoxDecoration(
-            color: card, borderRadius: BorderRadius.circular(12)),
-        child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('what the file says about itself',
-                  style: GoogleFonts.inter(
-                      fontSize: 11, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              line('name', i.ggufName.isEmpty ? '(none)' : i.ggufName),
-              line('tags', tags.isEmpty ? '(none)' : tags.join(', '),
-                  warn: tags.isNotEmpty && _role == 'headless'),
-              line('labels',
-                  i.ggufLabels.isEmpty ? '(none)' : i.ggufLabels.join(', ')),
-              line('pooling',
-                  i.ggufPooling.isEmpty ? '(not declared)' : i.ggufPooling),
-              line('head', i.hasClassificationHead
+        decoration:
+            BoxDecoration(color: card, borderRadius: BorderRadius.circular(12)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('enc_what_file_says'.tr,
+              style:
+                  GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          line('name', i.ggufName.isEmpty ? '(none)' : i.ggufName),
+          line('tags', tags.isEmpty ? '(none)' : tags.join(', '),
+              warn: tags.isNotEmpty && _role == 'headless'),
+          line('labels',
+              i.ggufLabels.isEmpty ? '(none)' : i.ggufLabels.join(', ')),
+          line('pooling',
+              i.ggufPooling.isEmpty ? '(not declared)' : i.ggufPooling),
+          line(
+              'head',
+              i.hasClassificationHead
                   ? 'cls.output.weight present'
                   : 'cls.output.weight ABSENT',
-                  warn: !i.hasClassificationHead && _role == 'headless'),
-              const SizedBox(height: 4),
-              Text(
-                'The file is what decides the role. A tag is an intention, and '
-                'the head is a tensor.',
-                style: GoogleFonts.inter(fontSize: 10, color: dim),
-              ),
-            ]),
+              warn: !i.hasClassificationHead && _role == 'headless'),
+          const SizedBox(height: 4),
+          Text(
+            'enc_file_decides_role'.tr,
+            style: GoogleFonts.inter(fontSize: 10, color: dim),
+          ),
+        ]),
       ),
       const SizedBox(height: 12),
     ];
@@ -775,61 +765,62 @@ class _EncoderConsoleState extends State<EncoderConsole> {
     final accent = isDark ? AppColors.primary : const Color(0xFF6B8E00);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Container(
-                width: 20,
-                height: 20,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: isTop ? accent : field,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text('${rank + 1}',
-                    style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: isTop ? Colors.black : (isDark ? Colors.white54 : Colors.black45),
-                    )),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '${score.toStringAsFixed(4)}',
-                  style: GoogleFonts.jetBrainsMono(
-                      fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ),
-              Text('sigmoid ${_sigmoid(score).toStringAsFixed(4)}',
-                  style: GoogleFonts.jetBrainsMono(
-                      fontSize: 10, color: isDark ? Colors.white38 : Colors.black45)),
-            ]),
-            const SizedBox(height: 5),
-            // Track plus fill. The fill is the score, so it is drawn last and
-            // clipped to the fraction — a `FractionallySizedBox` rather than a
-            // width, because the parent is unconstrained and a hard width would
-            // be wrong on a narrower phone.
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: Container(
-                height: 6,
-                color: field,
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: frac.clamp(0.0, 1.0),
-                  child: Container(color: accent),
-                ),
-              ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isTop ? accent : field,
+              borderRadius: BorderRadius.circular(6),
             ),
-            const SizedBox(height: 5),
-            Text(_docsFor(r['index'] as int),
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: isTop ? FontWeight.w500 : FontWeight.w400,
+            child: Text('${rank + 1}',
+                style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: isTop
+                      ? Colors.black
+                      : (isDark ? Colors.white54 : Colors.black45),
                 )),
-          ]),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${score.toStringAsFixed(4)}',
+              style: GoogleFonts.jetBrainsMono(
+                  fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+          Text('sigmoid ${_sigmoid(score).toStringAsFixed(4)}',
+              style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10,
+                  color: isDark ? Colors.white38 : Colors.black45)),
+        ]),
+        const SizedBox(height: 5),
+        // Track plus fill. The fill is the score, so it is drawn last and
+        // clipped to the fraction — a `FractionallySizedBox` rather than a
+        // width, because the parent is unconstrained and a hard width would
+        // be wrong on a narrower phone.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: Container(
+            height: 6,
+            color: field,
+            alignment: Alignment.centerLeft,
+            child: FractionallySizedBox(
+              widthFactor: frac.clamp(0.0, 1.0),
+              child: Container(color: accent),
+            ),
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(_docsFor(r['index'] as int),
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: isTop ? FontWeight.w500 : FontWeight.w400,
+            )),
+      ]),
     );
   }
 
@@ -874,8 +865,8 @@ class _EncoderConsoleState extends State<EncoderConsole> {
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text('· $e',
-                  style: GoogleFonts.inter(
-                      fontSize: 11, color: Colors.white38)),
+                  style:
+                      GoogleFonts.inter(fontSize: 11, color: Colors.white38)),
             ),
         ],
       ],
@@ -904,19 +895,24 @@ class _EncoderConsoleState extends State<EncoderConsole> {
   }
 
   Widget _label(String t, String hint) => Row(children: [
-        Text(t, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+        Text(t,
+            style:
+                GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
         const Spacer(),
-        Text(hint, style: GoogleFonts.inter(fontSize: 10, color: Colors.white38)),
+        Text(hint,
+            style: GoogleFonts.inter(fontSize: 10, color: Colors.white38)),
       ]);
 
   Widget _row(String a, String b, String c) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
-        child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text(a, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+            Text(a,
+                style: GoogleFonts.inter(
+                    fontSize: 13, fontWeight: FontWeight.w600)),
             const SizedBox(width: 10),
-            Text(b, style: GoogleFonts.inter(fontSize: 10, color: Colors.white38)),
+            Text(b,
+                style: GoogleFonts.inter(fontSize: 10, color: Colors.white38)),
           ]),
           Text(c, style: GoogleFonts.inter(fontSize: 12)),
         ]),
@@ -928,8 +924,8 @@ class _EncoderConsoleState extends State<EncoderConsole> {
             ? const BoxConstraints()
             : BoxConstraints(maxHeight: maxHeight),
         padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-            color: field, borderRadius: BorderRadius.circular(8)),
+        decoration:
+            BoxDecoration(color: field, borderRadius: BorderRadius.circular(8)),
         child: SingleChildScrollView(
           child: Text(s,
               style: GoogleFonts.jetBrainsMono(fontSize: 10.5, height: 1.35)),

@@ -33,6 +33,118 @@ class AppTranslation extends Translations {
   @override
   Map<String, Map<String, String>> get keys => {
     'en_US': {
+      'mc_restore_will_overwrite': '@s saved value(s) will overwrite the current ones.',
+      'mc_switch_needs_restart': 'You already used @c in this app session. Switching to @t without '
+          'restarting can crash the native runtime.\n\nRestart the app, then '
+          'load this model.',
+      'mc_litert_speed_title': '@m LiteRT speed',
+      'mc_model_already_imported': 'A model file named "@f" is already imported in your local app '
+          'storage. Want to load the copy that is already there?',
+      'mc_restart_recommended': 'Restart recommended',
+      'mc_load_model': 'Load model?',
+      'mc_gpu_may_crash': 'GPU can make LiteRT models much faster, closer to Edge Gallery '
+          'speed. On some phones GPU/OpenCL can crash the app while loading. '
+          'If that happens, Auto Fast will use CPU on the next load.',
+      'mv_section_downloaded': 'Downloaded',
+      'mv_section_image': 'Image',
+      'mv_section_custom_gguf': 'Custom GGUF Models',
+      'mv_section_custom_litert': 'Custom LiteRT Models',
+      'mv_section_custom_tflite': 'Custom TFLite Models',
+      'mv_gpu_layers': '⚡ @w (@n layers)',
+      'mv_import_local_or_url': 'Import a local model or add a downloadable URL.',
+      'chat_no_project': 'No project',
+      'enc_tap_to_fill': 'tap to fill',
+      'hf_fits_device': 'Fits my device',
+      'log_no_file': 'No Log File',
+      'log_none_of_filter': 'No @f messages',
+      'mv_no_models_yet': 'No models yet',
+      'mv_no_model_selected': 'No model selected',
+      'mv_api_key': 'API key',
+      'mv_add_key': 'Add Key',
+      'mv_no_projector_paired': 'No projector paired',
+      'mv_added_custom_url': 'Added custom model via URL',
+      'mv_layers_label': '(@n layers)',
+      'sv_api_key_off': 'API key off',
+      'sv_not_available': 'Not available',
+      'sv_health_failed': 'Health failed',
+      'set_all_from_model': 'All from the model',
+      'set_task_created': 'Task created.',
+      'soc_no_feature_vector': 'No feature vector.',
+      'soc_ask_for_the_letter': 'ask for the letter',
+      'wv_new_folder': 'New folder',
+      'wv_new_file': 'New file',
+      'ap_text_file': 'Text file',
+      'log_nothing_written': 'Nothing has been written to disk yet.',
+      'chat_from_gallery': 'From gallery',
+      'encp_file_says': 'file says it is',
+      'sv_port_label': 'PORT',
+      'set_error_label': 'Error',
+      'soc_which_shape': 'which shape is this?',
+      'soc_server_said': 'The server said:',
+      'soc_loaded_name': 'loaded: @l',
+      'soc_the_feature_vector': 'the feature vector',
+      'wv_delete_failed': 'Delete failed.',
+      'encp_unknown': 'unknown',
+      'hf_search_failed': 'Search failed: @e',
+      'set_failed': 'Failed: @e',
+      'mv_name_label': 'Name',
+      'mv_size_label': 'Size',
+      'mv_memory_label': 'Memory',
+      'mv_state_loaded': 'loaded',
+      'mv_state_ready': 'READY',
+      'mv_state_downloaded': 'DOWNLOADED',
+      'mv_load_action': 'Load',
+      'sv_port_field': 'Port',
+      'sv_local_model_ready': 'Local model ready',
+      'sv_no_model_loaded': 'No model loaded — chat and encoder endpoints will refuse; model '
+          'management still works',
+      'set_model_label': 'Model',
+      'soc_local_models': 'local models',
+      'enc_more_items': '… @n more',
+      'lhc_not_bindable': 'not bindable — @r',
+      'lhc_never_read_yet': '(not read yet)',
+      'lhc_not_loaded_yet': '(not loaded yet)',
+      'lhc_unknown': 'unknown',
+      'lhc_accelerator_not_exposed': 'LiteRT 2.2.0 does not expose the accelerator it used, so this '
+          'console cannot say. On the device, LITERT_CL or CPU in the log is '
+          'the answer.',
+      'lhc_status_available': 'device reports: @a',
+      'lhc_status_requested': 'requested: @q',
+      'lhc_status_executed': 'executed: @e — @n',
+      'lhc_status_failed': 'status call failed: @e',
+      'lhc_top_index_note': 'top_index @t by argmax of @m. That is an argmax and not a '
+          'prediction: it is the right reading only for a head trained to '
+          'work that way, and there is no label here because only the caller '
+          'knows what class 0 is.',
+      'mv_paste_provider_key': 'Paste @p key',
+      'tv_steps_status': '@n steps · @s',
+      'chat_model_origin': '@m · @o',
+      'chat_loading_pct': 'Loading model… @p%',
+      'encp_load_error': 'Could not read the loaded model: @e',
+      'hf_checkpoint_says': 'the checkpoint says: @a',
+      'lhc_feature_vector': 'The feature vector fills "@n" (@c values) — the largest input. '
+          '@rest',
+      'mv_local_models': 'LOCAL MODELS (@n)',
+      'mv_download_benchmark_note': '"@n" is @s. It is the smallest model here, and it is what measures '
+          'whether this phone can run a model at all. Without it the test '
+          'cannot run.',
+      'mv_cloud_provider': 'CLOUD · @p',
+      'mv_select_provider_model': 'Select @p Model',
+      'mv_provider_model_count': '@n models - @f',
+      'mv_custom_provider_model': 'Custom @p Model',
+      'mv_delete_filename': '@f will be permanently removed from this device.',
+      'mv_vision_model': 'Vision · @m',
+      'mv_memory_free': '@f free of @t',
+      'set_threads_auto': 'Threads: Auto — the big cores (@n)',
+      'set_cores_left_out': 'Cores cpu0-@n left out; ggml syncs every thread at the end of each '
+          'op and a slow one sets the pace',
+      'soc_what_will_send': 'what the window will send: @o',
+      'soc_the_model_said': 'the model said: @r',
+      'soc_no_confidence': 'no confidence, and here is why: @w',
+      'soc_model_label': 'model: @m',
+      'lhc_no_auxiliary': 'There are no other inputs.',
+      'lhc_auxiliary': 'The other inputs are yours to supply: @t. They are never filled '
+          'with zeros.',
     'about': 'About',
     'active_image_model': 'Active image model',
     'active_model': 'Active model',
@@ -402,8 +514,314 @@ class AppTranslation extends Translations {
     'yes': 'Yes',
     'you_can_change_this_folder_later': 'You can change this folder later',
     'you_need_to_download_a_model': 'You need to download a model',
+      // ── Traduzidas por tool/inline_english_scan.dart ─────────────
+      // A posição no fonte é o que amarra a tradução ao texto: um texto
+      // repetido em dois lugares seria traduzido duas vezes, e a segunda
+      // tradução é a que a tela mostra. Use `.tr` e apague o literal.
+      'set_hops_hint': '0 = no cap, 1–8 = max hops',
+      'mv_one_classification_model': '1 model · classification, not chat',
+      'set_512_detail': '512 gives more detail but can be MUCH slower, heat the phone, and '
+          'may fail on some devices.',
+      'soc_gguf_answers': 'A GGUF answers with a letter or with logits, and which one is only '
+          'visible after a load. The server said:',
+      'soc_classification_head_console': 'A GGUF classification head carries the labels it was trained with, '
+          'so /v1/classify returns them and this window has nothing to ask. '
+          'The encoder console drives that one.',
+      'mv_wifi_recommended': 'A Wi-Fi connection is highly recommended. Please keep the app open '
+          'during the download.',
+      'enc_decision_model_explains': 'A decision model answers a structured question with a class, and '
+          'it is an ordinary GGUF: Tev1-0.8B loads as qwen35 and carries no '
+          'flag saying so. This window shows it options and reports the '
+          'letter back — which is the test, and it is also how you find out '
+          'whether a model behaves like one at all.',
+      'soc_head_not_recognisable': 'A head cannot be recognised by its contents — it has no '
+          '`cls.output.weight` — so the caller is the only thing that can say '
+          'which head it means. That name comes from the TFLite heads card, '
+          'or from whatever `/v1/litert/status` reports as loaded. Neither '
+          'answered, so there is nothing to send.',
+      'soc_head_no_class_names': 'A head does not carry its own class names. Whoever trained it '
+          'knows what class 0 is, and that is you — or whoever you are '
+          'standing in for.',
+      'tv_planning_steps': 'AI is planning steps…',
+      'mv_add_api_key': 'Add API key',
+      'set_no_think_label': 'Answer directly, no reasoning (/no_think)',
+      'sv_anyone_on_network': 'Anyone on this network will be able to use the app\'s server '
+          'without a key. The server listens on all interfaces, not just this '
+          'phone.',
+      'set_apply_template_detail': 'Apply a config template · bring models back',
+      'set_think_label': 'Ask for reasoning before the answer (/think)',
+      'sv_authorization_bearer': 'Authorization: Bearer <key>',
+      'set_bigger_size_detail': 'Auto recommended. Bigger size = better detail, but much slower and '
+          'more memory use.',
+      'set_backup_configs': 'Backup configs…',
+      'enc_bar_scaled': 'Bar is scaled across this result set, not from zero. A '
+          'cross-encoder logit has no absolute scale — the GTE measured here '
+          'runs 0,46 to 0,87 on the sigmoid over a set where one document is '
+          'the answer and three are not, so a bar from zero would draw all '
+          'four nearly full and hide the only thing worth looking at, which '
+          'is the gap. The numbers are the absolute ones.',
+      'mv_chat_template': 'CHAT TEMPLATE',
+      'set_change_folder': 'Change folder…',
+      'wsu_choose_folder': 'Choose workspace folder',
+      'mv_configure_select': 'Configure and select',
+      'set_context_size_a': 'Context Size',
+      'tv_create_task_hint': 'Create a task and the AI will plan\nand execute it autonomously',
+      'set_custom_search_url': 'Custom search API URL',
+      'set_custom_search_token': 'Custom search API token',
+      'set_daily_prompts_detail': 'Daily prompts that run on their own',
+      'mv_delete_model': 'Delete model',
+      'tv_describe_task': 'Describe what you want the AI to do…',
+      'set_notification_detail': 'Display a persistent notification while tasks are\nscheduled or '
+          'model is kept loaded in the background.',
+      'mv_dont_suggest_again': 'Do not suggest this again',
+      'iv_download': 'Download',
+      'mv_download_any_url': 'Download a GGUF or LiteRT model from any URL',
+      'mv_download_benchmark': 'Download the benchmark?',
+      'set_all_cores_big_detail': 'Every core is a big one on this device',
+      'tv_execute_all_steps': 'Execute All Steps',
+      'mv_file_size': 'FILE SIZE',
+      'set_faster_more_ram': 'Faster execution, but uses more RAM and battery',
+      'mv_hide_api_key': 'Hide API key',
+      'hf_hide_too_large': 'Hide GGUFs too large for this phone\'s memory',
+      'mv_image_audio_input': 'Image and audio input — LiteRT-LM only',
+      'mv_import_storage': 'Import from Storage',
+      'mv_inspect_file': 'Inspect the file',
+      'mv_keep_models_anyway': 'Keep models anyway',
+      'sv_keep_key': 'Keep the key',
+      'set_keep_screen_open': 'Keep this screen open',
+      'set_keep_models_detail': 'Keeps the local list whatever the benchmark says, and stops it '
+          'offering to hide it',
+      'soc_load_one_and_probe': 'Load one and tap re-probe, or from a client: POST /v1/models/load '
+          'with "filename" and "accept_risk": true. A .tflite is not a GGUF, '
+          'so it does not answer here: the window finds one on its own when a '
+          'head is loaded, and the TFLite heads card on the Models screen '
+          'opens it by name.',
+      'mv_low_memory': 'Low memory — a large model will fail to load, not run slowly.',
+      'mv_model_info': 'MODEL INFO',
+      'mv_model_url': 'MODEL URL',
+      'set_max_speed_label': 'Maximum speed, may crash on some devices',
+      'wsu_explain_projects': 'MobileLM organizes your work into projects. Pick a folder on this '
+          'device — each project you start later becomes a subfolder inside '
+          'it, where the app can read, create, edit and delete files.',
+      'mv_model_id': 'Model ID',
+      'mv_model_weights': 'Model weights',
+      'set_gpu_experimental_detail': 'Models at or above this size use CPU. Smaller models can use GPU '
+          'Experimental.',
+      'set_more_steps_slower': 'More steps = better quality but MUCH slower!',
+      'set_more_threads_detail': 'More threads, but the slowest core paces every op',
+      'set_change_folder_detail2': 'Moves all existing files into the new folder',
+      'encp_no_encoder': 'No encoder loaded. These settings apply to the next one.',
+      'mv_no_models_loaded': 'No models loaded. Add an API key to update the live list, or use a '
+          'custom model ID.',
+      'tv_no_steps': 'No steps generated.',
+      'set_no_tasks_detail': 'No tasks yet. A task runs its prompt every day at the chosen time '
+          'with the model it was created with — even with the app closed — '
+          'and posts the result here in chat.',
+      'encp_nothing_overridden': 'Nothing overridden',
+      'set_agent_off_detail': 'Off — the tool list is kept out of the prompt',
+      'soc_litert_unload': 'POST /v1/litert/unload. The server stays up and a loaded GGUF is '
+          'untouched — this frees the LiteRT model and nothing else. It is '
+          'the only unload the API can do, because the GGUF one would take '
+          'the server down with it.',
+      'set_workspace_pick_detail': 'Pick a folder to organize your projects',
+      'set_projector_cpu_detail': 'Projector runs on the CPU even when layers are on the GPU',
+      'mv_provider_settings': 'Provider settings',
+      'hf_qat_explained': 'QAT, QAD, QAFT — trained for 4-bit, so a Q4_0 build holds much '
+          'closer to full precision',
+      'sv_require_api_key': 'Require API key',
+      'sv_required_by_toggle': 'Required by the toggle above',
+      'set_restore_backup': 'Restore backup…',
+      'set_benchmark_detail': 'Runs the 230M model and measures real speed',
+      'mv_save_key_to_verify': 'Save the key to verify it and load live models.',
+      'mv_saved_provider': 'Saved provider',
+      'mv_search_hf': 'Search Hugging Face',
+      'mv_search_models': 'Search models...',
+      'mv_search_provider_or_id': 'Search provider models or enter a model ID',
+      'hf_search_index': 'Search the GGUF index',
+      'mv_select_model': 'Select model',
+      'set_send_nothing_default': 'Send nothing — the model\'s own default',
+      'mv_set_base_key_id': 'Set base URL, key, and model ID',
+      'set_backup_detail': 'Settings template (API keys never leave the device) into a dated '
+          'folder of your chosen location.',
+      'set_settings_template_files': 'Settings template · optional model files',
+      'log_share_full': 'Share full log file',
+      'mv_show_api_key': 'Show API key',
+      'set_show_models_ignore': 'Show models, ignore benchmarks',
+      'mv_showing_local_because': 'Showing local models because you asked to ignore benchmarks.',
+      'set_local_only_detail': 'Showing only what is on this device. Encoders still work.',
+      'set_stable_mode_label': 'Stable mode with lower speed',
+      'soc_system_one_test_b': 'System One test',
+      'mv_template': 'Template',
+      'set_backup_restore_detail': 'Template first, then the files in the backup folder',
+      'mv_test_decision': 'Test a decision',
+      'enc_test_as_decision': 'Test it as a decision instead',
+      'set_show_models_ignore_detail': 'The benchmark still shows its number, but never offers to hide the '
+          'local list again',
+      'enc_file_decides_role': 'The file is what decides the role. A tag is an intention, and the '
+          'head is a tensor.',
+      'encp_loaded_reports': 'The loaded model reports',
+      'encp_overrides_apply': 'The overrides below still apply. The auto-detected column is the '
+          'part that needs the model.',
+      'set_privileged_note': 'The privileged tools are listed under Tools. Every one of them '
+          'asks before it runs, reads included.',
+      'enc_scores_identical': 'The scores are identical. Nothing in this set discriminates — '
+          'either the query is unrelated to every document, or the model is '
+          'not scoring. The ranking below is the input order.',
+      'lhc_not_zeros': 'These are not filled with zeros by the app. A head that needs them '
+          'and does not get them is refused by name — a logit computed on '
+          'invented features comes back wearing a confident label.',
+      'ppd_choose_folder': 'This chat works inside a project folder. Choose where its files '
+          'live, or keep it as a general chat.',
+      'set_gpu_first_label': 'Try GPU first, then CPU fallback',
+      'sv_turn_off_key': 'Turn off the API key?',
+      'sv_turning_back_on': 'Turning it back on generates a new key, and anything using the old '
+          'one stops working.',
+      'set_hops_one': 'Agent mode: up to @n hop per message',
+      'set_hops_many': 'Agent mode: up to @n hops per message',
+      'set_unlimited_agent_mode': 'Unlimited agent mode',
+      'mv_unload_model': 'Unload model',
+      'mv_update_api_key': 'Update API key',
+      'mv_openai_endpoint': 'Use any OpenAI-compatible endpoint. Enter the base URL without '
+          '/chat/completions.',
+      'set_workspace_folder': 'Workspace folder',
+      'set_workspace_not_set_up': 'Workspace not set up',
+      'set_change_folder_detail': 'Your current projects and files will be copied into the new '
+          'folder, then this one will be used from now on.',
+      'enc_case_paraphrase': 'a paraphrase and an unrelated pair',
+      'encp_above_reported': 'above what the model reported — using the model\'s',
+      'lhc_accelerator': 'accelerator — what to ask for',
+      'set_auto_size': 'auto size',
+      'mv_download_lower': 'download',
+      'soc_free_head': 'free the compiled head',
+      'enc_hide_console': 'hide the console, show the conversation',
+      'enc_case_storage': 'how much storage does the offline map cache use',
+      'set_custom_search_url_hint': 'https://searx.example.org/search',
+      'set_custom_search_token_hint': 'leave empty for SearXNG',
+      'soc_empty_uses_default': 'left empty uses the model card default',
+      'soc_no_upper_limit': 'no upper limit here: a head has as many classes as it was trained '
+          'with. The 24 is the decision model card\'s number.',
+      'lhc_not_screened': 'not screened yet',
+      'enc_case_off_domain': 'off domain — scores should flatten',
+      'lhc_response_tap': 'response — tap to copy',
+      'enc_run_server_off': 'run — server is off',
+      'enc_case_self_match': 'self-match — the top of the range',
+      'lhc_show_conversation': 'show the conversation',
+      'enc_case_obvious': 'the answer is obvious',
+      'soc_server_no_answer': 'the server did not answer',
+      'enc_what_file_says': 'what the file says about itself',
+      'soc_which_area': 'which area does this belong to?',
     },
     'pt_BR': {
+      'mc_restore_will_overwrite': '@s valor(es) salvo(s) vão sobrescrever os atuais.',
+      'mc_switch_needs_restart': 'Você já usou @c nesta sessão do app. Trocar para @t sem reiniciar '
+          'pode travar o runtime nativo.\n\nReinicie o app e então carregue '
+          'este modelo.',
+      'mc_litert_speed_title': '@m no LiteRT',
+      'mc_model_already_imported': 'Já existe um arquivo de modelo chamado "@f" importado no '
+          'armazenamento local do app. Quer carregar a cópia que já está lá?',
+      'mc_restart_recommended': 'Reinício recomendado',
+      'mc_load_model': 'Carregar modelo?',
+      'mc_gpu_may_crash': 'A GPU pode deixar os modelos LiteRT bem mais rápidos, perto da '
+          'velocidade do Edge Gallery. Em alguns aparelhos a GPU/OpenCL pode '
+          'travar o app durante o carregamento. Se acontecer, o Auto Fast vai '
+          'usar a CPU no próximo carregamento.',
+      'mv_section_downloaded': 'Baixados',
+      'mv_section_image': 'Imagem',
+      'mv_section_custom_gguf': 'Modelos GGUF personalizados',
+      'mv_section_custom_litert': 'Modelos LiteRT personalizados',
+      'mv_section_custom_tflite': 'Modelos TFLite personalizados',
+      'mv_gpu_layers': '⚡ @w (@n camadas)',
+      'mv_import_local_or_url': 'Importe um modelo local ou adicione uma URL para baixar.',
+      'chat_no_project': 'Sem projeto',
+      'enc_tap_to_fill': 'toque para preencher',
+      'hf_fits_device': 'Cabe neste aparelho',
+      'log_no_file': 'Sem arquivo de log',
+      'log_none_of_filter': 'Nenhuma mensagem de @f',
+      'mv_no_models_yet': 'Nenhum modelo ainda',
+      'mv_no_model_selected': 'Nenhum modelo selecionado',
+      'mv_api_key': 'Chave de API',
+      'mv_add_key': 'Adicionar chave',
+      'mv_no_projector_paired': 'Nenhum projetor pareado',
+      'mv_added_custom_url': 'Modelo personalizado adicionado por URL',
+      'mv_layers_label': '(@n camadas)',
+      'sv_api_key_off': 'Chave de API desligada',
+      'sv_not_available': 'Indisponível',
+      'sv_health_failed': 'A verificação falhou',
+      'set_all_from_model': 'Tudo do modelo',
+      'set_task_created': 'Tarefa criada.',
+      'soc_no_feature_vector': 'Sem vetor de features.',
+      'soc_ask_for_the_letter': 'peça a letra',
+      'wv_new_folder': 'Nova pasta',
+      'wv_new_file': 'Novo arquivo',
+      'ap_text_file': 'Arquivo de texto',
+      'log_nothing_written': 'Nada foi escrito em disco ainda.',
+      'chat_from_gallery': 'Da galeria',
+      'encp_file_says': 'o arquivo diz que é',
+      'sv_port_label': 'PORT',
+      'set_error_label': 'Erro',
+      'soc_which_shape': 'qual forma é esta?',
+      'soc_server_said': 'O servidor disse:',
+      'soc_loaded_name': 'carregado: @l',
+      'soc_the_feature_vector': 'o vetor de features',
+      'wv_delete_failed': 'A exclusão falhou.',
+      'encp_unknown': 'desconhecido',
+      'hf_search_failed': 'A busca falhou: @e',
+      'set_failed': 'Falhou: @e',
+      'mv_name_label': 'Nome',
+      'mv_size_label': 'Tamanho',
+      'mv_memory_label': 'Memória',
+      'mv_state_loaded': 'carregado',
+      'mv_state_ready': 'PRONTO',
+      'mv_state_downloaded': 'BAIXADO',
+      'mv_load_action': 'Carregar',
+      'sv_port_field': 'Porta',
+      'sv_local_model_ready': 'Modelo local pronto',
+      'sv_no_model_loaded': 'Nenhum modelo carregado — os endpoints de chat e de encoder vão '
+          'recusar; a gestão de modelos continua funcionando',
+      'set_model_label': 'Modelo',
+      'soc_local_models': 'modelos locais',
+      'enc_more_items': '… mais @n',
+      'lhc_not_bindable': 'não vinculável — @r',
+      'lhc_never_read_yet': '(não lido ainda)',
+      'lhc_not_loaded_yet': '(não carregado ainda)',
+      'lhc_unknown': 'desconhecido',
+      'lhc_accelerator_not_exposed': 'LiteRT 2.2.0 não expõe o acelerador que usou, então este console '
+          'não pode dizer. No aparelho, LITERT_CL ou CPU no log é a resposta.',
+      'lhc_status_available': 'o aparelho relata: @a',
+      'lhc_status_requested': 'pedido: @q',
+      'lhc_status_executed': 'executado: @e — @n',
+      'lhc_status_failed': 'a chamada de status falhou: @e',
+      'lhc_top_index_note': 'top_index @t por argmax de @m. Isso é um argmax e não uma '
+          'predição: é a leitura certa só para uma cabeça treinada assim, e '
+          'não há rótulo aqui porque só quem chama sabe o que é a classe 0.',
+      'mv_paste_provider_key': 'Cole a chave de @p',
+      'tv_steps_status': '@n passos · @s',
+      'chat_model_origin': '@m · @o',
+      'chat_loading_pct': 'Carregando modelo… @p%',
+      'encp_load_error': 'Não foi possível ler o modelo carregado: @e',
+      'hf_checkpoint_says': 'o checkpoint diz: @a',
+      'lhc_feature_vector': 'O vetor de features preenche "@n" (@c valores) — a maior entrada. '
+          '@rest',
+      'mv_local_models': 'MODELOS LOCAIS (@n)',
+      'mv_download_benchmark_note': '"@n" tem @s. É o menor modelo aqui, e é ele que mede se este '
+          'aparelho roda um modelo qualquer. Sem ele o teste não roda.',
+      'mv_cloud_provider': 'NUVEM · @p',
+      'mv_select_provider_model': 'Selecionar modelo de @p',
+      'mv_provider_model_count': '@n modelos - @f',
+      'mv_custom_provider_model': 'Modelo @p personalizado',
+      'mv_delete_filename': '@f será removido permanentemente deste aparelho.',
+      'mv_vision_model': 'Visão · @m',
+      'mv_memory_free': '@f livres de @t',
+      'set_threads_auto': 'Threads: Automático — os núcleos grandes (@n)',
+      'set_cores_left_out': 'Núcleos cpu0-@n fora; o ggml sincroniza todas as threads no fim de '
+          'cada operação e uma lenta marca o ritmo',
+      'soc_what_will_send': 'o que a janela vai enviar: @o',
+      'soc_the_model_said': 'o modelo disse: @r',
+      'soc_no_confidence': 'sem confiança, e este é o motivo: @w',
+      'soc_model_label': 'modelo: @m',
+      'lhc_no_auxiliary': 'Não há outras entradas.',
+      'lhc_auxiliary': 'As outras entradas são suas: @t. Elas nunca são preenchidas com '
+          'zeros.',
       // App basics
       'app_title': 'mobileLM',
       'app_started': 'App iniciado',
@@ -862,6 +1280,209 @@ class AppTranslation extends Translations {
       'theme_dark': 'Escuro',
       'theme_system': 'Padrão do sistema',
       'no_model_loaded': 'Nenhum modelo carregado',
+      // ── Traduzidas por tool/inline_english_scan.dart ─────────────
+      // A posição no fonte é o que amarra a tradução ao texto: um texto
+      // repetido em dois lugares seria traduzido duas vezes, e a segunda
+      // tradução é a que a tela mostra. Use `.tr` e apague o literal.
+      'set_hops_hint': '0 = sem teto, 1–8 = máximo de saltos',
+      'mv_one_classification_model': '1 modelo · classificação, não chat',
+      'set_512_detail': '512 dá mais detalhe, mas pode ser MUITO mais lento, aquecer o '
+          'aparelho e falhar em alguns aparelhos.',
+      'soc_gguf_answers': 'Um GGUF responde com uma letra ou com logits, e qual dos dois só '
+          'aparece depois de carregar. O servidor disse:',
+      'soc_classification_head_console': 'Uma cabeça de classificação GGUF carrega os rótulos com que foi '
+          'treinada, então /v1/classify os devolve e esta janela não tem o '
+          'que perguntar. O console de encoder dirige aquela.',
+      'mv_wifi_recommended': 'Uma conexão Wi-Fi é fortemente recomendada. Mantenha o app aberto '
+          'durante o download.',
+      'enc_decision_model_explains': 'Um decision model responde a uma pergunta estruturada com uma '
+          'classe, e é um GGUF comum: o Tev1-0.8B carrega como qwen35 e não '
+          'carrega nenhuma flag que diga isso. Esta janela mostra as opções '
+          'dele e devolve a letra — que é o teste, e é também como se '
+          'descobre se um modelo se comporta como um.',
+      'soc_head_not_recognisable': 'Uma cabeça não é reconhecível pelo conteúdo — não tem '
+          '`cls.output.weight` — então quem chama é a única coisa que pode '
+          'dizer de qual cabeça se trata. Esse nome vem do card de cabeças '
+          'TFLite, ou do que `/v1/litert/status` reportar como carregado. '
+          'Nenhum dos dois respondeu, então não há o que enviar.',
+      'soc_head_no_class_names': 'Uma cabeça não carrega os próprios nomes de classe. Quem a treinou '
+          'sabe o que é a classe 0, e isso é você — ou quem você está '
+          'representando.',
+      'tv_planning_steps': 'A IA está planejando os passos…',
+      'mv_add_api_key': 'Adicionar chave de API',
+      'set_no_think_label': 'Responder direto, sem raciocínio (/no_think)',
+      'sv_anyone_on_network': 'Qualquer pessoa nesta rede vai poder usar o servidor do app sem '
+          'chave. O servidor escuta em todas as interfaces, não só neste '
+          'aparelho.',
+      'set_apply_template_detail': 'Aplica um template de configuração · traz os modelos de volta',
+      'set_think_label': 'Pedir raciocínio antes da resposta (/think)',
+      'sv_authorization_bearer': 'Authorization: Bearer <key>',
+      'set_bigger_size_detail': 'Automático é o recomendado. Tamanho maior = mais detalhe, mas bem '
+          'mais lento e mais memória.',
+      'set_backup_configs': 'Backup de configs…',
+      'enc_bar_scaled': 'A barra é escalada neste conjunto de resultados, não a partir do '
+          'zero. Um logit de cross-encoder não tem escala absoluta — o GTE '
+          'medido aqui vai de 0,46 a 0,87 no sigmoid sobre um conjunto em que '
+          'um documento é a resposta e três não são, então uma barra a partir '
+          'do zero desenharia os quatro quase cheios e esconderia a única '
+          'coisa que vale olhar, que é a distância entre eles. Os números são '
+          'os absolutos.',
+      'mv_chat_template': 'TEMPLATE DE CHAT',
+      'set_change_folder': 'Trocar pasta…',
+      'wsu_choose_folder': 'Escolher a pasta do workspace',
+      'mv_configure_select': 'Configurar e selecionar',
+      'set_context_size_a': 'Tamanho do contexto',
+      'tv_create_task_hint': 'Crie uma tarefa e a IA vai planejar\nexecutar sozinha',
+      'set_custom_search_url': 'URL da API de busca personalizada',
+      'set_custom_search_token': 'Token da API de busca personalizada',
+      'set_daily_prompts_detail': 'Prompts diários que rodam sozinhos',
+      'mv_delete_model': 'Excluir o modelo',
+      'tv_describe_task': 'Descreva o que você quer que a IA faça…',
+      'set_notification_detail': 'Mostrar uma notificação persistente enquanto houver tarefas '
+          'agendadas\nou um modelo carregado em segundo plano.',
+      'mv_dont_suggest_again': 'Não sugerir isto de novo',
+      'iv_download': 'Baixar',
+      'mv_download_any_url': 'Baixe um modelo GGUF ou LiteRT de qualquer URL',
+      'mv_download_benchmark': 'Baixar o benchmark?',
+      'set_all_cores_big_detail': 'Todos os núcleos deste aparelho são grandes',
+      'tv_execute_all_steps': 'Executar todos os passos',
+      'mv_file_size': 'TAMANHO DO ARQUIVO',
+      'set_faster_more_ram': 'Execução mais rápida, mas usa mais RAM e bateria',
+      'mv_hide_api_key': 'Ocultar a chave de API',
+      'hf_hide_too_large': 'Esconder GGUFs grandes demais para a memória deste aparelho',
+      'mv_image_audio_input': 'Entrada de imagem e áudio — só LiteRT-LM',
+      'mv_import_storage': 'Importar do armazenamento',
+      'mv_inspect_file': 'Inspecionar o arquivo',
+      'mv_keep_models_anyway': 'Manter os modelos assim mesmo',
+      'sv_keep_key': 'Guardar a chave',
+      'set_keep_screen_open': 'Mantenha esta tela aberta',
+      'set_keep_models_detail': 'Mantém a lista local aconteça o que o benchmark disser, e para ele '
+          'de oferecer escondê-la',
+      'soc_load_one_and_probe': 'Carregue um e toque em re-inspecionar, ou por um cliente: POST '
+          '/v1/models/load com "filename" e "accept_risk": true. Um .tflite '
+          'não é GGUF, então não responde aqui: a janela acha um sozinha '
+          'quando uma cabeça é carregada, e o card de cabeças TFLite na tela '
+          'de Modelos abre pelo nome.',
+      'mv_low_memory': 'Pouca memória — um modelo grande não vai ficar lento, vai falhar '
+          'ao carregar.',
+      'mv_model_info': 'INFO DO MODELO',
+      'mv_model_url': 'URL DO MODELO',
+      'set_max_speed_label': 'Velocidade máxima, pode travar em alguns aparelhos',
+      'wsu_explain_projects': 'O MobileLM organiza seu trabalho em projetos. Escolha uma pasta '
+          'neste aparelho — cada projeto que você começar depois vira uma '
+          'subpasta dentro dela, onde o app consegue ler, criar, editar e '
+          'apagar arquivos.',
+      'mv_model_id': 'ID do modelo',
+      'mv_model_weights': 'Pesos do modelo',
+      'set_gpu_experimental_detail': 'Modelos neste tamanho ou acima usam CPU. Modelos menores podem '
+          'usar GPU Experimental.',
+      'set_more_steps_slower': 'Mais passos = mais qualidade, mas MUITO mais lento!',
+      'set_more_threads_detail': 'Mais threads, mas o núcleo mais lento marca o ritmo de cada '
+          'operação',
+      'set_change_folder_detail2': 'Move todos os arquivos existentes para a nova pasta',
+      'encp_no_encoder': 'Nenhum encoder carregado. Estas configurações valem para o '
+          'próximo.',
+      'mv_no_models_loaded': 'Nenhum modelo carregado. Adicione uma chave de API para atualizar '
+          'a lista ao vivo, ou use um ID de modelo personalizado.',
+      'tv_no_steps': 'Nenhum passo gerado.',
+      'set_no_tasks_detail': 'Nenhuma tarefa ainda. Uma tarefa roda o prompt todo dia no horário '
+          'escolhido com o modelo com que foi criada — mesmo com o app '
+          'fechado — e publica o resultado aqui na conversa.',
+      'encp_nothing_overridden': 'Nada substituído',
+      'set_agent_off_detail': 'Desligado — a lista de tools fica fora do prompt',
+      'soc_litert_unload': 'POST /v1/litert/unload. O servidor continua de pé e um GGUF '
+          'carregado não é tocado — isto libera o modelo LiteRT e nada mais. '
+          'É o único unload que a API consegue fazer, porque o do GGUF '
+          'derrubaria o servidor junto.',
+      'set_workspace_pick_detail': 'Escolha uma pasta para organizar seus projetos',
+      'set_projector_cpu_detail': 'O projetor roda na CPU mesmo quando as camadas estão na GPU',
+      'mv_provider_settings': 'Configurações do provedor',
+      'hf_qat_explained': 'QAT, QAD, QAFT — treinados para 4 bits, então um build Q4_0 fica '
+          'bem mais perto da precisão total',
+      'sv_require_api_key': 'Exigir chave de API',
+      'sv_required_by_toggle': 'Exigido pelo botão acima',
+      'set_restore_backup': 'Restaurar backup…',
+      'set_benchmark_detail': 'Roda o modelo de 230M e mede a velocidade real',
+      'mv_save_key_to_verify': 'Salve a chave para verificá-la e carregar modelos ao vivo.',
+      'mv_saved_provider': 'Provedor salvo',
+      'mv_search_hf': 'Pesquisar no Hugging Face',
+      'mv_search_models': 'Pesquisar modelos...',
+      'mv_search_provider_or_id': 'Pesquise os modelos do provedor ou digite um ID de modelo',
+      'hf_search_index': 'Pesquisar no índice GGUF',
+      'mv_select_model': 'Selecionar modelo',
+      'set_send_nothing_default': 'Não enviar nada — o padrão do próprio modelo',
+      'mv_set_base_key_id': 'Defina a URL base, a chave e o ID do modelo',
+      'set_backup_detail': 'Template de configurações (as chaves de API nunca saem do '
+          'aparelho) numa pasta com data, no local que você escolher.',
+      'set_settings_template_files': 'Template de configurações · arquivos de modelo opcionais',
+      'log_share_full': 'Compartilhar o arquivo de log inteiro',
+      'mv_show_api_key': 'Mostrar a chave de API',
+      'set_show_models_ignore': 'Mostrar modelos, ignorar benchmarks',
+      'mv_showing_local_because': 'Mostrando modelos locais porque você pediu para ignorar os '
+          'benchmarks.',
+      'set_local_only_detail': 'Mostrando só o que está neste aparelho. Encoders continuam '
+          'funcionando.',
+      'set_stable_mode_label': 'Modo estável, com velocidade menor',
+      'soc_system_one_test_b': 'Teste System One',
+      'mv_template': 'Template',
+      'set_backup_restore_detail': 'Primeiro o template, depois os arquivos da pasta de backup',
+      'mv_test_decision': 'Testar uma decisão',
+      'enc_test_as_decision': 'Testar como decisão',
+      'set_show_models_ignore_detail': 'O benchmark ainda mostra o número dele, mas nunca mais oferece '
+          'esconder a lista local',
+      'enc_file_decides_role': 'O arquivo é o que decide o papel. Uma tag é uma intenção, e a '
+          'cabeça é um tensor.',
+      'encp_loaded_reports': 'O modelo carregado reporta',
+      'encp_overrides_apply': 'Os overrides abaixo continuam valendo. A coluna detectada '
+          'automaticamente é a parte que precisa do modelo.',
+      'set_privileged_note': 'As ferramentas privilegiadas estão listadas em Ferramentas. Cada '
+          'uma delas pergunta antes de rodar, inclusive as de leitura.',
+      'enc_scores_identical': 'Os scores são idênticos. Nada neste conjunto distingue — ou a '
+          'consulta não tem relação com nenhum documento, ou o modelo não '
+          'está pontuando. A ordenação abaixo é a ordem de entrada.',
+      'lhc_not_zeros': 'Estes não são preenchidos com zero pelo app. Uma cabeça que '
+          'precisa deles e não os recebe é recusada pelo nome — um logit '
+          'calculado sobre inventos volta vestindo um rótulo confiante.',
+      'ppd_choose_folder': 'Esta conversa funciona dentro de uma pasta de projeto. Escolha '
+          'onde ficam os arquivos dela, ou mantenha como conversa geral.',
+      'set_gpu_first_label': 'Tentar GPU primeiro, com CPU como reserva',
+      'sv_turn_off_key': 'Desligar a chave de API?',
+      'sv_turning_back_on': 'Ligar de novo gera uma chave nova, e qualquer coisa usando a '
+          'antiga para de funcionar.',
+      'set_hops_one': 'Modo agente: até @n salto por mensagem',
+      'set_hops_many': 'Modo agente: até @n saltos por mensagem',
+      'set_unlimited_agent_mode': 'Modo agente sem teto seu',
+      'mv_unload_model': 'Descarregar o modelo',
+      'mv_update_api_key': 'Atualizar a chave de API',
+      'mv_openai_endpoint': 'Use qualquer endpoint compatível com OpenAI. Informe a URL base '
+          'sem /chat/completions.',
+      'set_workspace_folder': 'Pasta do workspace',
+      'set_workspace_not_set_up': 'Workspace não configurado',
+      'set_change_folder_detail': 'Seus projetos e arquivos atuais serão copiados para a nova pasta, '
+          'e a partir de agora esta passa a ser a usada.',
+      'enc_case_paraphrase': 'uma paráfrase e um par sem relação',
+      'encp_above_reported': 'acima do que o modelo reportou — usando o do modelo',
+      'lhc_accelerator': 'acelerador — o que pedir',
+      'set_auto_size': 'tamanho automático',
+      'mv_download_lower': 'baixar',
+      'soc_free_head': 'liberar a cabeça compilada',
+      'enc_hide_console': 'esconder o console, mostrar a conversa',
+      'enc_case_storage': 'quanto espaço o cache do mapa offline usa',
+      'set_custom_search_url_hint': 'https://searx.example.org/search',
+      'set_custom_search_token_hint': 'deixe vazio para SearXNG',
+      'soc_empty_uses_default': 'vazio usa o padrão do card do modelo',
+      'soc_no_upper_limit': 'Sem teto aqui: uma cabeça tem quantas classes foi treinada. O 24 é '
+          'o número do card de decision model.',
+      'lhc_not_screened': 'ainda não inspecionado',
+      'enc_case_off_domain': 'fora do domínio — os scores devem achatar',
+      'lhc_response_tap': 'response — toque para copiar',
+      'enc_run_server_off': 'rodar — o servidor está desligado',
+      'enc_case_self_match': 'auto-correspondência — o topo da faixa',
+      'lhc_show_conversation': 'mostrar a conversa',
+      'enc_case_obvious': 'a resposta é óbvia',
+      'soc_server_no_answer': 'o servidor não respondeu',
+      'enc_what_file_says': 'o que o arquivo diz sobre si mesmo',
+      'soc_which_area': 'a que área isto pertence?',
     }
   };
 }

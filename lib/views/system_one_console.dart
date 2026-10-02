@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mobilelm/services/text_interpolation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -146,6 +147,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   String? _vectorProblem;
 
   SystemOneResult? _result;
+
   /// A short, positive report of something the screen did on purpose. Separate
   /// from [_error] because an unload that worked is not an error, and putting it
   /// in the red box would teach the user that the app is broken when it is not.
@@ -229,8 +231,9 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     );
   }
 
-  ServerController? get _server =>
-      Get.isRegistered<ServerController>() ? Get.find<ServerController>() : null;
+  ServerController? get _server => Get.isRegistered<ServerController>()
+      ? Get.find<ServerController>()
+      : null;
 
   Future<void> _probe() async {
     final url = widget.baseUrl ?? _server?.baseUrl ?? '';
@@ -278,51 +281,51 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// What the phone has loaded, across all three runtimes.
 
   Future<void> _deviceState() async {
-        Map<String, dynamic>? local;
-        Map<String, dynamic>? caps;
-        Map<String, dynamic>? litert;
-        final failures = <String>[];
+    Map<String, dynamic>? local;
+    Map<String, dynamic>? caps;
+    Map<String, dynamic>? litert;
+    final failures = <String>[];
 
-        // **Three `try`s, not one.** A single try would discard the two answers
-        // that did arrive because the third one failed, and the window would go on
-        // saying "nothing loaded" because the LiteRT probe refused.
-        Future<void> probe(
-        String what,
-        String path,
-        void Function(Map<String, dynamic>) into,
-        ) async {
-        try {
-          into(await _request('GET', path));
-        } on Object catch (e) {
-          // Written, not swallowed: a poll that fails in silence is what makes a
-          // blank panel read as "the phone has not answered yet".
-          failures.add('$what: $e');
-        }
-        }
-
-        await probe('local models', '/v1/models/local', (j) => local = j);
-        await probe('capabilities', '/v1/server/capabilities', (j) => caps = j);
-        await probe('litert status', '/v1/litert/status', (j) => litert = j);
-        if (!mounted) return;
-
-        final device = DeviceState.fromResponses(
-        local: local,
-        capabilities: caps,
-        litertStatus: litert,
-        );
-        setState(() {
-        _device = device;
-        _loadedName = device.ggufName;
-        _loadedRuntime = device.ggufRuntime;
-        _resolvedShape = resolveSystemOneShape(device, given: widget.shape);
-        _headFilename =
-            resolveSystemOneHeadFilename(device, fromCard: widget.filename);
-        _error = failures.isEmpty
-            ? null
-            : 'could not read '
-                '${failures.map((f) => f.split(':').first).join(', ')}';
-        });
+    // **Three `try`s, not one.** A single try would discard the two answers
+    // that did arrive because the third one failed, and the window would go on
+    // saying "nothing loaded" because the LiteRT probe refused.
+    Future<void> probe(
+      String what,
+      String path,
+      void Function(Map<String, dynamic>) into,
+    ) async {
+      try {
+        into(await _request('GET', path));
+      } on Object catch (e) {
+        // Written, not swallowed: a poll that fails in silence is what makes a
+        // blank panel read as "the phone has not answered yet".
+        failures.add('$what: $e');
+      }
     }
+
+    await probe('soc_local_models'.tr, '/v1/models/local', (j) => local = j);
+    await probe('capabilities', '/v1/server/capabilities', (j) => caps = j);
+    await probe('litert status', '/v1/litert/status', (j) => litert = j);
+    if (!mounted) return;
+
+    final device = DeviceState.fromResponses(
+      local: local,
+      capabilities: caps,
+      litertStatus: litert,
+    );
+    setState(() {
+      _device = device;
+      _loadedName = device.ggufName;
+      _loadedRuntime = device.ggufRuntime;
+      _resolvedShape = resolveSystemOneShape(device, given: widget.shape);
+      _headFilename =
+          resolveSystemOneHeadFilename(device, fromCard: widget.filename);
+      _error = failures.isEmpty
+          ? null
+          : 'could not read '
+              '${failures.map((f) => f.split(':').first).join(', ')}';
+    });
+  }
 
   /// What the head wants, read from what the server reports about it.
   ///
@@ -475,7 +478,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     final vector = _parsedVector;
     final problem = vector?.problem;
     if (vector == null || problem != null) {
-      setState(() => _error = problem ?? 'No feature vector.');
+      setState(() => _error = problem ?? 'soc_no_feature_vector'.tr);
       return;
     }
     final name = _headFilename;
@@ -614,14 +617,12 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                       _card(
                         card,
                         field,
-                        'which shape is this?',
+                        'soc_which_shape'.tr,
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'A GGUF answers with a letter or with logits, and '
-                              'which one is only visible after a load. The '
-                              'server said:',
+                              'soc_gguf_answers'.tr,
                               style: GoogleFonts.inter(
                                   fontSize: 12, color: AppColors.textSecondary),
                             ),
@@ -649,13 +650,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                               // reached from a place where loading a model is
                               // three screens away.
                               Text(
-                                'Load one and tap re-probe, or from a client: '
-                                'POST /v1/models/load with "filename" and '
-                                '"accept_risk": true. A .tflite is not a GGUF, '
-                                'so it does not answer here: the window finds '
-                                'one on its own when a head is loaded, and the '
-                                'TFLite heads card on the Models screen opens '
-                                'it by name.',
+                                'soc_load_one_and_probe'.tr,
                                 style: GoogleFonts.inter(
                                     fontSize: 11, color: AppColors.info),
                               ),
@@ -663,18 +658,17 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                           ],
                         ),
                       ),
-                    if (shape == SystemOneShape.tfliteHead) ..._headPanels(card, field),
-                    if (shape == SystemOneShape.decision) ..._decisionPanels(card, field),
+                    if (shape == SystemOneShape.tfliteHead)
+                      ..._headPanels(card, field),
+                    if (shape == SystemOneShape.decision)
+                      ..._decisionPanels(card, field),
                     if (shape == SystemOneShape.ggufHead)
                       _card(
                         card,
                         field,
                         'this one is a head with a label set of its own',
                         Text(
-                          'A GGUF classification head carries the labels it was '
-                          'trained with, so /v1/classify returns them and this '
-                          'window has nothing to ask. The encoder console drives '
-                          'that one.',
+                          'soc_classification_head_console'.tr,
                           style: GoogleFonts.inter(
                               fontSize: 12, color: AppColors.textSecondary),
                         ),
@@ -699,7 +693,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('System One test',
+                Text('soc_system_one_test_b'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 16, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
@@ -709,7 +703,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                       fontSize: 12, color: AppColors.textSecondary),
                 ),
                 if (!_serverUp)
-                  Text('the server did not answer',
+                  Text('soc_server_no_answer'.tr,
                       style: GoogleFonts.inter(
                           fontSize: 11, color: AppColors.error)),
               ],
@@ -753,7 +747,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       if (shape == SystemOneShape.tfliteHead && _headFilename != null)
         _headFilename!,
       if (shape == SystemOneShape.decision && _loadedName.isNotEmpty)
-        'loaded: $_loadedName',
+        preencher('soc_loaded_name', {'l': _loadedName}),
       if (shape == SystemOneShape.tfliteHead && _wantedFeatures != null)
         'wants $_wantedFeatures numbers',
     ];
@@ -778,7 +772,8 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             border: InputBorder.none,
           ),
         ),
-        note: 'Sent inside a JSON envelope, never as instructions. A ticket with '
+        note:
+            'Sent inside a JSON envelope, never as instructions. A ticket with '
             'quotes and braces must not be able to change the shape of the '
             'question.',
       ),
@@ -790,7 +785,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           controller: _question,
           style: GoogleFonts.inter(fontSize: 13),
           decoration: InputDecoration(
-            hintText: 'which area does this belong to?',
+            hintText: 'soc_which_area'.tr,
             hintStyle:
                 GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
             border: InputBorder.none,
@@ -808,16 +803,17 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           minLines: 1,
           style: GoogleFonts.inter(fontSize: 13),
           decoration: InputDecoration(
-            hintText: 'left empty uses the model card default',
+            hintText: 'soc_empty_uses_default'.tr,
             hintStyle:
                 GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
             border: InputBorder.none,
           ),
         ),
-        note: 'The default already says the three things that matter: treat the '
+        note:
+            'The default already says the three things that matter: treat the '
             'state as data, pick exactly one, return only the letter.',
       ),
-      _actions(() => _runDecision(), 'ask for the letter'),
+      _actions(() => _runDecision(), 'soc_ask_for_the_letter'.tr),
     ];
   }
 
@@ -831,7 +827,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       _card(
         card,
         field,
-        'the feature vector',
+        'soc_the_feature_vector'.tr,
         TextField(
           controller: _vector,
           maxLines: 4,
@@ -847,7 +843,8 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             border: InputBorder.none,
           ),
         ),
-        note: 'A head wants ${_wantedFeatures ?? 'an unknown number of'} floats '
+        note:
+            'A head wants ${_wantedFeatures ?? 'an unknown number of'} floats '
             'and nobody types that. One comes out of POST /v1/embeddings, using '
             "one of the app's embedding encoders — paste it here."
             '${widget.embedders.isEmpty ? '' : ' In the catalogue: ${widget.embedders.take(3).join(', ')}.'}',
@@ -877,15 +874,12 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           child: TextButton.icon(
             onPressed: _busy ? null : () => _unloadHead(),
             icon: const Icon(Icons.layers_clear_outlined, size: 16),
-            label: Text('free the compiled head',
+            label: Text('soc_free_head'.tr,
                 style: GoogleFonts.inter(fontSize: 12, color: AppColors.error)),
           ),
         ),
         Text(
-          'POST /v1/litert/unload. The server stays up and a loaded GGUF is '
-          'untouched — this frees the LiteRT model and nothing else. It is the '
-          'only unload the API can do, because the GGUF one would take the server '
-          'down with it.',
+          'soc_litert_unload'.tr,
           style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
         ),
       ],
@@ -928,12 +922,9 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           field,
           'no .tflite to name',
           Text(
-            'A head cannot be recognised by its contents — it has no '
-            '`cls.output.weight` — so the caller is the only thing that can say '
-            'which head it means. That name comes from the TFLite heads card, or '
-            'from whatever `/v1/litert/status` reports as loaded. Neither '
-            'answered, so there is nothing to send.',
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+            'soc_head_not_recognisable'.tr,
+            style:
+                GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
           ),
         ),
       for (final aux in head.auxiliary)
@@ -1016,31 +1007,41 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: TextField(
                         style: GoogleFonts.inter(fontSize: 13),
-                        decoration: const InputDecoration(
-                            border: InputBorder.none),
-                        controller: TextEditingController(
-                            text: _options.items[i].label)
-                          ..selection = TextSelection.collapsed(
-                              offset: _options.items[i].label.length),
+                        decoration:
+                            const InputDecoration(border: InputBorder.none),
+                        controller:
+                            TextEditingController(text: _options.items[i].label)
+                              ..selection = TextSelection.collapsed(
+                                  offset: _options.items[i].label.length),
                         onChanged: (v) => _setOption(i, v),
                       ),
                     ),
                   ),
                   IconButton(
                     tooltip: 'remove',
-                    onPressed: () => setState(
-                        () => _options = _options.removeAt(i)),
+                    onPressed: () =>
+                        setState(() => _options = _options.removeAt(i)),
                     icon: const Icon(Icons.close, size: 16),
                   ),
                 ],
               ),
             ),
-          _add('add an option', () => setState(() => _options = _options.add())),
+          _add(
+              'add an option', () => setState(() => _options = _options.add())),
           if (problem != null) _problem(problem),
           const SizedBox(height: 6),
-          Text('what the window will send: ${_options.toChoices()}',
-              style: GoogleFonts.inter(
-                  fontSize: 11, color: AppColors.textMuted)),
+          Text(
+              preencher('soc_what_will_send', {
+                // **`toChoices()` devolve um mapa, e a linha mostra o mapa inteiro.**
+                // `toString()` de um `Map` é `{A: bug, B: billing}` — sem aspas nas
+                // chaves — e é isso que o painel mostra de propósito: a letra *e* o
+                // rótulo que a pessoa escreveu. Reduzir para `keys.join(' ')`
+                // deixaria só a letra, e o test que afirma esta linha passaria a
+                // procurar um texto que não existe mais.
+                'o': _options.toChoices().toString(),
+              }),
+              style:
+                  GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
         ],
       ),
     );
@@ -1056,9 +1057,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('A head does not carry its own class names. Whoever trained it '
-              'knows what class 0 is, and that is you — or whoever you are '
-              'standing in for.',
+          Text('soc_head_no_class_names'.tr,
               style: GoogleFonts.inter(
                   fontSize: 12, color: AppColors.textSecondary)),
           const SizedBox(height: 10),
@@ -1079,12 +1078,12 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: TextField(
                         style: GoogleFonts.inter(fontSize: 13),
-                        decoration: const InputDecoration(
-                            border: InputBorder.none),
-                        controller: TextEditingController(
-                            text: _labels.items[i])
-                          ..selection = TextSelection.collapsed(
-                              offset: _labels.items[i].length),
+                        decoration:
+                            const InputDecoration(border: InputBorder.none),
+                        controller:
+                            TextEditingController(text: _labels.items[i])
+                              ..selection = TextSelection.collapsed(
+                                  offset: _labels.items[i].length),
                         onChanged: (v) => _setLabel(i, v),
                       ),
                     ),
@@ -1098,12 +1097,12 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                 ],
               ),
             ),
-          _add('add a label', () => setState(() => _labels = _labels.addBlank())),
+          _add('add a label',
+              () => setState(() => _labels = _labels.addBlank())),
           if (problem != null) _problem(problem),
           if (_classMismatch != null) _problem(_classMismatch!),
           const SizedBox(height: 4),
-          Text('no upper limit here: a head has as many classes as it was '
-              'trained with. The 24 is the decision model card\'s number.',
+          Text('soc_no_upper_limit'.tr,
               style:
                   GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
         ],
@@ -1248,8 +1247,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         OutlinedButton.icon(
           onPressed: _busy ? null : () => unawaited(_probe()),
           icon: const Icon(Icons.refresh, size: 16),
-          label: Text('re-probe',
-              style: GoogleFonts.inter(fontSize: 13)),
+          label: Text('re-probe', style: GoogleFonts.inter(fontSize: 13)),
         ),
       ],
     );
@@ -1277,8 +1275,8 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
               children: [
                 if (r.letter != null) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
@@ -1317,7 +1315,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             ],
             if (raw.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('the model said: $raw',
+              Text(preencher('soc_the_model_said', {'r': raw}),
                   style: GoogleFonts.inter(
                       fontSize: 12, color: AppColors.textSecondary)),
             ],
@@ -1327,11 +1325,11 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.info_outline,
-                    size: 14, color: AppColors.info),
+                const Icon(Icons.info_outline, size: 14, color: AppColors.info),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text('no confidence, and here is why: ${r.whyNoScore}',
+                  child: Text(
+                      preencher('soc_no_confidence', {'w': r.whyNoScore ?? ''}),
                       style: GoogleFonts.inter(
                           fontSize: 11, color: AppColors.info)),
                 ),
@@ -1371,9 +1369,9 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           ],
           if (r.model.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('model: ${r.model}',
-                style:
-                    GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
+            Text(preencher('soc_model_label', {'m': r.model ?? ''}),
+                style: GoogleFonts.inter(
+                    fontSize: 11, color: AppColors.textMuted)),
           ],
         ],
       ),

@@ -43,11 +43,10 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'This chat works inside a project folder. Choose where its '
-                  'files live, or keep it as a general chat.',
+                  'ppd_choose_folder'.tr,
                   style: TextStyle(fontSize: 13),
                 ),
               ),

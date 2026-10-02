@@ -44,11 +44,20 @@ void main() {
   /// Raw **triple** quotes because the pattern needs a bare `"` inside: a raw
   /// `r"…"` still ends at the first `"`, and `\"` inside it is backslash-then-
   /// quote as far as Dart is concerned.
+  ///
+  /// **Um comentário não é uma chamada.** Este padrão casa o exemplo
+  /// `'chave'.tr` que aparece na explicação de um `const` removido, e a chave
+  /// `chave` não existe — o teste acusou duas faltando que só existem num
+  /// comentário. A leitura é idêntica nas duas situações, então o padrão não
+  /// tem como distinguir: quem tem de distinguir é o teste, filtrando o que
+  /// veio de uma linha de comentário.
   final literal = RegExp(r'''(['"])([A-Za-z0-9_]+)\1\s*\.\s*tr\b''');
+
+  /// **Uma linha que é só comentário**, para descartar os falsos achados acima.
+  final linhaDeComentario = RegExp(r'^\s*//');
 
   /// `replaceAll('\$min', …)` — a needle written with a literal `$`.
   final needle = RegExp(r'''replaceAll\(\s*['"]\\?\$([A-Za-z0-9_]+)''');
-
 
   /// Um idioma só, recortado do arquivo pelo **nome do mapa**.
   ///
@@ -78,16 +87,14 @@ void main() {
     // uma aspa.
     int fim = source.length;
     for (var i = abre; i < source.length; i++) {
-      if (source[i] == '}' &&
-          source.substring(0, i).endsWith('\n    ')) {
+      if (source[i] == '}' && source.substring(0, i).endsWith('\n    ')) {
         fim = i;
         break;
       }
     }
     final bloco = source.substring(abre, fim);
     final out = <String, String>{};
-    final pair =
-        RegExp(r'''([A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)''');
+    final pair = RegExp(r'''([A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)''');
     for (final m in pair.allMatches(bloco)) {
       out[m.group(1)!] = m.group(2)!;
     }
@@ -105,7 +112,16 @@ void main() {
   Map<String, List<String>> scanUsages() {
     final out = <String, List<String>>{};
     for (final f in dartFiles()) {
-      for (final m in literal.allMatches(f.readAsStringSync())) {
+      final src = f.readAsStringSync();
+      for (final m in literal.allMatches(src)) {
+        // **A linha do match tem de ser código.** O padrão casa o exemplo
+        // `'chave'.tr` de um comentário que explica um `const` removido, e essa
+        // chave não existe no mapa. Sem este filtro o teste acusa duas faltando
+        // por causa da própria documentação do motivo.
+        final linha = src.lastIndexOf('\n', m.start) + 1;
+        if (linhaDeComentario.hasMatch(src.substring(linha, m.start))) {
+          continue;
+        }
         (out[m.group(2)!] ??= []).add(f.path);
       }
     }
@@ -123,6 +139,10 @@ void main() {
     for (final f in dartFiles()) {
       final src = f.readAsStringSync();
       for (final m in literal.allMatches(src)) {
+        final linha = src.lastIndexOf('\n', m.start) + 1;
+        if (linhaDeComentario.hasMatch(src.substring(linha, m.start))) {
+          continue;
+        }
         final tail = src.substring(m.end);
         // Bounded by the **next key**, not by the end of the statement. The
         // `confirm_delete` dialog does `Text('confirm_delete'.tr)` as the title
@@ -185,7 +205,8 @@ void main() {
               'por linha o perderia — e o auditoria o acusaria de estar '
               'faltando numa chave que existe');
       expect(map[k]!.length, greaterThan(20),
-          reason: 'e o valor lido tem de ser a frase inteira, não um fragmento');
+          reason:
+              'e o valor lido tem de ser a frase inteira, não um fragmento');
     }
   });
 
@@ -219,12 +240,14 @@ void main() {
     // The shape of the bug itself: a translation that repeats its key renders as
     // English no matter how many keys exist. This catches the "fix" of adding
     // `'foo': 'foo'`.
-    final identicas = readPtBr().entries
+    final identicas = readPtBr()
+        .entries
         .where((e) => e.value == e.key)
         .map((e) => e.key)
         .toList();
     expect(identicas, isEmpty,
-        reason: 'estas traduções são o próprio nome da chave, que é exatamente o '
+        reason:
+            'estas traduções são o próprio nome da chave, que é exatamente o '
             'defeito que o teste anterior existe para evitar');
   });
 
@@ -236,12 +259,15 @@ void main() {
     // `segundos` is a single lowercase word and is perfectly translated, so
     // flagging "any value that looks like a bare word" flagged correct entries.
     // What cannot be prose is `foo_bar`, which is the shape a leaked key has.
-    final suspeitas = readPtBr().entries
-        .where((e) => RegExp(r'^[a-z0-9]+(_[a-z0-9]+)+$').hasMatch(e.value.trim()))
+    final suspeitas = readPtBr()
+        .entries
+        .where(
+            (e) => RegExp(r'^[a-z0-9]+(_[a-z0-9]+)+$').hasMatch(e.value.trim()))
         .map((e) => '${e.key} = "${e.value}"')
         .toList();
     expect(suspeitas, isEmpty,
-        reason: 'valores com underscore não são português, são a chave repetida: '
+        reason:
+            'valores com underscore não são português, são a chave repetida: '
             'alguém "traduziu" a chave para a própria chave\n'
             '${suspeitas.join('\n')}');
   });
@@ -266,8 +292,7 @@ void main() {
       final porIdioma = readMap(lang);
       for (final e in usados.entries) {
         for (final p in e.value) {
-          if (!porIdioma.containsKey(e.key) ||
-              !porIdioma[e.key]!.contains(p)) {
+          if (!porIdioma.containsKey(e.key) || !porIdioma[e.key]!.contains(p)) {
             semPlaceholder.add('$lang ${e.key}: o código troca "\$$p", mas o '
                 'valor é "${porIdioma[e.key] ?? "(ausente)"}"');
           }

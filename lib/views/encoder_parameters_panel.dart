@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobilelm/services/text_interpolation.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:llama_flutter_android/llama_flutter_android.dart'
@@ -77,28 +78,29 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
     final isEmbed = widget.role == 'embed';
     return Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _header(context),
-      const SizedBox(height: 10),
-      if (_loading)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: SizedBox(
-            height: 16,
-            width: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        )
-      else if (_loadError != null)
-        _error(context)
-      else ...[
-        _ceiling(context),
-        const SizedBox(height: 12),
-        if (isEmbed) ..._embedRows(context) else ..._rerankRows(context),
-      ],
-      const SizedBox(height: 12),
-      _resetAll(context),
-    ]);
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _header(context),
+          const SizedBox(height: 10),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: SizedBox(
+                height: 16,
+                width: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (_loadError != null)
+            _error(context)
+          else ...[
+            _ceiling(context),
+            const SizedBox(height: 12),
+            if (isEmbed) ..._embedRows(context) else ..._rerankRows(context),
+          ],
+          const SizedBox(height: 12),
+          _resetAll(context),
+        ]);
   }
 
   Widget _header(BuildContext context) {
@@ -138,15 +140,13 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
         color: AppColors.error.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Could not read the loaded model: $_loadError',
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(preencher('encp_load_error', {'e': '$_loadError'}),
             style: GoogleFonts.inter(fontSize: 12, color: AppColors.error)),
         const SizedBox(height: 4),
-        Text('The overrides below still apply. The auto-detected column is the '
-            'part that needs the model.',
-            style: GoogleFonts.inter(fontSize: 11,
-                color: Theme.of(context).hintColor)),
+        Text('encp_overrides_apply'.tr,
+            style: GoogleFonts.inter(
+                fontSize: 11, color: Theme.of(context).hintColor)),
       ]),
     );
   }
@@ -159,11 +159,11 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: widget.isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
+        color:
+            widget.isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(
             child: Text('Token ceiling',
@@ -171,7 +171,8 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
                     fontSize: 13, fontWeight: FontWeight.w600)),
           ),
           Text(
-            detected > 0 ? 'model: $detected' : 'model: unknown',
+            preencher('encp_detected_model',
+                {'d': detected > 0 ? '$detected' : 'encp_unknown'.tr}),
             style: GoogleFonts.jetBrainsMono(fontSize: 11),
           ),
           const SizedBox(width: 8),
@@ -188,13 +189,13 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
           'the whole sequence in one pass and cannot split it, so the limit is '
           'a hard ceiling, not a hint. The native side caps it at '
           '${EncoderSettingsService.nativeMaxInputTokens}.',
-          style: GoogleFonts.inter(fontSize: 11, color: Theme.of(context).hintColor),
+          style: GoogleFonts.inter(
+              fontSize: 11, color: Theme.of(context).hintColor),
         ),
         const SizedBox(height: 8),
         Row(children: [
           _numberField(
-            controller: TextEditingController(
-                text: override?.toString() ?? ''),
+            controller: TextEditingController(text: override?.toString() ?? ''),
             hint: 'auto',
             width: 92,
             onSubmitted: (v) =>
@@ -209,7 +210,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
             ),
           if (override != null && detected > 0 && override > detected)
             Expanded(
-              child: Text('above what the model reported — using the model\'s',
+              child: Text('encp_above_reported'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 10, color: Theme.of(context).hintColor)),
             ),
@@ -314,7 +315,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
     final i = _info;
     final dim = Theme.of(context).hintColor;
     if (i == null || !i.isEncoder) {
-      return Text('No encoder loaded. These settings apply to the next one.',
+      return Text('encp_no_encoder'.tr,
           style: GoogleFonts.inter(fontSize: 11, color: dim));
     }
     Widget line(String k, String v) => Padding(
@@ -323,27 +324,29 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
             SizedBox(
                 width: 116,
                 child: Text(k,
-                    style: GoogleFonts.jetBrainsMono(fontSize: 10, color: dim))),
+                    style:
+                        GoogleFonts.jetBrainsMono(fontSize: 10, color: dim))),
             Text(v, style: GoogleFonts.jetBrainsMono(fontSize: 10)),
           ]),
         );
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: widget.isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
+        color:
+            widget.isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('The loaded model reports',
-            style: GoogleFonts.inter(
-                fontSize: 12, fontWeight: FontWeight.w600)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('encp_loaded_reports'.tr,
+            style:
+                GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         line('pooling', i.pooling),
         line('output length', '${i.outputLength}'),
         line('embedding dim', '${i.nEmbdOut}'),
         if (i.labels.isNotEmpty) line('labels', i.labels.join(', ')),
-        if (i.ggufTags.isNotEmpty) line('file says it is', i.ggufTags.join(', ')),
+        if (i.ggufTags.isNotEmpty)
+          line('encp_file_says'.tr, i.ggufTags.join(', ')),
       ]),
     );
   }
@@ -361,10 +364,11 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
               },
         icon: const Icon(Icons.restart_alt_rounded, size: 16),
         label: Text(
-            n == 0 ? 'Nothing overridden' : 'Reset $n override${n == 1 ? '' : 's'}',
+            n == 0
+                ? 'encp_nothing_overridden'.tr
+                : 'Reset $n override${n == 1 ? '' : 's'}',
             style: GoogleFonts.inter(fontSize: 12)),
-        style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(40)),
+        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
       ),
     );
   }
@@ -413,37 +417,38 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
   ) {
     return Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Expanded(
-          child: Text(label,
-              style: GoogleFonts.inter(
-                  fontSize: 13, fontWeight: FontWeight.w600)),
-        ),
-        SizedBox(
-          width: 150,
-          child: TextField(
-            controller: c,
-            style: GoogleFonts.jetBrainsMono(fontSize: 12),
-            textAlign: TextAlign.end,
-            decoration: InputDecoration(
-              hintText: hint,
-              isDense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+            SizedBox(
+              width: 150,
+              child: TextField(
+                controller: c,
+                style: GoogleFonts.jetBrainsMono(fontSize: 12),
+                textAlign: TextAlign.end,
+                decoration: InputDecoration(
+                  hintText: hint,
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onSubmitted: onSubmit,
               ),
             ),
-            onSubmitted: onSubmit,
-          ),
-        ),
-      ]),
-      const SizedBox(height: 4),
-      Text(blurb,
-          style: GoogleFonts.inter(
-              fontSize: 11, color: Theme.of(context).hintColor)),
-    ]);
+          ]),
+          const SizedBox(height: 4),
+          Text(blurb,
+              style: GoogleFonts.inter(
+                  fontSize: 11, color: Theme.of(context).hintColor)),
+        ]);
   }
 
   Widget _numberField({
@@ -490,33 +495,35 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
     ];
     return Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Expanded(
-          child: Text(label,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Expanded(
+              child: Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+            SegmentedButton<bool?>(
+              segments: [
+                for (final o in opts)
+                  ButtonSegment<bool?>(
+                    value: o.value,
+                    label:
+                        Text(o.label, style: GoogleFonts.inter(fontSize: 11)),
+                  ),
+              ],
+              selected: {value},
+              showSelectedIcon: false,
+              onSelectionChanged: (s) async {
+                await onChanged(s.first);
+                if (mounted) setState(() {});
+              },
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text(blurb,
               style: GoogleFonts.inter(
-                  fontSize: 13, fontWeight: FontWeight.w600)),
-        ),
-        SegmentedButton<bool?>(
-          segments: [
-            for (final o in opts)
-              ButtonSegment<bool?>(
-                value: o.value,
-                label: Text(o.label, style: GoogleFonts.inter(fontSize: 11)),
-              ),
-          ],
-          selected: {value},
-          showSelectedIcon: false,
-          onSelectionChanged: (s) async {
-            await onChanged(s.first);
-            if (mounted) setState(() {});
-          },
-        ),
-      ]),
-      const SizedBox(height: 4),
-      Text(blurb,
-          style: GoogleFonts.inter(
-              fontSize: 11, color: Theme.of(context).hintColor)),
-    ]);
+                  fontSize: 11, color: Theme.of(context).hintColor)),
+        ]);
   }
 }

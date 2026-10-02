@@ -1,0 +1,173 @@
+# Traduções dos literais de tela que ainda eram inglês.
+#
+# Formato: texto-em-inglês<TAB>chave<TAB>português<TAB>#origem
+#
+# **A posição no fonte ficou de fora, e é a decisão que faz este arquivo
+# utilizável.** A primeira versão usava `arquivo:linha`, e a linha se move:
+# reescrever um literal adjacente de três linhas como `'chave'.tr` **apaga duas
+# linhas** e empurra todas as que estão abaixo. Depois de uma reescrita de 102
+# literais, as 21 posições medidas antes apontavam para o lugar errado — e a
+# ferramenta aceitou, porque ela confia na posição. Foi o único erro deste
+# trabalho que não dava aviso nenhum.
+#
+# O texto em inglês é a chave, e é seguro porque **os 9 textos repetidos têm
+# tradução idêntica nas duas chaves** ("Show API key" em dois cartões, "Hide API
+# key", "System One test", "Context Size", "Download", "settings", "Model ID",
+# "Faster execution…", "what the file says about itself").
+# `test/inline_english_ratchet_test.dart` vigia essa propriedade: se um texto
+# repetido passar a ter traduções diferentes, o casamento deixa de ser seguro e o
+# arquivo precisa de volta a posição.
+#
+# **O texto vem do fonte, nunca digitado aqui.** `tool/catalog_inline_en.json` é
+# extraído pela própria ferramenta; digitar de novo seria criar uma segunda
+# cópia que diverge em silêncio, e a divergência apareceria como uma ficha errada
+# na tela em vez de um erro aqui.
+#
+# As duas entradas com `\n` no meio são `subtitle:` de `ListTile` e a quebra é
+# real — o texto é pintado em duas linhas. A tradução mantém a quebra, em um
+# ponto que ainda funcione em português, que é mais comprido que o inglês.
+
+
+
+
+
+
+0 = no cap, 1–8 = max hops	set_hops_hint	0 = sem teto, 1–8 = máximo de saltos	
+1 model · classification, not chat	mv_one_classification_model	1 modelo · classificação, não chat	
+512 gives more detail but can be MUCH slower, heat the phone, and may fail on some devices.	set_512_detail	512 dá mais detalhe, mas pode ser MUITO mais lento, aquecer o aparelho e falhar em alguns aparelhos.	
+A GGUF answers with a letter or with logits, and which one is only visible after a load. The server said:	soc_gguf_answers	Um GGUF responde com uma letra ou com logits, e qual dos dois só aparece depois de carregar. O servidor disse:	
+A GGUF classification head carries the labels it was trained with, so /v1/classify returns them and this window has nothing to ask. The encoder console drives that one.	soc_classification_head_console	Uma cabeça de classificação GGUF carrega os rótulos com que foi treinada, então /v1/classify os devolve e esta janela não tem o que perguntar. O console de encoder dirige aquela.	
+A Wi-Fi connection is highly recommended. Please keep the app open during the download.	mv_wifi_recommended	Uma conexão Wi-Fi é fortemente recomendada. Mantenha o app aberto durante o download.	
+A decision model answers a structured question with a class, and it is an ordinary GGUF: Tev1-0.8B loads as qwen35 and carries no flag saying so. This window shows it options and reports the letter back — which is the test, and it is also how you find out whether a model behaves like one at all.	enc_decision_model_explains	Um decision model responde a uma pergunta estruturada com uma classe, e é um GGUF comum: o Tev1-0.8B carrega como qwen35 e não carrega nenhuma flag que diga isso. Esta janela mostra as opções dele e devolve a letra — que é o teste, e é também como se descobre se um modelo se comporta como um.	
+A head cannot be recognised by its contents — it has no `cls.output.weight` — so the caller is the only thing that can say which head it means. That name comes from the TFLite heads card, or from whatever `/v1/litert/status` reports as loaded. Neither answered, so there is nothing to send.	soc_head_not_recognisable	Uma cabeça não é reconhecível pelo conteúdo — não tem `cls.output.weight` — então quem chama é a única coisa que pode dizer de qual cabeça se trata. Esse nome vem do card de cabeças TFLite, ou do que `/v1/litert/status` reportar como carregado. Nenhum dos dois respondeu, então não há o que enviar.	
+A head does not carry its own class names. Whoever trained it knows what class 0 is, and that is you — or whoever you are standing in for.	soc_head_no_class_names	Uma cabeça não carrega os próprios nomes de classe. Quem a treinou sabe o que é a classe 0, e isso é você — ou quem você está representando.	
+AI is planning steps…	tv_planning_steps	A IA está planejando os passos…	
+Add API key	mv_add_api_key	Adicionar chave de API	
+Answer directly, no reasoning (/no_think)	set_no_think_label	Responder direto, sem raciocínio (/no_think)	
+Anyone on this network will be able to use the app's server without a key. The server listens on all interfaces, not just this phone.	sv_anyone_on_network	Qualquer pessoa nesta rede vai poder usar o servidor do app sem chave. O servidor escuta em todas as interfaces, não só neste aparelho.	
+Apply a config template · bring models back	set_apply_template_detail	Aplica um template de configuração · traz os modelos de volta	
+Ask for reasoning before the answer (/think)	set_think_label	Pedir raciocínio antes da resposta (/think)	
+Authorization: Bearer <key>	sv_authorization_bearer	Authorization: Bearer <key>	
+Auto recommended. Bigger size = better detail, but much slower and more memory use.	set_bigger_size_detail	Automático é o recomendado. Tamanho maior = mais detalhe, mas bem mais lento e mais memória.	
+Backup configs…	set_backup_configs	Backup de configs…	
+Bar is scaled across this result set, not from zero. A cross-encoder logit has no absolute scale — the GTE measured here runs 0,46 to 0,87 on the sigmoid over a set where one document is the answer and three are not, so a bar from zero would draw all four nearly full and hide the only thing worth looking at, which is the gap. The numbers are the absolute ones.	enc_bar_scaled	A barra é escalada neste conjunto de resultados, não a partir do zero. Um logit de cross-encoder não tem escala absoluta — o GTE medido aqui vai de 0,46 a 0,87 no sigmoid sobre um conjunto em que um documento é a resposta e três não são, então uma barra a partir do zero desenharia os quatro quase cheios e esconderia a única coisa que vale olhar, que é a distância entre eles. Os números são os absolutos.	
+CHAT TEMPLATE	mv_chat_template	TEMPLATE DE CHAT	
+Change folder…	set_change_folder	Trocar pasta…	
+Choose workspace folder	wsu_choose_folder	Escolher a pasta do workspace	
+Configure and select	mv_configure_select	Configurar e selecionar	
+Context Size	set_context_size_a	Tamanho do contexto	#2x
+Create a task and the AI will plan\nand execute it autonomously	tv_create_task_hint	Crie uma tarefa e a IA vai planejar\nexecutar sozinha	
+Custom search API URL	set_custom_search_url	URL da API de busca personalizada	
+Custom search API token	set_custom_search_token	Token da API de busca personalizada	
+Daily prompts that run on their own	set_daily_prompts_detail	Prompts diários que rodam sozinhos	
+Delete model	mv_delete_model	Excluir o modelo	
+Describe what you want the AI to do…	tv_describe_task	Descreva o que você quer que a IA faça…	
+Display a persistent notification while tasks are\nscheduled or model is kept loaded in the background.	set_notification_detail	Mostrar uma notificação persistente enquanto houver tarefas agendadas\nou um modelo carregado em segundo plano.	
+Do not suggest this again	mv_dont_suggest_again	Não sugerir isto de novo	
+Download	iv_download	Baixar	#2x
+Download a GGUF or LiteRT model from any URL	mv_download_any_url	Baixe um modelo GGUF ou LiteRT de qualquer URL	
+Download the benchmark?	mv_download_benchmark	Baixar o benchmark?	
+Every core is a big one on this device	set_all_cores_big_detail	Todos os núcleos deste aparelho são grandes	
+Execute All Steps	tv_execute_all_steps	Executar todos os passos	
+FILE SIZE	mv_file_size	TAMANHO DO ARQUIVO	
+Faster execution, but uses more RAM and battery	set_faster_more_ram	Execução mais rápida, mas usa mais RAM e bateria	#2x
+Hide API key	mv_hide_api_key	Ocultar a chave de API	#2x
+Hide GGUFs too large for this phone's memory	hf_hide_too_large	Esconder GGUFs grandes demais para a memória deste aparelho	
+Image and audio input — LiteRT-LM only	mv_image_audio_input	Entrada de imagem e áudio — só LiteRT-LM	
+Import from Storage	mv_import_storage	Importar do armazenamento	
+Inspect the file	mv_inspect_file	Inspecionar o arquivo	
+Keep models anyway	mv_keep_models_anyway	Manter os modelos assim mesmo	
+Keep the key	sv_keep_key	Guardar a chave	
+Keep this screen open	set_keep_screen_open	Mantenha esta tela aberta	
+Keeps the local list whatever the benchmark says, and stops it offering to hide it	set_keep_models_detail	Mantém a lista local aconteça o que o benchmark disser, e para ele de oferecer escondê-la	
+Load one and tap re-probe, or from a client: POST /v1/models/load with "filename" and "accept_risk": true. A .tflite is not a GGUF, so it does not answer here: the window finds one on its own when a head is loaded, and the TFLite heads card on the Models screen opens it by name.	soc_load_one_and_probe	Carregue um e toque em re-inspecionar, ou por um cliente: POST /v1/models/load com "filename" e "accept_risk": true. Um .tflite não é GGUF, então não responde aqui: a janela acha um sozinha quando uma cabeça é carregada, e o card de cabeças TFLite na tela de Modelos abre pelo nome.	
+Low memory — a large model will fail to load, not run slowly.	mv_low_memory	Pouca memória — um modelo grande não vai ficar lento, vai falhar ao carregar.	
+MODEL INFO	mv_model_info	INFO DO MODELO	
+MODEL URL	mv_model_url	URL DO MODELO	
+Maximum speed, may crash on some devices	set_max_speed_label	Velocidade máxima, pode travar em alguns aparelhos	
+MobileLM organizes your work into projects. Pick a folder on this device — each project you start later becomes a subfolder inside it, where the app can read, create, edit and delete files.	wsu_explain_projects	O MobileLM organiza seu trabalho em projetos. Escolha uma pasta neste aparelho — cada projeto que você começar depois vira uma subpasta dentro dela, onde o app consegue ler, criar, editar e apagar arquivos.	
+Model ID	mv_model_id	ID do modelo	#2x
+Model weights	mv_model_weights	Pesos do modelo	
+Models at or above this size use CPU. Smaller models can use GPU Experimental.	set_gpu_experimental_detail	Modelos neste tamanho ou acima usam CPU. Modelos menores podem usar GPU Experimental.	
+More steps = better quality but MUCH slower!	set_more_steps_slower	Mais passos = mais qualidade, mas MUITO mais lento!	
+More threads, but the slowest core paces every op	set_more_threads_detail	Mais threads, mas o núcleo mais lento marca o ritmo de cada operação	
+Moves all existing files into the new folder	set_change_folder_detail2	Move todos os arquivos existentes para a nova pasta	
+No encoder loaded. These settings apply to the next one.	encp_no_encoder	Nenhum encoder carregado. Estas configurações valem para o próximo.	
+No models loaded. Add an API key to update the live list, or use a custom model ID.	mv_no_models_loaded	Nenhum modelo carregado. Adicione uma chave de API para atualizar a lista ao vivo, ou use um ID de modelo personalizado.	
+No steps generated.	tv_no_steps	Nenhum passo gerado.	
+No tasks yet. A task runs its prompt every day at the chosen time with the model it was created with — even with the app closed — and posts the result here in chat.	set_no_tasks_detail	Nenhuma tarefa ainda. Uma tarefa roda o prompt todo dia no horário escolhido com o modelo com que foi criada — mesmo com o app fechado — e publica o resultado aqui na conversa.	
+Nothing overridden	encp_nothing_overridden	Nada substituído	
+Off — the tool list is kept out of the prompt	set_agent_off_detail	Desligado — a lista de tools fica fora do prompt	
+POST /v1/litert/unload. The server stays up and a loaded GGUF is untouched — this frees the LiteRT model and nothing else. It is the only unload the API can do, because the GGUF one would take the server down with it.	soc_litert_unload	POST /v1/litert/unload. O servidor continua de pé e um GGUF carregado não é tocado — isto libera o modelo LiteRT e nada mais. É o único unload que a API consegue fazer, porque o do GGUF derrubaria o servidor junto.	
+Pick a folder to organize your projects	set_workspace_pick_detail	Escolha uma pasta para organizar seus projetos	
+Projector runs on the CPU even when layers are on the GPU	set_projector_cpu_detail	O projetor roda na CPU mesmo quando as camadas estão na GPU	
+Provider settings	mv_provider_settings	Configurações do provedor	
+QAT, QAD, QAFT — trained for 4-bit, so a Q4_0 build holds much closer to full precision	hf_qat_explained	QAT, QAD, QAFT — treinados para 4 bits, então um build Q4_0 fica bem mais perto da precisão total	
+Require API key	sv_require_api_key	Exigir chave de API	
+Required by the toggle above	sv_required_by_toggle	Exigido pelo botão acima	
+Restore backup…	set_restore_backup	Restaurar backup…	
+Runs the 230M model and measures real speed	set_benchmark_detail	Roda o modelo de 230M e mede a velocidade real	
+Save the key to verify it and load live models.	mv_save_key_to_verify	Salve a chave para verificá-la e carregar modelos ao vivo.	
+Saved provider	mv_saved_provider	Provedor salvo	
+Search Hugging Face	mv_search_hf	Pesquisar no Hugging Face	
+Search models...	mv_search_models	Pesquisar modelos...	
+Search provider models or enter a model ID	mv_search_provider_or_id	Pesquise os modelos do provedor ou digite um ID de modelo	
+Search the GGUF index	hf_search_index	Pesquisar no índice GGUF	
+Select model	mv_select_model	Selecionar modelo	
+Send nothing — the model's own default	set_send_nothing_default	Não enviar nada — o padrão do próprio modelo	
+Set base URL, key, and model ID	mv_set_base_key_id	Defina a URL base, a chave e o ID do modelo	
+Settings template (API keys never leave the device) into a dated folder of your chosen location.	set_backup_detail	Template de configurações (as chaves de API nunca saem do aparelho) numa pasta com data, no local que você escolher.	
+Settings template · optional model files	set_settings_template_files	Template de configurações · arquivos de modelo opcionais	
+Share full log file	log_share_full	Compartilhar o arquivo de log inteiro	
+Show API key	mv_show_api_key	Mostrar a chave de API	#2x
+Show models, ignore benchmarks	set_show_models_ignore	Mostrar modelos, ignorar benchmarks	
+Showing local models because you asked to ignore benchmarks.	mv_showing_local_because	Mostrando modelos locais porque você pediu para ignorar os benchmarks.	
+Showing only what is on this device. Encoders still work.	set_local_only_detail	Mostrando só o que está neste aparelho. Encoders continuam funcionando.	
+Stable mode with lower speed	set_stable_mode_label	Modo estável, com velocidade menor	
+System One test	soc_system_one_test_b	Teste System One	#2x
+Template	mv_template	Template	
+Template first, then the files in the backup folder	set_backup_restore_detail	Primeiro o template, depois os arquivos da pasta de backup	
+Test a decision	mv_test_decision	Testar uma decisão	
+Test it as a decision instead	enc_test_as_decision	Testar como decisão	
+The benchmark still shows its number, but never offers to hide the local list again	set_show_models_ignore_detail	O benchmark ainda mostra o número dele, mas nunca mais oferece esconder a lista local	
+The file is what decides the role. A tag is an intention, and the head is a tensor.	enc_file_decides_role	O arquivo é o que decide o papel. Uma tag é uma intenção, e a cabeça é um tensor.	
+The loaded model reports	encp_loaded_reports	O modelo carregado reporta	
+The overrides below still apply. The auto-detected column is the part that needs the model.	encp_overrides_apply	Os overrides abaixo continuam valendo. A coluna detectada automaticamente é a parte que precisa do modelo.	
+The privileged tools are listed under Tools. Every one of them asks before it runs, reads included.	set_privileged_note	As ferramentas privilegiadas estão listadas em Ferramentas. Cada uma delas pergunta antes de rodar, inclusive as de leitura.	
+The scores are identical. Nothing in this set discriminates — either the query is unrelated to every document, or the model is not scoring. The ranking below is the input order.	enc_scores_identical	Os scores são idênticos. Nada neste conjunto distingue — ou a consulta não tem relação com nenhum documento, ou o modelo não está pontuando. A ordenação abaixo é a ordem de entrada.	
+These are not filled with zeros by the app. A head that needs them and does not get them is refused by name — a logit computed on invented features comes back wearing a confident label.	lhc_not_zeros	Estes não são preenchidos com zero pelo app. Uma cabeça que precisa deles e não os recebe é recusada pelo nome — um logit calculado sobre inventos volta vestindo um rótulo confiante.	
+This chat works inside a project folder. Choose where its files live, or keep it as a general chat.	ppd_choose_folder	Esta conversa funciona dentro de uma pasta de projeto. Escolha onde ficam os arquivos dela, ou mantenha como conversa geral.	
+Try GPU first, then CPU fallback	set_gpu_first_label	Tentar GPU primeiro, com CPU como reserva	
+Turn off the API key?	sv_turn_off_key	Desligar a chave de API?	
+Turning it back on generates a new key, and anything using the old one stops working.	sv_turning_back_on	Ligar de novo gera uma chave nova, e qualquer coisa usando a antiga para de funcionar.	
+Unlimited agent mode	set_unlimited_agent_mode	Modo agente sem teto seu	
+Unload model	mv_unload_model	Descarregar o modelo	
+Update API key	mv_update_api_key	Atualizar a chave de API	
+Use any OpenAI-compatible endpoint. Enter the base URL without /chat/completions.	mv_openai_endpoint	Use qualquer endpoint compatível com OpenAI. Informe a URL base sem /chat/completions.	
+Workspace folder	set_workspace_folder	Pasta do workspace	
+Workspace not set up	set_workspace_not_set_up	Workspace não configurado	
+Your current projects and files will be copied into the new folder, then this one will be used from now on.	set_change_folder_detail	Seus projetos e arquivos atuais serão copiados para a nova pasta, e a partir de agora esta passa a ser a usada.	
+a paraphrase and an unrelated pair	enc_case_paraphrase	uma paráfrase e um par sem relação	
+above what the model reported — using the model's	encp_above_reported	acima do que o modelo reportou — usando o do modelo	
+accelerator — what to ask for	lhc_accelerator	acelerador — o que pedir	
+auto size	set_auto_size	tamanho automático	
+download	mv_download_lower	baixar	
+free the compiled head	soc_free_head	liberar a cabeça compilada	
+hide the console, show the conversation	enc_hide_console	esconder o console, mostrar a conversa	
+how much storage does the offline map cache use	enc_case_storage	quanto espaço o cache do mapa offline usa	
+https://searx.example.org/search	set_custom_search_url_hint	https://searx.example.org/search	
+leave empty for SearXNG	set_custom_search_token_hint	deixe vazio para SearXNG	
+left empty uses the model card default	soc_empty_uses_default	vazio usa o padrão do card do modelo	
+no upper limit here: a head has as many classes as it was trained with. The 24 is the decision model card's number.	soc_no_upper_limit	Sem teto aqui: uma cabeça tem quantas classes foi treinada. O 24 é o número do card de decision model.	
+not screened yet	lhc_not_screened	ainda não inspecionado	
+off domain — scores should flatten	enc_case_off_domain	fora do domínio — os scores devem achatar	
+response — tap to copy	lhc_response_tap	response — toque para copiar	
+run — server is off	enc_run_server_off	rodar — o servidor está desligado	#2x
+self-match — the top of the range	enc_case_self_match	auto-correspondência — o topo da faixa	
+show the conversation	lhc_show_conversation	mostrar a conversa	
+the answer is obvious	enc_case_obvious	a resposta é óbvia	
+the server did not answer	soc_server_no_answer	o servidor não respondeu	
+what the file says about itself	enc_what_file_says	o que o arquivo diz sobre si mesmo	#2x
+which area does this belong to?	soc_which_area	a que área isto pertence?	
+Agent mode: up to @n hop per message|set_hops_one|Modo agente: até @n salto por mensagem|
+Agent mode: up to @n hops per message|set_hops_many|Modo agente: até @n saltos por mensagem|

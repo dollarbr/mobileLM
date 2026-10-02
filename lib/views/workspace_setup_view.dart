@@ -30,11 +30,11 @@ class _WorkspaceSetupViewState extends State<WorkspaceSetupView> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = const Color(0xFFB9F53E);    return Scaffold(
-      backgroundColor:
-          Theme.of(context).brightness == Brightness.dark
-              ? Colors.black
-              : Colors.white,
+    final accent = const Color(0xFFB9F53E);
+    return Scaffold(
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? Colors.black
+          : Colors.white,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -43,7 +43,8 @@ class _WorkspaceSetupViewState extends State<WorkspaceSetupView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.workspaces_outline, size: 72, color: Color(0xFF8B7CFF)),
+                const Icon(Icons.workspaces_outline,
+                    size: 72, color: Color(0xFF8B7CFF)),
                 const SizedBox(height: 16),
                 Text(
                   'set_up_workspace'.tr,
@@ -52,10 +53,7 @@ class _WorkspaceSetupViewState extends State<WorkspaceSetupView> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'MobileLM organizes your work into projects. Pick a folder '
-                  'on this device — each project you start later becomes a '
-                  'subfolder inside it, where the app can read, create, edit '
-                  'and delete files.',
+                  'wsu_explain_projects'.tr,
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
@@ -82,7 +80,8 @@ class _WorkspaceSetupViewState extends State<WorkspaceSetupView> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.create_new_folder_outlined),
-                  label: Text(_busy ? 'Opening picker…' : 'Choose workspace folder'),
+                  label:
+                      Text(_busy ? 'Opening picker…' : 'wsu_choose_folder'.tr),
                 ),
               ],
             ),

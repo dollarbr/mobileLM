@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:mobilelm/services/text_interpolation.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../controllers/cloud_model_controller.dart';
@@ -44,7 +45,7 @@ class ModelView extends GetView<ModelController> {
                 // starts to make sense.
                 IconButton(
                   icon: const Icon(Icons.search),
-                  tooltip: 'Search Hugging Face',
+                  tooltip: 'mv_search_hf'.tr,
                   onPressed: () => HfSearchSheet.show(context),
                 ),
                 IconButton(
@@ -54,7 +55,7 @@ class ModelView extends GetView<ModelController> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.file_upload_outlined),
-                  tooltip: 'Import from Storage',
+                  tooltip: 'mv_import_storage'.tr,
                   onPressed: () => controller.importModelFromStorage(),
                 ),
               ],
@@ -90,9 +91,7 @@ class ModelView extends GetView<ModelController> {
                     // when a download starts or a load starts.
                     busy: controller.isImporting.value ||
                         controller.activeDownloads.isNotEmpty ||
-                        Get.find<InferenceService>()
-                                .modelLoadProgress
-                                .value >
+                        Get.find<InferenceService>().modelLoadProgress.value >
                             0,
                   ),
                   const SizedBox(height: 14),
@@ -100,7 +99,8 @@ class ModelView extends GetView<ModelController> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'LOCAL MODELS (${controller.displayedModels.length})',
+                        preencher('mv_local_models',
+                            {'n': '${controller.displayedModels.length}'}),
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -125,8 +125,8 @@ class ModelView extends GetView<ModelController> {
                               const SizedBox(width: 4),
                               Text(
                                 controller.sortSmallestFirst.value
-                                    ? 'Size'
-                                    : 'Name',
+                                    ? 'mv_size_label'.tr
+                                    : 'mv_name_label'.tr,
                                 style: GoogleFonts.inter(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
@@ -233,7 +233,8 @@ class ModelView extends GetView<ModelController> {
         leading: Icon(Icons.memory_rounded,
             color: Theme.of(context).colorScheme.primary),
         title: Text('Encoders',
-            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+            style:
+                GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
         subtitle: Text('$rerank rerankers · $embed embedders',
             style: GoogleFonts.inter(
                 fontSize: 12, color: Theme.of(context).hintColor)),
@@ -283,7 +284,7 @@ class ModelView extends GetView<ModelController> {
                   GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
           subtitle: Text(
             heads.length == 1
-                ? '1 model · classification, not chat'
+                ? 'mv_one_classification_model'.tr
                 : '${heads.length} models · classification, not chat',
             style: GoogleFonts.inter(
                 fontSize: 12, color: Theme.of(context).hintColor),
@@ -373,8 +374,8 @@ class ModelView extends GetView<ModelController> {
             title: Text(model.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
+                style: GoogleFonts.inter(
+                    fontSize: 14, fontWeight: FontWeight.w600)),
             subtitle: Text(controller.modelSizeLabel(model),
                 style: GoogleFonts.inter(
                     fontSize: 12, color: Theme.of(sheetContext).hintColor)),
@@ -419,7 +420,7 @@ class ModelView extends GetView<ModelController> {
                         ));
                   },
                   icon: const Icon(Icons.search, size: 15),
-                  label: Text('Inspect the file',
+                  label: Text('mv_inspect_file'.tr,
                       style: GoogleFonts.inter(
                           fontSize: 12,
                           color: Theme.of(sheetContext).hintColor)),
@@ -448,8 +449,7 @@ class ModelView extends GetView<ModelController> {
                           // "server not running" against a running server.
                           authHeaders: Get.isRegistered<ServerController>()
                               ? localApiHeaders(
-                                  useApiKey: Get
-                                      .find<ServerController>()
+                                  useApiKey: Get.find<ServerController>()
                                       .useApiKey
                                       .value,
                                   apiKey:
@@ -459,7 +459,7 @@ class ModelView extends GetView<ModelController> {
                         ));
                   },
                   icon: const Icon(Icons.rule, size: 15),
-                  label: Text('Test a decision',
+                  label: Text('mv_test_decision'.tr,
                       style: GoogleFonts.inter(
                           fontSize: 12,
                           color: Theme.of(sheetContext).hintColor)),
@@ -516,7 +516,9 @@ class ModelView extends GetView<ModelController> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Material(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
               .withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
@@ -556,8 +558,7 @@ class ModelView extends GetView<ModelController> {
                                 ? 'Benchmark running…'
                                 : 'Benchmark usability',
                             style: GoogleFonts.inter(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600)),
+                                fontSize: 15, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 3),
                         Text(
                           state.running.value
@@ -582,8 +583,8 @@ class ModelView extends GetView<ModelController> {
                         ),
                         if (tested) ...[
                           const SizedBox(height: 6),
-                          _cpuSelfTestAdvice(context, verdict,
-                              state.tokensPerSecond.value),
+                          _cpuSelfTestAdvice(
+                              context, verdict, state.tokensPerSecond.value),
                         ],
                         if (state.running.value) ...[
                           const SizedBox(height: 8),
@@ -613,7 +614,7 @@ class ModelView extends GetView<ModelController> {
                   onPressed: () => svc.dismissOffer(),
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
-                  tooltip: 'Do not suggest this again',
+                  tooltip: 'mv_dont_suggest_again'.tr,
                   icon: Icon(Icons.close_rounded,
                       color: Theme.of(context).hintColor),
                 ),
@@ -732,7 +733,7 @@ class ModelView extends GetView<ModelController> {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: Text('Keep models anyway',
+                child: Text('mv_keep_models_anyway'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -743,7 +744,7 @@ class ModelView extends GetView<ModelController> {
         ],
         if (suggestsCloud && ignored) ...[
           const SizedBox(height: 2),
-          Text('Showing local models because you asked to ignore benchmarks.',
+          Text('mv_showing_local_because'.tr,
               style: GoogleFonts.inter(
                   fontSize: 11.5, color: Theme.of(context).hintColor)),
         ],
@@ -762,19 +763,18 @@ class ModelView extends GetView<ModelController> {
     if (missing && benchmark != null) {
       final go = await Get.dialog<bool>(
         AlertDialog(
-          title: const Text('Download the benchmark?'),
-          content: Text(
-            '"${benchmark.name}" is ${benchmark.size}. It is the smallest '
-            'model here, and it is what measures whether this phone can run a '
-            'model at all. Without it the test cannot run.',
-          ),
+          title: Text('mv_download_benchmark'.tr),
+          content: Text(preencher('mv_download_benchmark_note', {
+            'n': benchmark.name,
+            's': benchmark.size,
+          })),
           actions: [
             TextButton(
                 onPressed: () => Get.back(result: false),
                 child: const Text('Not now')),
             FilledButton(
                 onPressed: () => Get.back(result: true),
-                child: const Text('Download')),
+                child: Text('iv_download'.tr)),
           ],
         ),
       );
@@ -783,7 +783,8 @@ class ModelView extends GetView<ModelController> {
       if (!controller.downloadedFiles.contains(benchmark.filename)) return;
     }
 
-    final r = await svc.run(availableModels: controller.availableModels.toList());
+    final r =
+        await svc.run(availableModels: controller.availableModels.toList());
     if (svc.state.cancelled.value) return;
     if (!Get.isSnackbarOpen) {
       Get.snackbar(
@@ -821,8 +822,9 @@ class ModelView extends GetView<ModelController> {
               ),
             ),
             const SizedBox(height: 16),
-            Text('Encoders', style: GoogleFonts.inter(
-                fontSize: 20, fontWeight: FontWeight.w800)),
+            Text('Encoders',
+                style: GoogleFonts.inter(
+                    fontSize: 20, fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
             Text(
               'Estes não conversam. Carregar um substitui a conversa por um '
@@ -832,7 +834,9 @@ class ModelView extends GetView<ModelController> {
                   fontSize: 12, color: Theme.of(context).hintColor),
             ),
             const SizedBox(height: 20),
-            _encoderSection(ctx, 'Rerank — pontuar uma consulta contra documentos',
+            _encoderSection(
+                ctx,
+                'Rerank — pontuar uma consulta contra documentos',
                 controller.curatedRerankers),
             const SizedBox(height: 22),
             _encoderSection(ctx, 'Embed — transformar cada texto num vetor',
@@ -877,8 +881,9 @@ class ModelView extends GetView<ModelController> {
               .surfaceContainerHighest
               .withValues(alpha: 0.30),
           borderRadius: BorderRadius.circular(12),
-          border:
-              isActive ? Border.all(color: AppColors.primary, width: 1.5) : null,
+          border: isActive
+              ? Border.all(color: AppColors.primary, width: 1.5)
+              : null,
         ),
         // `Material` for the same reason as the tile above: the buttons inside
         // paint their ink on the nearest `Material`, and a decorated `Container`
@@ -914,11 +919,17 @@ class ModelView extends GetView<ModelController> {
                         fontSize: 12, color: Theme.of(ctx).hintColor)),
                 const SizedBox(height: 10),
                 Row(children: [
+                  // **Sem `const`: `.tr` é método de runtime.** O chip era
+                  // `const Chip` e o analyzer acusa "Extension methods can't be
+                  // used in constant expressions" — o mesmo erro das 16
+                  // substituições da primeira leva, e o mesmo conserto: tirar o
+                  // qualificador e devolver o nome do construtor.
                   if (isActive)
-                    const Chip(
-                      avatar: Icon(Icons.check_circle_rounded,
+                    Chip(
+                      avatar: const Icon(Icons.check_circle_rounded,
                           size: 14, color: AppColors.primary),
-                      label: Text('loaded', style: TextStyle(fontSize: 11)),
+                      label: Text('mv_state_loaded'.tr,
+                          style: const TextStyle(fontSize: 11)),
                       visualDensity: VisualDensity.compact,
                     )
                   else if (isDownloaded)
@@ -943,7 +954,8 @@ class ModelView extends GetView<ModelController> {
                               height: 13,
                               child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.download_rounded, size: 16),
-                      label: Text(dp != null ? 'downloading' : 'download'),
+                      label: Text(
+                          dp != null ? 'downloading' : 'mv_download_lower'.tr),
                       style: FilledButton.styleFrom(
                           visualDensity: VisualDensity.compact,
                           minimumSize: const Size(0, 34),
@@ -1027,7 +1039,12 @@ class ModelView extends GetView<ModelController> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  section.title.toUpperCase(),
+                  // **O rótulo traduzido, e não a chave.** `section.title` é
+                  // o valor persistido de `expandedSections` e é em inglês de
+                  // propósito — trocar o texto de exibição quebra a expansão
+                  // salva. `.tr` e `toUpperCase` nesta ordem porque PT-BR e EN
+                  // diferem na caixa das letras acentuadas.
+                  section.label.toUpperCase(),
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -1090,8 +1107,13 @@ class ModelView extends GetView<ModelController> {
     // Only reached when every section came up empty, which on a fresh install
     // means nothing has been downloaded and the catalogue found nothing that
     // fits this phone's memory.
-    const title = 'No models yet';
-    const subtitle = 'Import a local model or add a downloadable URL.';
+    // **Sem `const`.** `'chave'.tr` é método de runtime sobre o locale atual, e
+    // `const title = 'x'.tr` não compila — o analyzer diz "Extension methods
+    // can't be used in constant expressions". O `const` foi automático quando o
+    // texto era literal, e a troca por chave o deixou inválido sem nada no
+    // código parecer errado.
+    final title = 'mv_no_models_yet'.tr;
+    final subtitle = 'mv_import_local_or_url'.tr;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1334,7 +1356,16 @@ class ModelView extends GetView<ModelController> {
         final layers = inference.gpuLayersUsed.value;
         final name = inference.gpuName.value;
         final where = name.isEmpty ? 'GPU' : 'GPU: $name';
-        return layers > 0 ? '⚡ $where ($layers layers)' : '⚡ $where';
+        // **`trParams` não serve aqui.** É um método de `String`, e o
+        // resultado de `'chave'.tr` é um `String` estático para o analyzer —
+        // a chamada dentro da interpolação não compila. `preencher` faz a
+        // mesma troca e é uma função de topo.
+        // **Só a forma com camadas vai para o mapa.** `⚡ $where` sem camada é
+        // `GPU: Adreno (TM) 618` ou `CPU` — nome de aparelho e de acelerador,
+        // que não se traduzem. A chave pega o que é prosa: quantas camadas.
+        return layers > 0
+            ? preencher('mv_gpu_layers', {'w': where, 'n': '$layers'})
+            : '⚡ $where';
       default:
         return '▪ CPU';
     }
@@ -1378,7 +1409,7 @@ class ModelView extends GetView<ModelController> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'CLOUD · $providerName',
+                  preencher('mv_cloud_provider', {'p': providerName}),
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     color: Theme.of(context).hintColor,
@@ -1663,14 +1694,14 @@ class ModelView extends GetView<ModelController> {
     final canUse = cloud.canSelectModel(provider.id);
     final model = cloud.activeModelFor(provider.id);
     final hasSelectedModel = canUse && model.isNotEmpty;
-    final modelLabel = hasSelectedModel ? model : 'No model selected';
+    final modelLabel = hasSelectedModel ? model : 'mv_no_model_selected'.tr;
     final name = isCustom ? settings.customCloudName.value : provider.name;
     final accent = _providerAccent(provider.id);
     final error = cloud.errorByProvider[provider.id];
     final status = isActive && hasSelectedModel
         ? 'ACTIVE'
         : canUse
-            ? 'READY'
+            ? 'mv_state_ready'.tr
             : cloud.statusLabel(provider.id).toUpperCase();
 
     return Padding(
@@ -1753,7 +1784,7 @@ class ModelView extends GetView<ModelController> {
                     ),
                     const SizedBox(width: 8),
                     IconButton(
-                      tooltip: 'Provider settings',
+                      tooltip: 'mv_provider_settings'.tr,
                       onPressed: () =>
                           _showProviderActionsSheet(context, cloud, provider),
                       icon: const Icon(Icons.more_vert, size: 20),
@@ -1893,7 +1924,9 @@ class ModelView extends GetView<ModelController> {
                       contentPadding: const EdgeInsets.symmetric(vertical: 4),
                       leading: const Icon(Icons.key_outlined, size: 26),
                       title: Text(
-                        configured ? 'Update API key' : 'Add API key',
+                        configured
+                            ? 'mv_update_api_key'.tr
+                            : 'mv_add_api_key'.tr,
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
@@ -1919,15 +1952,17 @@ class ModelView extends GetView<ModelController> {
                         isCustom ? Icons.tune : Icons.smart_toy_outlined,
                         size: 26),
                     title: Text(
-                      isCustom ? 'Configure and select' : 'Select model',
+                      isCustom
+                          ? 'mv_configure_select'.tr
+                          : 'mv_select_model'.tr,
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     subtitle: Text(isCustom
-                        ? 'Set base URL, key, and model ID'
-                        : 'Search provider models or enter a model ID'),
+                        ? 'mv_set_base_key_id'.tr
+                        : 'mv_search_provider_or_id'.tr),
                     onTap: () {
                       Get.back();
                       if (isCustom) {
@@ -2015,11 +2050,14 @@ class ModelView extends GetView<ModelController> {
                 obscureText: obscureKey.value,
                 style: GoogleFonts.firaCode(fontSize: 13),
                 decoration: InputDecoration(
-                  labelText: 'API key',
-                  hintText: 'Paste ${provider.name} key',
+                  labelText: 'mv_api_key'.tr,
+                  hintText:
+                      preencher('mv_paste_provider_key', {'p': provider.name}),
                   prefixIcon: const Icon(Icons.key_outlined, size: 23),
                   suffixIcon: IconButton(
-                    tooltip: obscureKey.value ? 'Show API key' : 'Hide API key',
+                    tooltip: obscureKey.value
+                        ? 'mv_show_api_key'.tr
+                        : 'mv_hide_api_key'.tr,
                     onPressed: () => obscureKey.value = !obscureKey.value,
                     icon: Icon(
                       obscureKey.value
@@ -2045,7 +2083,7 @@ class ModelView extends GetView<ModelController> {
               );
             }),
             Text(
-              'Save the key to verify it and load live models.',
+              'mv_save_key_to_verify'.tr,
               style: GoogleFonts.inter(
                 fontSize: 13,
                 color: Theme.of(context).hintColor,
@@ -2113,7 +2151,7 @@ class ModelView extends GetView<ModelController> {
                         fontSize: 24, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
                 Text(
-                  'Use any OpenAI-compatible endpoint. Enter the base URL without /chat/completions.',
+                  'mv_openai_endpoint'.tr,
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     height: 1.35,
@@ -2133,8 +2171,8 @@ class ModelView extends GetView<ModelController> {
                           child: DropdownButtonFormField<int>(
                             key: ValueKey(selected),
                             initialValue: selected >= 0 ? selected : null,
-                            decoration: const InputDecoration(
-                              labelText: 'Saved provider',
+                            decoration: InputDecoration(
+                              labelText: 'mv_saved_provider'.tr,
                               prefixIcon: Icon(Icons.bookmarks_outlined),
                             ),
                             items: [
@@ -2201,12 +2239,12 @@ class ModelView extends GetView<ModelController> {
                     controller: cloud.customApiKeyController,
                     obscureText: obscureCustomKey.value,
                     decoration: InputDecoration(
-                      labelText: 'API key',
+                      labelText: 'mv_api_key'.tr,
                       prefixIcon: const Icon(Icons.key_outlined, size: 23),
                       suffixIcon: IconButton(
                         tooltip: obscureCustomKey.value
-                            ? 'Show API key'
-                            : 'Hide API key',
+                            ? 'mv_show_api_key'.tr
+                            : 'mv_hide_api_key'.tr,
                         onPressed: () =>
                             obscureCustomKey.value = !obscureCustomKey.value,
                         icon: Icon(
@@ -2224,8 +2262,8 @@ class ModelView extends GetView<ModelController> {
                 const SizedBox(height: 14),
                 TextField(
                   controller: cloud.customModelController,
-                  decoration: const InputDecoration(
-                    labelText: 'Model ID',
+                  decoration: InputDecoration(
+                    labelText: 'mv_model_id'.tr,
                     prefixIcon: Icon(Icons.smart_toy_outlined, size: 23),
                     contentPadding:
                         EdgeInsets.symmetric(vertical: 20, horizontal: 18),
@@ -2359,7 +2397,8 @@ class ModelView extends GetView<ModelController> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Select ${provider.name} Model',
+                          preencher(
+                              'mv_select_provider_model', {'p': provider.name}),
                           style: GoogleFonts.inter(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -2377,8 +2416,8 @@ class ModelView extends GetView<ModelController> {
                     onChanged: (value) =>
                         cloud.searchByProvider[provider.id] = value,
                     style: GoogleFonts.inter(fontSize: 15),
-                    decoration: const InputDecoration(
-                      hintText: 'Search models...',
+                    decoration: InputDecoration(
+                      hintText: 'mv_search_models'.tr,
                       prefixIcon: Icon(Icons.search, size: 23),
                       contentPadding: EdgeInsets.symmetric(
                         vertical: 18,
@@ -2391,7 +2430,10 @@ class ModelView extends GetView<ModelController> {
                     children: [
                       Expanded(
                         child: Text(
-                          '${models.length} models - ${cloud.fetchedLabel(provider.id)}',
+                          preencher('mv_provider_model_count', {
+                            'n': '${models.length}',
+                            'f': cloud.fetchedLabel(provider.id),
+                          }),
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             color: Theme.of(context).hintColor,
@@ -2480,7 +2522,7 @@ class ModelView extends GetView<ModelController> {
         border: Border.all(color: Theme.of(context).dividerColor, width: 0.5),
       ),
       child: Text(
-        'No models loaded. Add an API key to update the live list, or use a custom model ID.',
+        'mv_no_models_loaded'.tr,
         textAlign: TextAlign.center,
         style: GoogleFonts.inter(
           fontSize: 12,
@@ -2498,13 +2540,13 @@ class ModelView extends GetView<ModelController> {
     final textController =
         TextEditingController(text: cloud.activeModelFor(provider.id));
     Get.dialog(AlertDialog(
-      title: Text('Custom ${provider.name} Model',
+      title: Text(preencher('mv_custom_provider_model', {'p': provider.name}),
           style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
       content: TextField(
         controller: textController,
         style: GoogleFonts.firaCode(fontSize: 12),
-        decoration: const InputDecoration(
-          labelText: 'Model ID',
+        decoration: InputDecoration(
+          labelText: 'mv_model_id'.tr,
           prefixIcon: Icon(Icons.smart_toy_outlined, size: 18),
         ),
       ),
@@ -2593,7 +2635,8 @@ class ModelView extends GetView<ModelController> {
                 // Auto-detected context window
                 if (cloud.contextWindowFor(providerId, id) != null) ...[
                   const SizedBox(width: 8),
-                  _buildContextBadge(context, cloud.contextWindowFor(providerId, id)!),
+                  _buildContextBadge(
+                      context, cloud.contextWindowFor(providerId, id)!),
                 ],
                 // Auto-detected capabilities
                 for (final cap in cloud.capabilitiesFor(providerId, id)) ...[
@@ -2623,7 +2666,7 @@ class ModelView extends GetView<ModelController> {
                     );
                     Get.back(closeOverlays: false);
                   },
-                  child: Text(canUse ? 'Select' : 'Add Key'),
+                  child: Text(canUse ? 'Select' : 'mv_add_key'.tr),
                 ),
         ],
       ),
@@ -2683,9 +2726,7 @@ class ModelView extends GetView<ModelController> {
   Widget _buildCapBadge(BuildContext context, String cap) {
     final isVision = cap == 'vision';
     final icon = isVision ? '👁' : '🔧';
-    final color = isVision
-        ? const Color(0xFFFF7CB3)
-        : const Color(0xFF8B7CFF);
+    final color = isVision ? const Color(0xFFFF7CB3) : const Color(0xFF8B7CFF);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
@@ -2742,11 +2783,10 @@ class ModelView extends GetView<ModelController> {
     );
   }
 
-
   Widget _buildModelBadges(BuildContext context, AiModel model) {
     final badges = <({String label, Color color})>[];
     if (controller.isDownloaded(model.filename)) {
-      badges.add((label: 'DOWNLOADED', color: AppColors.success));
+      badges.add((label: 'mv_state_downloaded'.tr, color: AppColors.success));
     }
     if (controller.isTfliteModel(model)) {
       // Its own badge, not "LiteRT". The two share a name in Google's Maven
@@ -2763,7 +2803,8 @@ class ModelView extends GetView<ModelController> {
       badges.add((label: 'UNCENSORED', color: AppColors.error));
     }
     if (controller.isVisionModel(model)) {
-      badges.add((label: controller.modalityLabel(model), color: AppColors.info));
+      badges
+          .add((label: controller.modalityLabel(model), color: AppColors.info));
     }
     if (controller.isImageModel(model)) {
       badges.add((label: 'IMAGE', color: AppColors.primary));
@@ -2868,7 +2909,7 @@ class ModelView extends GetView<ModelController> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'A Wi-Fi connection is highly recommended. Please keep the app open during the download.',
+                      'mv_wifi_recommended'.tr,
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: Theme.of(context).brightness == Brightness.dark
@@ -2940,8 +2981,7 @@ class ModelView extends GetView<ModelController> {
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: Text('delete_model'.tr),
-            content:
-                Text('$filename will be permanently removed from this device.'),
+            content: Text(preencher('mv_delete_filename', {'f': filename})),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
@@ -2968,10 +3008,10 @@ class ModelView extends GetView<ModelController> {
     final nameController = TextEditingController(text: model.name);
     final urlController = TextEditingController(text: model.url);
     // Abre no idioma que a tela está mostrando: um campo de edição que
-      // começa em inglês numa tela portuguesa faz a pessoa traduzir a própria
-      // ficha antes de poder mexer no resto.
-      final descController = TextEditingController(
-          text: model.descriptionFor(Get.locale));
+    // começa em inglês numa tela portuguesa faz a pessoa traduzir a própria
+    // ficha antes de poder mexer no resto.
+    final descController =
+        TextEditingController(text: model.descriptionFor(Get.locale));
     final templateController = TextEditingController(text: model.template);
 
     showModalBottomSheet(
@@ -3038,7 +3078,7 @@ class ModelView extends GetView<ModelController> {
             _buildTextField(
               context,
               controller: templateController,
-              label: 'Template',
+              label: 'mv_template'.tr,
               hint: 'e.g. chatml',
             ),
             const SizedBox(height: 20),
@@ -3048,8 +3088,8 @@ class ModelView extends GetView<ModelController> {
                   child: TextButton(
                     onPressed: () => Navigator.of(sheetContext).pop(),
                     child: Text('cancel'.tr,
-                        style: TextStyle(
-                            color: Theme.of(sheetContext).hintColor)),
+                        style:
+                            TextStyle(color: Theme.of(sheetContext).hintColor)),
                   ),
                 ),
                 Expanded(
@@ -3080,9 +3120,8 @@ class ModelView extends GetView<ModelController> {
                       Navigator.of(sheetContext).pop();
                     },
                     style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(sheetContext)
-                          .colorScheme
-                          .primary,
+                      backgroundColor:
+                          Theme.of(sheetContext).colorScheme.primary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -3130,17 +3169,14 @@ class ModelView extends GetView<ModelController> {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
-            color: isDark
-                ? const Color(0xFFB9F53E)
-                : const Color(0xFFB9F53E),
+            color: isDark ? const Color(0xFFB9F53E) : const Color(0xFFB9F53E),
           ),
         ),
         labelStyle: TextStyle(
           color: isDark ? Colors.white70 : Colors.black87,
         ),
       ),
-      keyboardType:
-          maxLines > 1 ? TextInputType.multiline : TextInputType.text,
+      keyboardType: maxLines > 1 ? TextInputType.multiline : TextInputType.text,
     );
   }
 
@@ -3151,21 +3187,20 @@ class ModelView extends GetView<ModelController> {
     final current = controller.mmprojRefFor(model.filename);
     showModalBottomSheet(
       context: context,
-      backgroundColor:
-          isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Vision · ${model.name}',
+            Text(preencher('mv_vision_model', {'m': model.name}),
                 style: GoogleFonts.inter(
                     fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text(
               current == null
-                  ? 'No projector paired'
+                  ? 'mv_no_projector_paired'.tr
                   : 'Paired: ${current.split("/").last}',
               style: GoogleFonts.inter(
                   fontSize: 13, color: Theme.of(context).hintColor),
@@ -3183,11 +3218,11 @@ class ModelView extends GetView<ModelController> {
             ListTile(
               leading: const Icon(Icons.cloud_download_rounded),
               title: Text('from_hugging_face'.tr),
-              subtitle:
-                  Text('download_the_mmproj_via_the_hf_search_th'.tr),
+              subtitle: Text('download_the_mmproj_via_the_hf_search_th'.tr),
               onTap: () async {
                 Navigator.pop(ctx);
-                final downloaded = await controller.downloadedMmprojCandidates();
+                final downloaded =
+                    await controller.downloadedMmprojCandidates();
                 if (!context.mounted) return;
                 if (downloaded.isEmpty) {
                   Get.snackbar('Vision',
@@ -3214,8 +3249,8 @@ class ModelView extends GetView<ModelController> {
     );
   }
 
-  void _pickDownloadedMmproj(BuildContext context, AiModel model,
-      List<String> candidates) {
+  void _pickDownloadedMmproj(
+      BuildContext context, AiModel model, List<String> candidates) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -3245,7 +3280,8 @@ class ModelView extends GetView<ModelController> {
       // The projector is half of a multimodal download, and it keeps going
       // after the weights land, so the card has to stay in the downloading
       // state until both are in.
-      final isDownloadingWeights = controller.isDownloadingModel(model.filename);
+      final isDownloadingWeights =
+          controller.isDownloadingModel(model.filename);
       final isDownloadingProjector = model.needsMmproj &&
           controller.isDownloadingModel(model.mmprojFilename);
       final isCurrentlyDownloading =
@@ -3273,7 +3309,7 @@ class ModelView extends GetView<ModelController> {
             ? DismissDirection.horizontal
             : DismissDirection.startToEnd,
         background: _swipeAction(
-            context, Icons.delete_outline, 'Delete', AppColors.error,
+            context, Icons.delete_outline, 'delete'.tr, AppColors.error,
             alignment: Alignment.centerLeft),
         secondaryBackground: isEditable
             ? _swipeAction(
@@ -3321,8 +3357,7 @@ class ModelView extends GetView<ModelController> {
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
-                              color:
-                                  Theme.of(context).colorScheme.onSurface,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -3366,13 +3401,12 @@ class ModelView extends GetView<ModelController> {
                                   : () => controller.loadModel(model.filename),
                               style: FilledButton.styleFrom(
                                 backgroundColor: isActive
-                                    ? AppColors.success
-                                        .withValues(alpha: 0.2)
+                                    ? AppColors.success.withValues(alpha: 0.2)
                                     : null,
                                 foregroundColor:
                                     isActive ? AppColors.success : null,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(20),
                                 ),
@@ -3384,7 +3418,7 @@ class ModelView extends GetView<ModelController> {
                                         ? '$loadPercent%'
                                         : isActive
                                             ? 'Active'
-                                            : 'Load',
+                                            : 'mv_load_action'.tr,
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold),
                               ),
@@ -3395,8 +3429,7 @@ class ModelView extends GetView<ModelController> {
                                   ? null
                                   : () => _showVisionSheet(context, model),
                               icon: Icon(
-                                controller.mmprojRefFor(model.filename) !=
-                                        null
+                                controller.mmprojRefFor(model.filename) != null
                                     ? Icons.visibility_rounded
                                     : Icons.visibility_outlined,
                                 size: 20,
@@ -3408,8 +3441,9 @@ class ModelView extends GetView<ModelController> {
                               ),
                             ),
                             IconButton(
-                              tooltip:
-                                  isActive ? 'Unload model' : 'Delete model',
+                              tooltip: isActive
+                                  ? 'mv_unload_model'.tr
+                                  : 'mv_delete_model'.tr,
                               onPressed: disableActions
                                   ? null
                                   : isActive
@@ -3433,15 +3467,15 @@ class ModelView extends GetView<ModelController> {
                                   : () => _confirmDownload(context, model),
                               style: FilledButton.styleFrom(
                                 backgroundColor: AppColors.primary,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                               ),
                               child: Text('get'.tr,
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold)),
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ],
@@ -3454,7 +3488,7 @@ class ModelView extends GetView<ModelController> {
                     _buildInlineDownloadProgress(
                       context,
                       model.filename,
-                      label: model.needsMmproj ? 'Model weights' : null,
+                      label: model.needsMmproj ? 'mv_model_weights'.tr : null,
                       totalFallback: controller.modelSizeLabel(model),
                     ),
                   if (isDownloadingProjector) ...[
@@ -3752,7 +3786,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
       size: widget.sizeController.text.isEmpty
           ? 'Unknown size'
           : widget.sizeController.text,
-      description: 'Added custom model via URL',
+      description: 'mv_added_custom_url'.tr,
       template: widget.templateController.text,
       isVision: widget.isVision.value,
     );
@@ -3842,7 +3876,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Download a GGUF or LiteRT model from any URL',
+                          'mv_download_any_url'.tr,
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             color: isDark
@@ -3891,8 +3925,8 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _SectionLabel(
-                        label: 'MODEL URL', color: AppColors.primary),
+                    _SectionLabel(
+                        label: 'mv_model_url'.tr, color: AppColors.primary),
                     const SizedBox(height: 8),
                     _SheetTextField(
                       controller: widget.urlController,
@@ -3950,7 +3984,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                     }),
                     const SizedBox(height: 20),
 
-                    const _SectionLabel(label: 'MODEL INFO'),
+                    _SectionLabel(label: 'mv_model_info'.tr),
                     const SizedBox(height: 8),
                     _SheetTextField(
                       controller: widget.nameController,
@@ -3969,7 +4003,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                     ),
                     const SizedBox(height: 20),
 
-                    const _SectionLabel(label: 'FILE SIZE'),
+                    _SectionLabel(label: 'mv_file_size'.tr),
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -3991,7 +4025,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                     ),
                     const SizedBox(height: 20),
 
-                    const _SectionLabel(label: 'CHAT TEMPLATE'),
+                    _SectionLabel(label: 'mv_chat_template'.tr),
                     const SizedBox(height: 8),
                     _TemplateSelector(
                       controller: widget.templateController,
@@ -4353,7 +4387,7 @@ class _VisionToggle extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Image and audio input — LiteRT-LM only',
+                    'mv_image_audio_input'.tr,
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: isDark
@@ -4402,7 +4436,8 @@ class _VisionToggle extends StatelessWidget {
 /// cache and reads low on a phone while plenty is actually available, which
 /// makes it useless for predicting whether a load will fail.
 class _DeviceLoadCard extends StatefulWidget {
-  const _DeviceLoadCard({required this.controller, required this.busy, super.key});
+  const _DeviceLoadCard(
+      {required this.controller, required this.busy, super.key});
 
   /// The download map is the only controller state this card reads reactively,
   /// and it lives on the controller, so the controller comes along. A top-level
@@ -4485,7 +4520,9 @@ class _DeviceLoadCardState extends State<_DeviceLoadCard> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: Material(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
               .withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
@@ -4499,7 +4536,7 @@ class _DeviceLoadCardState extends State<_DeviceLoadCard> {
                     Icon(Icons.memory_rounded,
                         size: 18, color: tight ? AppColors.warning : accent),
                     const SizedBox(width: 8),
-                    Text('Memory',
+                    Text('mv_memory_label'.tr,
                         style: GoogleFonts.inter(
                             fontSize: 14, fontWeight: FontWeight.w600)),
                     const Spacer(),
@@ -4507,8 +4544,10 @@ class _DeviceLoadCardState extends State<_DeviceLoadCard> {
                     // model they are about to pick, not a percentage for its
                     // own sake.
                     Text(
-                      '${formatWholeMb(free)} free'
-                      ' of ${formatWholeMb(total)}',
+                      preencher('mv_memory_free', {
+                        'f': formatWholeMb(free),
+                        't': formatWholeMb(total),
+                      }),
                       style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
@@ -4531,7 +4570,7 @@ class _DeviceLoadCardState extends State<_DeviceLoadCard> {
                 if (tight) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Low memory — a large model will fail to load, not run slowly.',
+                    'mv_low_memory'.tr,
                     style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,

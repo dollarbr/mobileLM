@@ -2,6 +2,7 @@ import '../utils/cpu_topology.dart';
 import 'dart:io' show File, Platform;
 
 import 'package:flutter/material.dart';
+import 'package:mobilelm/services/text_interpolation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -249,7 +250,7 @@ class SettingsView extends GetView<SettingsController> {
                 icon: Icons.image_outlined,
                 title: 'image_generation'.tr,
                 subtitle:
-                    '${controller.imageSteps.value} steps · ${controller.imageGenSize.value == 0 ? "auto size" : "${controller.imageGenSize.value}px"}',
+                    '${controller.imageSteps.value} steps · ${controller.imageGenSize.value == 0 ? 'set_auto_size'.tr : "${controller.imageGenSize.value}px"}',
                 children: [_buildImageGenerationCard(context, isDark)],
               ),
               const SizedBox(height: 24),
@@ -276,11 +277,21 @@ class SettingsView extends GetView<SettingsController> {
                   // the default is 1, and the tile read "up to 1 hops". The same
                   // sentence appears in the ending message the loop writes, and
                   // that one had the fix; this one had the bug.
+                  // **A interpolação é montada aqui e não no mapa, e por dois
+                  // motivos.** Primeiro: `.tr` devolve o valor da chave e um
+                  // `@n` dentro dele não é substituído — `trParams` faz isso, e
+                  // a forma do plural continua sendo do português, não do
+                  // Dart. Segundo, e é o que a auditoria mediu: o literal
+                  // `'Agent mode: up to ${…} hop…'` **é recusado pelo filtro de
+                  // idioma de propósito**, porque `TextLanguage.looksEnglish`
+                  // devolve falso para qualquer texto com `$` — o valor no
+                  // fonte não é o valor na tela, e trocar o literal inteiro por
+                  // uma chave apagaria a parte que muda. O que está é o padrão
+                  // para o caso: duas chaves, uma para cada número, e a
+                  // contagem volta por cima.
                   subtitle: controller.agentMaxHops.value == 0
-                      ? 'Unlimited agent mode'
-                      : 'Agent mode: up to ${controller.agentMaxHops.value} '
-                          'hop${controller.agentMaxHops.value == 1 ? '' : 's'} '
-                          'per message',
+                      ? 'set_unlimited_agent_mode'.tr
+                      : _agentHopSubtitle(controller.agentMaxHops.value),
                   trailing: InkWell(
                     onTap: () => _showHopInputDialog(context),
                     child: controller.agentMaxHops.value == 0
@@ -335,7 +346,7 @@ class SettingsView extends GetView<SettingsController> {
                     subtitle: st.running.value
                         ? 'Running…'
                         : st.summary.value.isEmpty
-                            ? 'Runs the 230M model and measures real speed'
+                            ? 'set_benchmark_detail'.tr
                             : st.summary.value,
                     trailing: st.running.value
                         ? SizedBox(
@@ -349,12 +360,10 @@ class SettingsView extends GetView<SettingsController> {
                           )
                         : Switch(
                             value: svc.offerEnabled,
-                            onChanged: (v) => v
-                                ? svc.restoreOffer()
-                                : svc.dismissOffer(),
+                            onChanged: (v) =>
+                                v ? svc.restoreOffer() : svc.dismissOffer(),
                           ),
-                    onTap:
-                        st.running.value ? null : () => _runBenchmark(svc),
+                    onTap: st.running.value ? null : () => _runBenchmark(svc),
                   );
                 }),
                 Obx(() {
@@ -365,15 +374,12 @@ class SettingsView extends GetView<SettingsController> {
                     leading: _iconBox(
                         isDark ? const Color(0xFFB9F53E) : AppColors.primary,
                         Icons.visibility_off_outlined),
-                    title: 'Show models, ignore benchmarks',
+                    title: 'set_show_models_ignore'.tr,
                     subtitle: mc.ignoreBenchmarkAdvice.value
-                        ? 'The benchmark still shows its number, but never offers '
-                            'to hide the local list again'
+                        ? 'set_show_models_ignore_detail'.tr
                         : mc.localCatalogueHidden.value
-                            ? 'Showing only what is on this device. Encoders '
-                                'still work.'
-                            : 'Keeps the local list whatever the benchmark says, '
-                                'and stops it offering to hide it',
+                            ? 'set_local_only_detail'.tr
+                            : 'set_keep_models_detail'.tr,
                     trailing: Switch(
                       value: mc.ignoreBenchmarkAdvice.value,
                       onChanged: mc.setIgnoreBenchmarkAdvice,
@@ -458,7 +464,7 @@ class SettingsView extends GetView<SettingsController> {
         leading: _iconBox(const Color(0xFF8B7CFF), Icons.schedule_rounded),
         title: 'scheduled_tasks'.tr,
         subtitle: taskCount == 0
-            ? 'Daily prompts that run on their own'
+            ? 'set_daily_prompts_detail'.tr
             : '$taskCount daily task${taskCount == 1 ? '' : 's'}',
         showDivider: false,
         onTap: () => _openScheduledTasksSheet(context, isDark),
@@ -476,8 +482,7 @@ class SettingsView extends GetView<SettingsController> {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text('show_background_notification'.tr),
-      subtitle: const Text('Display a persistent notification while tasks are\n'
-          'scheduled or model is kept loaded in the background.'),
+      subtitle: Text('set_notification_detail'.tr),
       trailing: Switch(
         value: showNotif,
         onChanged: (v) async {
@@ -594,9 +599,9 @@ class SettingsView extends GetView<SettingsController> {
               keyboardType: const TextInputType.numberWithOptions(
                   signed: false, decimal: false),
               autofocus: true,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Value',
-                hintText: '0 = no cap, 1–8 = max hops',
+                hintText: 'set_hops_hint'.tr,
               ),
               onSubmitted: (v) {
                 final val = int.tryParse(v);
@@ -654,9 +659,7 @@ class SettingsView extends GetView<SettingsController> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 20),
                       child: Text(
-                        'No tasks yet. A task runs its prompt every day at the '
-                        'chosen time with the model it was created with — even '
-                        'with the app closed — and posts the result here in chat.',
+                        'set_no_tasks_detail'.tr,
                         style: GoogleFonts.inter(
                             fontSize: 13, color: Colors.grey.shade500),
                       ),
@@ -721,7 +724,7 @@ class SettingsView extends GetView<SettingsController> {
       );
     } catch (e, st) {
       if (context.mounted) {
-        Get.snackbar('Error', '$e', snackPosition: SnackPosition.BOTTOM);
+        Get.snackbar('error'.tr, '$e', snackPosition: SnackPosition.BOTTOM);
       }
     }
   }
@@ -800,15 +803,14 @@ class SettingsView extends GetView<SettingsController> {
               const SizedBox(height: 8),
               CheckboxListTile(
                 title: Text('keep_model_loaded_between_runs'.tr),
-                subtitle: const Text(
-                    'Faster execution, but uses more RAM and battery'),
+                subtitle: Text('set_faster_more_ram'.tr),
                 value: keepModelLoaded,
                 onChanged: (v) => setState(() => keepModelLoaded = v ?? false),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: selectedModel,
-                decoration: const InputDecoration(labelText: 'Model'),
+                decoration: InputDecoration(labelText: 'set_model_label'.tr),
                 items: downloaded
                     .map((f) => DropdownMenuItem(value: f, child: Text(f)))
                     .toList(),
@@ -850,11 +852,11 @@ class SettingsView extends GetView<SettingsController> {
         frequency: frequency,
         keepModelLoaded: keepModelLoaded,
       );
-      Get.snackbar('scheduled_tasks'.tr, 'Task created.',
+      Get.snackbar('scheduled_tasks'.tr, 'set_task_created'.tr,
           snackPosition: SnackPosition.BOTTOM);
       return true;
     } catch (e) {
-      Get.snackbar('scheduled_tasks'.tr, 'Failed: $e',
+      Get.snackbar('scheduled_tasks'.tr, preencher('set_failed', {'e': '$e'}),
           snackPosition: SnackPosition.BOTTOM);
       return false;
     }
@@ -929,8 +931,7 @@ class SettingsView extends GetView<SettingsController> {
               const SizedBox(height: 8),
               CheckboxListTile(
                 title: Text('keep_model_loaded_between_runs'.tr),
-                subtitle: const Text(
-                    'Faster execution, but uses more RAM and battery'),
+                subtitle: Text('set_faster_more_ram'.tr),
                 value: keepModelLoaded,
                 onChanged: (v) => setState(() => keepModelLoaded = v ?? false),
               ),
@@ -938,7 +939,7 @@ class SettingsView extends GetView<SettingsController> {
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: selectedModel.isEmpty ? null : selectedModel,
-                  decoration: const InputDecoration(labelText: 'Model'),
+                  decoration: InputDecoration(labelText: 'set_model_label'.tr),
                   hint: Text('select_model'.tr),
                   items: downloaded
                       .map((f) => DropdownMenuItem(value: f, child: Text(f)))
@@ -992,7 +993,7 @@ class SettingsView extends GetView<SettingsController> {
           snackPosition: SnackPosition.BOTTOM);
       return true;
     } catch (e) {
-      Get.snackbar('scheduled_tasks'.tr, 'Failed: $e',
+      Get.snackbar('scheduled_tasks'.tr, preencher('set_failed', {'e': '$e'}),
           snackPosition: SnackPosition.BOTTOM);
       return false;
     }
@@ -1013,7 +1014,7 @@ class SettingsView extends GetView<SettingsController> {
       if (e.embedNormalize.value != null) {
         parts.add(e.embedNormalize.value! ? 'normalise' : 'raw');
       }
-      if (parts.isEmpty) return 'All from the model';
+      if (parts.isEmpty) return 'set_all_from_model'.tr;
       return parts.join(' · ');
     }
     final parts = <String>[];
@@ -1022,7 +1023,7 @@ class SettingsView extends GetView<SettingsController> {
       parts.add('sep "${e.rerankDocumentSeparator.value}"');
     }
     if (!e.rerankReturnDocuments.value) parts.add('no documents');
-    if (parts.isEmpty) return 'All from the model';
+    if (parts.isEmpty) return 'set_all_from_model'.tr;
     return parts.join(' · ');
   }
 
@@ -1211,8 +1212,7 @@ class SettingsView extends GetView<SettingsController> {
           if (state == ShizukuState.ready) ...[
             const SizedBox(height: 6),
             Text(
-              'The privileged tools are listed under Tools. Every one of them '
-              'asks before it runs, reads included.',
+              'set_privileged_note'.tr,
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: Theme.of(context).hintColor,
@@ -1274,7 +1274,7 @@ class SettingsView extends GetView<SettingsController> {
         title: 'tools'.tr,
         subtitle: enabled
             ? '${on.length} of ${catalogue.length} enabled'
-            : 'Off — the tool list is kept out of the prompt',
+            : 'set_agent_off_detail'.tr,
         trailing: enabled ? Icon(Icons.check, size: 18, color: accent) : null,
         showDivider: enabled,
         onTap: () => controller.setToolsEnabled(!enabled),
@@ -1328,8 +1328,8 @@ class SettingsView extends GetView<SettingsController> {
           keyboardType: TextInputType.url,
           autocorrect: false,
           decoration: InputDecoration(
-            labelText: 'Custom search API URL',
-            hintText: 'https://searx.example.org/search',
+            labelText: 'set_custom_search_url'.tr,
+            hintText: 'set_custom_search_url_hint'.tr,
             suffixIcon: IconButton(
               icon: const Icon(Icons.check_circle_outline, size: 20),
               onPressed: () => controller.setCustomSearchUrl(
@@ -1345,8 +1345,8 @@ class SettingsView extends GetView<SettingsController> {
           autocorrect: false,
           obscureText: true,
           decoration: InputDecoration(
-            labelText: 'Custom search API token',
-            hintText: 'leave empty for SearXNG',
+            labelText: 'set_custom_search_token'.tr,
+            hintText: 'set_custom_search_token_hint'.tr,
             suffixIcon: IconButton(
               icon: const Icon(Icons.check_circle_outline, size: 20),
               onPressed: () => controller.setCustomSearchToken(
@@ -1377,19 +1377,19 @@ class SettingsView extends GetView<SettingsController> {
       (
         value: 'auto',
         title: 'Thinking: Auto',
-        subtitle: "Send nothing — the model's own default",
+        subtitle: 'set_send_nothing_default'.tr,
         icon: Icons.auto_awesome_rounded
       ),
       (
         value: 'on',
         title: 'Thinking: On',
-        subtitle: 'Ask for reasoning before the answer (/think)',
+        subtitle: 'set_think_label'.tr,
         icon: Icons.psychology_rounded
       ),
       (
         value: 'off',
         title: 'Thinking: Off',
-        subtitle: 'Answer directly, no reasoning (/no_think)',
+        subtitle: 'set_no_think_label'.tr,
         icon: Icons.bolt_rounded
       ),
     ];
@@ -1468,7 +1468,7 @@ class SettingsView extends GetView<SettingsController> {
             leading: _iconBox(accent, Icons.image_search_rounded),
             title: 'Vision encoder on CPU',
             subtitle: controller.mmprojForceCpu.value
-                ? 'Projector runs on the CPU even when layers are on the GPU'
+                ? 'set_projector_cpu_detail'.tr
                 : 'Auto — benchmarked once, faster backend kept',
             trailing: controller.mmprojForceCpu.value
                 ? Icon(Icons.check, size: 18, color: accent)
@@ -1500,19 +1500,19 @@ class SettingsView extends GetView<SettingsController> {
       (
         value: 'auto_fast',
         title: 'Auto Fast',
-        subtitle: 'Try GPU first, then CPU fallback',
+        subtitle: 'set_gpu_first_label'.tr,
         icon: Icons.auto_awesome_rounded
       ),
       (
         value: 'gpu_fast',
         title: 'GPU Fast',
-        subtitle: 'Maximum speed, may crash on some devices',
+        subtitle: 'set_max_speed_label'.tr,
         icon: Icons.bolt_rounded
       ),
       (
         value: 'cpu_safe',
         title: 'CPU Safe',
-        subtitle: 'Stable mode with lower speed',
+        subtitle: 'set_stable_mode_label'.tr,
         icon: Icons.shield_outlined
       ),
     ];
@@ -1617,8 +1617,7 @@ class SettingsView extends GetView<SettingsController> {
                   Icon(Icons.warning_amber_rounded, size: 14, color: accent),
                   const SizedBox(width: 6),
                   Expanded(
-                      child: Text(
-                          'More steps = better quality but MUCH slower!',
+                      child: Text('set_more_steps_slower'.tr,
                           style: GoogleFonts.inter(
                               fontSize: 12,
                               color: accent,
@@ -1658,8 +1657,7 @@ class SettingsView extends GetView<SettingsController> {
           ]),
           Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 10),
-              child: Text(
-                  'Auto recommended. Bigger size = better detail, but much slower and more memory use.',
+              child: Text('set_bigger_size_detail'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 12, color: Theme.of(context).hintColor))),
           Wrap(
@@ -1712,8 +1710,7 @@ class SettingsView extends GetView<SettingsController> {
                       size: 14, color: AppColors.warning),
                   const SizedBox(width: 6),
                   Expanded(
-                      child: Text(
-                          '512 gives more detail but can be MUCH slower, heat the phone, and may fail on some devices.',
+                      child: Text('set_512_detail'.tr,
                           style: GoogleFonts.inter(
                               fontSize: 12,
                               color: AppColors.warning,
@@ -1753,8 +1750,7 @@ class SettingsView extends GetView<SettingsController> {
           ]),
           Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                  'Models at or above this size use CPU. Smaller models can use GPU Experimental.',
+              child: Text('set_gpu_experimental_detail'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 12, color: Theme.of(context).hintColor))),
           Slider(
@@ -1865,22 +1861,36 @@ class SettingsView extends GetView<SettingsController> {
   }
 
   /// Seletor de idioma: **auto**, inglês ou português do Brasil.
-///
-/// **Três opções e nenhum `Switch`**, porque não são dois estados: `auto` não é
-/// "português desligado", é uma terceira coisa que se decide sozinha. Um par de
-/// botões de radio deixa a diferença visível — quem escolhe `auto` precisa de
-/// poder dizer o que ele faz, e é a linha de detalhe embaixo do valor.
-///
-/// **Os rótulos NÃO passam por `.tr`**, e é deliberado: o nome de um idioma é
-/// o dado, e um dado traduzido deixa de identificar o idioma. Em português o
-/// item diz "Português (Brasil)"; em inglês diz "Portuguese (Brazil)". Um
-/// rótulo localizado diria "Inglês" dentro de uma lista de Idiomas e quem lê em
-/// inglês não reconheceria o próprio idioma.
-///
-/// **A troca vale na hora**, por `Get.updateLocale`, e o card inteiro se
-/// reconstrói junto — inclusive o título desta seção, que é a prova visível de
-/// que funcionou. Um idioma que só muda no próximo cold start parece quebrado.
-Widget _buildLanguageCard(BuildContext context, bool isDark) {
+  ///
+  /// **Três opções e nenhum `Switch`**, porque não são dois estados: `auto` não é
+  /// "português desligado", é uma terceira coisa que se decide sozinha. Um par de
+  /// botões de radio deixa a diferença visível — quem escolhe `auto` precisa de
+  /// poder dizer o que ele faz, e é a linha de detalhe embaixo do valor.
+  ///
+  /// **Os rótulos NÃO passam por `.tr`**, e é deliberado: o nome de um idioma é
+  /// o dado, e um dado traduzido deixa de identificar o idioma. Em português o
+  /// item diz "Português (Brasil)"; em inglês diz "Portuguese (Brazil)". Um
+  /// rótulo localizado diria "Inglês" dentro de uma lista de Idiomas e quem lê em
+  /// inglês não reconheceria o próprio idioma.
+  ///
+  /// **A troca vale na hora**, por `Get.updateLocale`, e o card inteiro se
+  /// reconstrói junto — inclusive o título desta seção, que é a prova visível de
+  /// que funcionou. Um idioma que só muda no próximo cold start parece quebrado.
+
+  /// A legenda do tile de voltas de ferramenta, nos dois idiomas.
+  ///
+  /// **Duas chaves, uma para cada contagem, e o número entra por cima.** A
+  /// alternativa seria uma chave só com `@n` e `trParams`, que é o padrão do
+  /// GetX — mas o **plural** ficaria em português e em inglês ao mesmo tempo, e
+  /// uma chave só teria de escolher. Um literal interpolado é recusado pelo filtro
+  /// de idioma de propósito (`TextLanguage.looksEnglish` devolve falso para
+  /// qualquer `$`), então o que sobra é a chave por forma.
+  String _agentHopSubtitle(int maxHops) {
+    final chave = maxHops == 1 ? 'set_hops_one' : 'set_hops_many';
+    return chave.tr.replaceAll('@n', '$maxHops');
+  }
+
+  Widget _buildLanguageCard(BuildContext context, bool isDark) {
     final accent = Theme.of(context).colorScheme.primary;
     final escolha = controller.language.value;
     final locale = Get.locale;
@@ -1910,9 +1920,7 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
             Text(
               LanguagePreference.rotulo(escolha, locale),
               style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: accent,
-                  fontWeight: FontWeight.w600),
+                  fontSize: 13, color: accent, fontWeight: FontWeight.w600),
             ),
           ]),
           const SizedBox(height: 4),
@@ -2139,21 +2147,21 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
           // four of those are A55, so the default took the little cores *into*
           // the barrier. A label that overstates what the code does is worse than
           // no label, because it is what stops anyone from suspecting it.
-          final bigCores = bigCoreCount(readMaxFreqPerCoreSync(), totalCores: cores);
+          final bigCores =
+              bigCoreCount(readMaxFreqPerCoreSync(), totalCores: cores);
           final selected = controller.cpuThreads.value;
           final options = <({int value, String title, String subtitle})>[
             (
               value: 0,
-              title: 'Threads: Auto — the big cores ($bigCores)',
+              title: preencher('set_threads_auto', {'n': '$bigCores'}),
               subtitle: bigCores >= cores
-                  ? 'Every core is a big one on this device'
-                  : 'Cores cpu0-${cores - 1} left out; ggml syncs every thread '
-                      'at the end of each op and a slow one sets the pace',
+                  ? 'set_all_cores_big_detail'.tr
+                  : preencher('set_cores_left_out', {'n': '${cores - 1}'}),
             ),
             (
               value: cores,
               title: 'Threads: All cores ($cores)',
-              subtitle: 'More threads, but the slowest core paces every op',
+              subtitle: 'set_more_threads_detail'.tr,
             ),
           ];
           return _appleGroupedCard(context, isDark, children: [
@@ -2236,7 +2244,7 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
         return _modelParameterSlider(
           context,
           isDark,
-          label: 'Context Size',
+          label: 'set_context_size_a'.tr,
           value: currentValue,
           min: 512,
           max: maxContext,
@@ -2252,7 +2260,7 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
             SettingsController.showManualEntryDialog(
               context: context,
               field: 'contextSize',
-              label: 'Context Size',
+              label: 'set_context_size_a'.tr,
               currentValue: controller.contextSize.value,
               min: 512,
               max: SettingsController.maxManualContextSize,
@@ -2281,10 +2289,12 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
             leading: _iconBox(
                 ready ? const Color(0xFFB9F53E) : const Color(0xFF8B7CFF),
                 ready ? Icons.workspaces_outlined : Icons.workspaces_rounded),
-            title: ready ? 'Workspace folder' : 'Workspace not set up',
+            title: ready
+                ? 'set_workspace_folder'.tr
+                : 'set_workspace_not_set_up'.tr,
             subtitle: ready
                 ? (workspace.treeUri.value ?? '')
-                : 'Pick a folder to organize your projects',
+                : 'set_workspace_pick_detail'.tr,
             showDivider: workspace.supported,
             onTap: workspace.supported
                 ? () async {
@@ -2302,8 +2312,8 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
               isDark,
               leading: _iconBox(
                   const Color(0xFFFF9500), Icons.drive_file_move_outlined),
-              title: 'Change folder…',
-              subtitle: 'Moves all existing files into the new folder',
+              title: 'set_change_folder'.tr,
+              subtitle: 'set_change_folder_detail2'.tr,
               trailing: const Icon(Icons.chevron_right, size: 18),
               showDivider: false,
               onTap: () => _relocateWorkspace(context, workspace),
@@ -2318,9 +2328,7 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
     final confirmed = await Get.dialog<bool>(
       AlertDialog(
         title: Text('change_workspace_folder'.tr),
-        content: const Text(
-            'Your current projects and files will be copied into the new '
-            'folder, then this one will be used from now on.'),
+        content: Text('set_change_folder_detail'.tr),
         actions: [
           TextButton(
               onPressed: () => Get.back(result: false),
@@ -2430,10 +2438,10 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
                 context,
                 isDark,
                 leading: _iconBox(AppColors.success, Icons.save_as_outlined),
-                title: backing ? 'Backing up…' : 'Backup configs…',
+                title: backing ? 'Backing up…' : 'set_backup_configs'.tr,
                 subtitle: backing
-                    ? 'Keep this screen open'
-                    : 'Settings template · optional model files',
+                    ? 'set_keep_screen_open'.tr
+                    : 'set_settings_template_files'.tr,
                 trailing:
                     backing ? null : const Icon(Icons.chevron_right, size: 18),
                 showDivider: true,
@@ -2446,8 +2454,8 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
                 isDark,
                 leading:
                     _iconBox(const Color(0xFFFF9500), Icons.restore_rounded),
-                title: 'Restore backup…',
-                subtitle: 'Apply a config template · bring models back',
+                title: 'set_restore_backup'.tr,
+                subtitle: 'set_apply_template_detail'.tr,
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 showDivider: false,
                 onTap: () => _showRestoreSheet(context),
@@ -2572,10 +2580,10 @@ Widget _buildLanguageCard(BuildContext context, bool isDark) {
   /// um `build`, não de um `const`, então o valor continua sendo reavaliado a
   /// cada quadro.
   String _themeModeName(ThemeMode m) => m == ThemeMode.light
-        ? 'theme_light'
-        : m == ThemeMode.dark
-            ? 'theme_dark'
-            : 'theme_system';
+      ? 'theme_light'
+      : m == ThemeMode.dark
+          ? 'theme_dark'
+          : 'theme_system';
   IconData _themeModeIcon(ThemeMode m) => m == ThemeMode.light
       ? Icons.wb_sunny_outlined
       : m == ThemeMode.dark
@@ -2604,9 +2612,7 @@ Future<void> _showBackupSheet(BuildContext context) async {
                   style: GoogleFonts.inter(
                       fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              Text(
-                  'Settings template (API keys never leave the device) '
-                  'into a dated folder of your chosen location.',
+              Text('set_backup_detail'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 12, color: Theme.of(context).hintColor)),
               const SizedBox(height: 10),
@@ -2694,8 +2700,7 @@ Future<void> _showRestoreSheet(BuildContext context) async {
           ListTile(
             leading: const Icon(Icons.settings_backup_restore_rounded),
             title: Text('everything_configs___models'.tr),
-            subtitle: const Text(
-                'Template first, then the files in the backup folder'),
+            subtitle: Text('set_backup_restore_detail'.tr),
             onTap: () {
               Navigator.pop(ctx);
               mc.restoreEverything();
