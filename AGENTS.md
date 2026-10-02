@@ -1538,6 +1538,34 @@ E **não existe `POST /v1/litert/unload`** — as rotas LiteRT são `screen`, `l
 `status`, `run`. Uma cabeça só é trocada carregando outra, e o estado "nada
 carregado" da janela fica inalcançável depois da primeira carga. Vale uma rota.
 
+**Os dois consoles LiteRT compartilham uma casca, e não um widget.**
+`lib/views/api_console_shell.dart` — o `ApiConsoleClient` (auth por requisição,
+`request(method, path)`, `ping`) e o vocabulário visual (`ConsolePalette`,
+`consoleCard`, `consoleField`, `consoleMono`, os três mensagens, `consoleActions`).
+Este console **inspeciona** uma cabeça, a janela System One **dirige** um modelo,
+e o que elas têm em comum é como falam com o servidor e como desenham a resposta.
+Dois `throwOnError` **deliberadamente diferentes**: aqui `true` (todo call site é
+`on Object catch`), lá `false` (um 422 do `/v1/classify` traz o texto do modelo e
+o texto *é* a resposta).
+
+**O encoder console não participa, e a razão está escrita no arquivo.** Ele é um
+monitor do modelo carregado, sobre o chat, com outro ciclo de vida; trocar o
+mecanismo dele é mexer numa tela que funciona e cujo teste de layout já se provou
+falhando. É decisão dele, não padrão.
+
+**Duas regras da casca que os testes fixam e que vieram de bugs:**
+`apiPlan` não escreve corpo num `GET` (um GET com corpo é um pedido que o servidor
+pode ignorar, e escrevê-lo esconde o erro de quem chama), e `apiReply` trata um
+corpo **não-JSON** como corpo — o `Bad Gateway` de um proxy virava
+`FormatException: Unexpected character (at character 1)` em vez do texto.
+
+**E uma coisa que este repo não consegue testar:** `flutter_test` substitui o
+`HttpClient` por um stub que responde 400 a tudo, então **um `HttpServer` de
+verdade é inalcançável** do lado do cliente e o teste só provaria que o stub
+respondeu. Por isso as decisões (`apiPlan`, `apiReply`) são puras e testáveis, e
+o socket ficou só com o que só socket faz. Um teste verde que não pode falhar
+pelo motivo real é pior do que nenhum.
+
 Medido no A72: a tela de decisão acerta **3 de 3** com Tev1-0.8B usando o corpo
 que ela própria monta, `relevance_score: null` e `scores` todo nulo; a tela da
 cabeça renderiza e lê 1024/4/2 do `GET /v1/litert/status` real; `compile_ms` 5–7.

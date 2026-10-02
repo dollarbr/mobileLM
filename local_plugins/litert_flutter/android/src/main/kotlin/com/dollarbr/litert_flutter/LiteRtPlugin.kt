@@ -339,6 +339,17 @@ class LiteRtPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
         val inBuffers = LinkedHashMap<String, TensorBuffer>()
         val outBuffers = LinkedHashMap<String, TensorBuffer>()
+        // **One `finally` for every exit from here on**, including the four error
+        // `return`s in buffer preparation. The alternative is a `closeAll` before
+        // each `return`, which fixes today's four and silently reopens on the
+        // fifth somebody adds later.
+        //
+        // This is a per-run leak, not a per-load one: a run allocates one buffer
+        // per named input and one per named output, and the act head has three in
+        // all. A test window that runs it a hundred times leaks three hundred
+        // native handles, and nothing in the app's own bookkeeping can see it.
+        // The outputs are copied into `FloatArray`s inside the block below, so
+        // closing on the way out cannot lose data.
         try {
             for ((name, data) in inputs) {
                 val buf: TensorBuffer? = m.createInputBuffer(name, signature)
@@ -398,6 +409,9 @@ class LiteRtPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         } catch (e: LiteRtException) {
             result.error("read_failed", "Reading outputs: ${e.message}", null)
             return
+        } finally {
+            closeAll(inBuffers.values)
+            closeAll(outBuffers.values)
         }
 
         result.success(
@@ -418,10 +432,58 @@ class LiteRtPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         result.success(mapOf("unloaded" to (was != null), "path" to was))
     }
 
+    /**
+     * Release the compiled model **and the memory it holds**.
+     *
+     * The three assignments below are what this used to be, and they were a
+     * silence. `CompiledModel` extends `JniHandle`, which is `AutoCloseable`,
+     * and its `close()` is what calls the native `destroy()`. A nulled reference
+     * does not free the graph — it defers the free to a finalizer, if the object
+     * ever becomes unreachable and if that finalizer runs, which is not a promise
+     * anyone should make on a phone whose low-memory killer decides what
+     * survives.
+     *
+     * It matters more here than it looks. The LiteRT model lives in its own
+     * plugin and its own `.so`, so unloading frees only what *this* plugin
+     * allocated — and a caller unloading a 705 MB graph is expecting that number
+     * to come back. Without the `close()`, the route answers 200 and the phone is
+     * still holding the graph.
+     *
+     * The `try` is here because the alternative is an exception escaping during a
+     * load that is already failing for some other reason, and the real failure
+     * would then be reported as an unload failure.
+     */
     private fun releaseModel() {
+        val held = model
         model = null
         loadedPath = null
         requested = emptyList()
+        if (held != null) {
+            try {
+                held.close()
+                Log.i(TAG, "released the compiled model")
+            } catch (t: Throwable) {
+                // Logged, not thrown: a failed free must not look like a failed
+                // load, and the reference is gone either way.
+                Log.w(TAG, "CompiledModel.close() threw: ${t.message}")
+            }
+        }
+    }
+
+    /**
+     * Close a set of buffers, never throwing.
+     *
+     * `TensorBuffer` is a `JniHandle` as well, so these are real native handles
+     * and a run that does not close them leaks one per input and one per output.
+     */
+    private fun closeAll(buffers: Collection<TensorBuffer>) {
+        for (b in buffers) {
+            try {
+                b.close()
+            } catch (t: Throwable) {
+                Log.w(TAG, "TensorBuffer.close() threw: ${t.message}")
+            }
+        }
     }
 
     /**

@@ -411,8 +411,31 @@ class LitertService extends GetxService {
     return out;
   }
 
+  /// Release the compiled model and the memory it holds.
+  ///
+  /// Returns whether anything was loaded, because the caller has to be able to
+  /// tell "I freed something" from "there was nothing there" — and because the
+  /// difference is the difference between a number coming back and a lie.
+  ///
+  /// **Refuses while a run is in flight, and the check belongs here and not in
+  /// the route.** `load` guards the same flag with the same reasoning, and the
+  /// invariant is "one model, one inference at a time" — a property of the
+  /// runtime, not of any HTTP surface. Unloading under a running inference frees
+  /// the graph that inference is reading, and the crash would land inside native
+  /// code with no Dart frame to point at.
+  ///
+  /// The same word the load path uses, so a client that already handles `busy`
+  /// from a load handles it from an unload.
   Future<bool> unload() async {
+    if (_running) {
+      throw LitertException(
+        'busy',
+        'A .tflite inference is running. Unloading now would free the graph it '
+        'is reading.',
+      );
+    }
     final was = _loaded != null;
+    final path = _loaded?.path;
     _loaded = null;
     _runs = 0;
     await LiteRt.unload();

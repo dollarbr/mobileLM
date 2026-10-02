@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -12,6 +11,7 @@ import '../core/colors.dart';
 import '../services/litert_model.dart';
 import '../services/litert_service.dart';
 import '../utils/server_auth.dart';
+import 'api_console_shell.dart';
 
 /// A console for a loaded `.tflite` head, shown above the chat.
 ///
@@ -188,16 +188,6 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
     super.dispose();
   }
 
-  Map<String, String> get _auth {
-    if (widget.authHeaders.isNotEmpty) return widget.authHeaders;
-    final server = _server;
-    if (server == null) return const {};
-    return localApiHeaders(
-      useApiKey: server.useApiKey.value,
-      apiKey: server.apiKey.value,
-    );
-  }
-
   Future<void> _probe() async {
     final url = widget.baseUrl ?? Get.find<ServerController>().baseUrl;
     final up = await _ping(url);
@@ -221,21 +211,56 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
     }
   }
 
+  /// The shared transport: how this console talks to the local server, and the
+  /// look it shares with the System One window.
+  ///
+  /// **A shared client and a shared palette, not a shared widget.** This console
+  /// **introspects** a loaded head — what the file is, which tensors it wants,
+  /// what the device can accelerate. `SystemOneConsole` **drives** a model: it
+  /// asks a question and shows what came back. Merging them would put a `switch`
+  /// inside a body that is already a `switch`, and past this line the two have
+  /// almost nothing in common.
+  ///
+  /// `throwOnError: true` because every call site here is
+  /// `on Object catch (e) => _error = '$e'` — on this console that is how a
+  /// refusal reaches the screen. The System One window wants the opposite,
+  /// because a `/v1/classify` 422 carries the decision model's own text and that
+  /// text *is* the answer.
+  late final ApiConsoleClient _client = ApiConsoleClient(
+    baseUrl: _base,
+    authHeaders: widget.authHeaders,
+    authResolver: _liveAuth,
+    throwOnError: true,
+  );
+
+  /// The key as the controller holds it **now**, not as it was when this widget
+  /// was built.
+  ///
+  /// `localApiHeaders()` per call and not a stored map: `/v1/**` is behind
+  /// `_isAuthorized` and `useApiKey` shipped defaulting to `false`, so no in-app
+  /// client sent the header at all and nothing was wrong until somebody turned
+  /// the key on — at which point every call came back 401 and this console's
+  /// probe read "server not running" against a server that was running, with
+  /// nothing else on screen changing.
+  Map<String, String> _liveAuth() {
+    final server = _server;
+    if (server == null) return const {};
+    return localApiHeaders(
+      useApiKey: server.useApiKey.value,
+      apiKey: server.apiKey.value,
+    );
+  }
+
   Future<bool> _ping(String base) async {
-    try {
-      final c = HttpClient()..connectionTimeout = const Duration(seconds: 2);
-      final req = await c
-          .getUrl(Uri.parse('$base/v1/server/capabilities'))
-          .timeout(const Duration(seconds: 2));
-      for (final e in _auth.entries) {
-        req.headers.set(e.key, e.value);
-      }
-      final res = await req.close().timeout(const Duration(seconds: 2));
-      c.close();
-      return res.statusCode == 200;
-    } on Object {
-      return false;
-    }
+    // The shared probe, against `capabilities` because that is the one endpoint
+    // that answers 200 on a server with no model loaded. A probe that used a
+    // model-requiring endpoint reported the server as down whenever the model was
+    // not there, which is the same shape of error as the method mistake below.
+    return ApiConsoleClient(
+      baseUrl: base,
+      authHeaders: widget.authHeaders,
+      authResolver: _liveAuth,
+    ).ping();
   }
 
   /// One request, returning the decoded body or throwing the server's message.
@@ -261,32 +286,8 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
     String path, {
     Map<String, dynamic> body = const {},
     Duration timeout = const Duration(seconds: 120),
-  }) async {
-    if (_base.isEmpty) {
-      throw StateError(
-        'the API server has not reported an address yet — open Settings, API '
-        'server, and start it',
-      );
-    }
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
-    final uri = Uri.parse('$_base$path');
-    final req = method == 'GET' ? await client.getUrl(uri) : await client.postUrl(uri);
-    req.headers.contentType = ContentType.json;
-    for (final e in _auth.entries) {
-      req.headers.set(e.key, e.value);
-    }
-    if (method != 'GET') req.write(jsonEncode(body));
-    final resp = await req.close().timeout(timeout);
-    final text = await resp.transform(utf8.decoder).join();
-    client.close();
-    final decoded = text.trim().isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(text) as Map<String, dynamic>;
-    if (resp.statusCode != 200 && resp.statusCode != 202) {
-      throw StateError('${decoded['error'] ?? text}'.trim());
-    }
-    return decoded;
-  }
+  }) =>
+      _client.request(method, path, body: body, timeout: timeout);
 
   /// Screen the file: what it wants, before anything is loaded.
   Future<void> _screen() async {

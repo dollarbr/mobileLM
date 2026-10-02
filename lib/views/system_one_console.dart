@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +9,7 @@ import '../controllers/server_controller.dart';
 import '../core/colors.dart';
 import '../services/system_one.dart';
 import '../utils/server_auth.dart';
+import 'api_console_shell.dart';
 
 /// A window for driving a **System One** model: one that answers a structured
 /// question with a class instead of chatting.
@@ -147,6 +146,10 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   String? _vectorProblem;
 
   SystemOneResult? _result;
+  /// A short, positive report of something the screen did on purpose. Separate
+  /// from [_error] because an unload that worked is not an error, and putting it
+  /// in the red box would teach the user that the app is broken when it is not.
+  String? _notice;
   String? _error;
   bool _busy = false;
   bool _serverUp = false;
@@ -201,8 +204,23 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     return _resolvedShape;
   }
 
-  Map<String, String> get _auth {
-    if (widget.authHeaders.isNotEmpty) return widget.authHeaders;
+  /// The shared transport. **No `throwOnError`** — the opposite of
+  /// `LitertHeadConsole`, and deliberately: a `/v1/classify` 422 carries the
+  /// decision model's own text, and on this screen that text *is* the answer. A
+  /// refusal the user cannot read is a blank panel where the result should be.
+  late final ApiConsoleClient _client = ApiConsoleClient(
+    baseUrl: _base,
+    authHeaders: widget.authHeaders,
+    authResolver: _liveAuth,
+  );
+
+  /// The key as the controller holds it **now**.
+  ///
+  /// Resolved per request, not once: a console opened before the key was turned
+  /// on sent no `Authorization` at all, and when the key was later enabled every
+  /// call came back 401 with nothing else on screen changing. The symptom pointed
+  /// at the server; the cause was one missing header in the caller.
+  Map<String, String> _liveAuth() {
     final server = _server;
     if (server == null) return const {};
     return localApiHeaders(
@@ -385,9 +403,10 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// the only way to see what happened. Throwing it away as a transport error
   /// leaves a panel blank where the answer should be.
   ///
-  /// **The method is a parameter and not implied by the helper name.** The first
-  /// version of the sibling `.tflite` console had `_post` and called it for
-  /// `/v1/litert/status`, which is `GET` only; the route check is
+  /// **The method is a parameter and not implied by the helper name** — and that
+  /// rule now lives in [ApiConsoleClient], shared with the `.tflite` console,
+  /// because it came from a bug in *that* one: it had a `_post` and called it for
+  /// `/v1/litert/status`, which is `GET` only. The route check is
   /// `request.method == 'GET'`, so the `POST` fell through to the 404 arm and the
   /// console showed a healthy probe next to every status panel blank. Measured on
   /// the A72, and it looked exactly like "the server is up and the head is not
@@ -397,27 +416,8 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     String path, {
     Map<String, dynamic> body = const {},
     Duration timeout = const Duration(seconds: 90),
-  }) async {
-    if (_base.isEmpty) {
-      throw StateError('the API server has not reported an address yet');
-    }
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
-    final uri = Uri.parse('$_base$path');
-    final req =
-        method == 'GET' ? await client.getUrl(uri) : await client.postUrl(uri);
-    req.headers.contentType = ContentType.json;
-    for (final e in _auth.entries) {
-      req.headers.set(e.key, e.value);
-    }
-    if (method != 'GET') req.write(encodeBody(body));
-    final resp = await req.close().timeout(timeout);
-    final text = await resp.transform(utf8.decoder).join();
-    client.close();
-    final decoded = text.trim().isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(text) as Map<String, dynamic>;
-    return {...decoded, '__status': resp.statusCode};
-  }
+  }) =>
+      _client.request(method, path, body: body, timeout: timeout);
 
   void _reparseVector() {
     final parsed = FeatureVector.parse(_vector.text);
@@ -447,6 +447,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     setState(() {
       _busy = true;
       _error = null;
+      _notice = null;
       _result = null;
     });
     try {
@@ -492,6 +493,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     setState(() {
       _busy = true;
       _error = null;
+      _notice = null;
       _result = null;
     });
     try {
@@ -507,6 +509,56 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       _show(json, SystemOneShape.tfliteHead, callerLabels: _labels.toJson());
     } on Object catch (e) {
       if (mounted) setState(() => _error = 'classify: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Free the head, over the API, and say what was actually freed.
+  ///
+  /// **This is what makes the window's "nothing loaded" state reachable.** Until
+  /// `POST /v1/litert/unload` existed there was no way to get there: the LiteRT
+  /// routes were `screen`, `load`, `status` and `run`, so a head could only be
+  /// replaced by loading another one, and a test window that cannot be emptied is
+  /// a test window that keeps testing whatever it was left holding.
+  ///
+  /// The `409` is the interesting case and it is shown, not swallowed: a run in
+  /// flight means the graph is being read, and freeing it there would crash in
+  /// native code with no Dart frame to point at. The service owns that guard,
+  /// not this screen.
+  Future<void> _unloadHead() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      final json = await _request('POST', '/v1/litert/unload');
+      final unloaded = json['unloaded'] == true;
+      final name = '${json['filename'] ?? ''}';
+      setState(() {
+        // The head and its contract go together. Keeping a contract for a model
+        // that is no longer loaded is how a window ends up describing a file
+        // that is not there — the panels would say "wants 1024 numbers" about
+        // nothing.
+        _head = null;
+        for (final c in _auxControllers.values) {
+          c.clear();
+        }
+        _auxiliary.clear();
+        _parsedVector = null;
+        _result = SystemOneResult(
+          model: name,
+          failure: null,
+        );
+        _notice = unloaded
+            ? 'Freed $name. The server is still up and a GGUF, if one is '
+                'loaded, is untouched.'
+            : 'Nothing was loaded, so nothing was freed.';
+      });
+    } on Object catch (e) {
+      if (mounted) setState(() => _error = 'unload: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -557,6 +609,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
                     if (_error != null) _errorCard(_error!),
+                    if (_notice != null) _noticeCard(_notice!),
                     if (shape == null)
                       _card(
                         card,
@@ -770,6 +823,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
 
   List<Widget> _headPanels(Color card, Color field) {
     final vector = _parsedVector;
+    final head = _head;
     // The vector's own problem is shown in its own panel below, right under the
     // field that produced it. Repeating it here would put the same sentence
     // twice on one screen, which is how a warning stops being read.
@@ -814,6 +868,27 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       ..._auxiliaryPanels(card, field),
       _labelsCard(card, field),
       _actions(() => _runHead(), 'run the head'),
+      // Only where there is something to free. A button that unloads nothing is
+      // a button whose only effect is to say so.
+      if (head != null) ...[
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _busy ? null : () => _unloadHead(),
+            icon: const Icon(Icons.layers_clear_outlined, size: 16),
+            label: Text('free the compiled head',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.error)),
+          ),
+        ),
+        Text(
+          'POST /v1/litert/unload. The server stays up and a loaded GGUF is '
+          'untouched — this frees the LiteRT model and nothing else. It is the '
+          'only unload the API can do, because the GGUF one would take the server '
+          'down with it.',
+          style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+        ),
+      ],
     ];
   }
 
@@ -1120,6 +1195,39 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           Expanded(
             child: Text(message,
                 style: GoogleFonts.inter(fontSize: 12, color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A confirmation, deliberately not the red card.
+  ///
+  /// The screen does three things on purpose — unloads a head, runs it, refuses a
+  /// request — and putting all three in the same red box would make the app look
+  /// broken every time it worked. This is the same reasoning as the endpoint
+  /// answering `200` on a no-op unload: the difference between "I did something"
+  /// and "something went wrong" belongs in how it is shown, not only in the code
+  /// path that produced it.
+  Widget _noticeCard(String message) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle_outline,
+              size: 18, color: AppColors.success),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message,
+                style:
+                    GoogleFonts.inter(fontSize: 12, color: AppColors.success)),
           ),
         ],
       ),

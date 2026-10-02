@@ -12,6 +12,7 @@ import '../controllers/server_controller.dart';
 import '../core/colors.dart';
 import '../services/inference_service.dart';
 import '../utils/server_auth.dart';
+import 'system_one_console.dart';
 
 /// A console for a loaded encoder, shown above the chat.
 ///
@@ -370,13 +371,48 @@ class _EncoderConsoleState extends State<EncoderConsole> {
     final field = isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF2F2F7);
 
     if (_role.isEmpty) {
-      return _panel(
-        card,
-        Icon(Icons.hourglass_empty_rounded,
-            color: isDark ? Colors.white54 : Colors.black45, size: 34),
-        'Not an encoder',
-        'Load a BERT or ModernBERT model to use this console. A generation model\n'
-        'has nothing here to test.',
+      // **This is where the System One window is reachable from, and the old
+      // sentence here was wrong for the models it most needed to be right
+      // about.** It said "A generation model has nothing here to test", and
+      // Tev1-0.8B is a generation model that *is* a decision model: it takes a
+      // `state`, a `question` and options, and answers with one letter. Nothing
+      // here can test that, because this console's whole shape is one query in
+      // and a score vector out — but "nothing here" is not "nothing anywhere",
+      // and a user with Tev1 loaded was told the wrong thing by a panel that
+      // looked authoritative.
+      //
+      // **The button does not claim the model is a decision model, because
+      // nothing can know that.** A decision model is an ordinary GGUF: Tev1
+      // loads as `qwen35`, and so does a chat model that chats. Its metadata
+      // carries no flag. So the window is offered as the way to *find out* — it
+      // shows this model a set of options and reports the letter back, which is
+      // the test, and the window says plainly when the answer is not a letter.
+      return Column(
+        children: [
+          _panel(
+            card,
+            Icon(Icons.rule, color: isDark ? Colors.white54 : Colors.black45,
+                size: 34),
+            'Not an encoder',
+            'This console scores one query against a model, so it needs a BERT\n'
+            'or ModernBERT. A GGUF without that shape cannot be tested here.',
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _openSystemOne,
+            icon: const Icon(Icons.rule, size: 16),
+            label: const Text('Test it as a decision instead'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'A decision model answers a structured question with a class, and it '
+            'is an ordinary GGUF: Tev1-0.8B loads as qwen35 and carries no flag '
+            'saying so. This window shows it options and reports the letter back '
+            '— which is the test, and it is also how you find out whether a model '
+            'behaves like one at all.',
+            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+          ),
+        ],
       );
     }
 
@@ -795,6 +831,21 @@ class _EncoderConsoleState extends State<EncoderConsole> {
                 )),
           ]),
     );
+  }
+
+  /// Open the System One window for whatever is loaded.
+  ///
+  /// **The shape is left `unknown` on purpose.** This console is looking at a
+  /// GGUF that is not an encoder, and the two things it could be — a plain chat
+  /// model or a decision model — carry the same metadata. Deciding here from the
+  /// filename would be the mistake this whole feature is built to avoid, and the
+  /// window asks the server instead.
+  void _openSystemOne() {
+    Get.to(() => SystemOneConsole(
+          // This console is already above the chat, so it opens the window over
+          // the top rather than pushing a route on top of itself.
+          onClose: () => Get.back(),
+        ));
   }
 
   Widget _panel(Color card, Widget icon, String title, String body,

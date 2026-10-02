@@ -130,6 +130,10 @@ class OpenAiServerService {
         await _handleLitertRun(request);
         return;
       }
+      if (request.method == 'POST' && path == '/v1/litert/unload') {
+        await _handleLitertUnload(request);
+        return;
+      }
       if (request.method == 'GET' && path == '/v1/server/capabilities') {
         await _handleCapabilities(request);
         return;
@@ -604,6 +608,63 @@ class OpenAiServerService {
     }, status: HttpStatus.conflict);
   }
 
+
+  /// `POST /v1/litert/unload` — free the compiled head, and keep the server up.
+  ///
+  /// **This is the one unload that can be done over the API, and the reason is
+  /// the same asymmetry `_handleModelUnload` documents, read backwards.** That
+  /// one is a `409` because `ModelController.unloadModel()` calls
+  /// `_stopServerForMissingModel()`: unloading the GGUF takes the server down
+  /// with it, so answering before the stop means the client sees the socket
+  /// close with no status at all, and answering after means the response is
+  /// already gone. `LitertService.unload()` does **not** touch the server — a
+  /// head is a second model in a second plugin, not the one the server is a view
+  /// of — so the obstacle that makes the GGUF unload impossible simply is not
+  /// here.
+  ///
+  /// Three decisions, and the second is the one that would have been argued
+  /// about:
+  ///
+  /// 1. **The server stays up, and so does a loaded GGUF.** Unloading a head is
+  ///    not unloading the model: `/v1/models/local` is untouched and
+  ///    `/v1/chat/completions` keeps working. Both runtimes can be loaded at
+  ///    once, which is exactly why the status a client reads has to name two
+  ///    separate things.
+  /// 2. **`200` even when nothing was loaded.** The question a client is asking
+  ///    is "am I unloaded now?", and the answer is always yes. Refusing the
+  ///    no-op would make a known-clean state unreachable through the API, which
+  ///    is the same trap `/v1/models/unload` is in for a different reason. The
+  ///    `unloaded` field carries the difference between freeing something and
+  ///    finding nothing, so the honest answer is in the body rather than in the
+  ///    status code.
+  /// 3. **A run in flight is a `409`**, from `LitertService` rather than from
+  ///    here. The invariant is "one model, one inference at a time" and it
+  ///    belongs to the runtime; a route that enforced it would be one more place
+  ///    to forget.
+  Future<void> _handleLitertUnload(HttpRequest request) async {
+    final litert = Get.find<LitertService>();
+    final was = litert.loaded;
+    try {
+      final unloaded = await litert.unload();
+      await _json(request, {
+        'object': 'litert.unload',
+        'unloaded': unloaded,
+        'filename': was?.path.split('/').last,
+        'loaded': null,
+        // Said out loud because it is the thing a client cannot infer: this
+        // freed a head and nothing else.
+        'server': 'running',
+        'note': unloaded
+            ? 'The compiled model was released and its memory freed. A GGUF, if '
+                'one is loaded, is untouched.'
+            : 'Nothing was loaded, so nothing was freed. You are already in the '
+                'state this endpoint exists to reach.',
+      });
+    } on LitertException catch (e) {
+      await _json(request, {'error': e.message, 'code': e.code},
+          status: e.code == 'busy' ? HttpStatus.conflict : HttpStatus.badRequest);
+    }
+  }
 
   Future<void> _handleCapabilities(HttpRequest request) async {
     final inference = Get.find<InferenceService>();

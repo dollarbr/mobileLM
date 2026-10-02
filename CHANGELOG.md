@@ -4,6 +4,143 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### refactor: uma casca compartilhada para os consoles da API, e o link do console de encoder
+
+**Interface igual, widget diferente** — que é o que foi pedido e o que dá para
+fazer sem piorar as duas telas.
+
+`lib/views/api_console_shell.dart`: o `ApiConsoleClient` (auth por requisição,
+`request(method, path)`, `get`/`post`, `ping`) e o vocabulário visual
+(`ConsolePalette`, `consoleCard`, `consoleField`, `consoleMono`,
+`consoleErrorCard`, `consoleNoticeCard`, `consoleProblem`, `consoleNote`,
+`consoleActions`). **Nenhum widget novo**: os dois consoles continuam sendo os
+seus, com os seus painéis e o seu corpo. O que eles passam a ter em comum é como
+falam com `127.0.0.1:8091` e como desenham a resposta.
+
+Duas políticas **deliberadamente diferentes**, e por isso o parâmetro existe:
+`LitertHeadConsole` usa `throwOnError: true` porque todo call site dele é
+`on Object catch (e) => _error = '$e'`, que é como uma recusa chega à tela; a
+janela System One usa o oposto porque um `422` do `/v1/classify` traz o texto do
+próprio modelo e esse texto **é** a resposta. Um `throw` ali deixaria um painel
+vazio onde deveria estar o resultado.
+
+**E o link.** O painel "Not an encoder" do console de encoder dizia *"A generation
+model has nothing here to test"*, e isso é **errado justamente para os modelos
+que mais precisavam que estivesse certo**: Tev1-0.8B é um modelo de geração que é
+um decision model, e nada naquela tela o testava. Agora o painel diz a verdade e
+oferece **"Test it as a decision instead"**. O botão **não afirma** que o modelo é
+um decision model, porque nada pode saber disso — um decision model é um GGUF
+comum, o Tev1 carrega como `qwen35` e não tem flag nenhuma dizendo o que é. A
+janela é oferecida como o jeito de **descobrir**: ela mostra as opções e devolve a
+letra, que é o teste.
+
+**O encoder console não adota a casca agora, e a razão está escrita no arquivo.**
+Ele é um **monitor** do modelo carregado, montado permanentemente acima do chat,
+com um ciclo de vida diferente; trocar o mecanismo dele seria mexer numa tela que
+funciona e que tem um teste de layout que **já se provou falhando**. A decisão é
+dele, não um padrão.
+
+### Um teste que só podia falhar, e o que ele provou
+
+O primeiro `api_console_shell_test.dart` subia um `HttpServer` de verdade.
+**Não funciona**, e o `flutter_test` diz na cara:
+
+> will actually be made. Any test expecting a real network connection and status
+> code will fail.
+
+Ele substitui o `HttpClient` por um stub que responde 400 a tudo. Um servidor
+real em porta de loopback é inalcançável do lado do cliente, e um teste construído
+assim provaria só que o stub respondeu — o pior tipo de teste possível aqui: verde,
+parecendo cobertura, e sem tocar nas duas regras que custaram um ciclo.
+
+Então as **decisões** saíram do socket e ficaram puras: `apiPlan` (método, corpo
+ausente num `GET`, headers, `encodeBody` para um NaN) e `apiReply` (o status
+volta sempre; `202` é sucesso; corpo não-JSON é corpo). O socket ficou só com o
+que só socket faz.
+
+E essas duas funções puras **encontraram um bug meu**: um corpo que não é JSON
+— o `Bad Gateway` de um proxy — estourava `FormatException` do `jsonDecode`, e o
+console mostraria *"Unexpected character (at character 1)"* em vez do texto. Um
+erro que se apresenta como outro, da família que este repositório existe para
+pegar. Agora cai no texto cru.
+
+**Verificado no A72:** a janela System One continua adotando a cabeça carregada
+pela tela do servidor depois da extração (`laya_en_act_head_fp32.tflite · wants
+1024 numbers`, `feats [1,4]`, `this head has 2`), e o log fica sem overflow nem
+`debugCheckHasMaterial`.
+
+**O que não foi verificado, e por quê:** o **gesto** que abre o console de
+encoder no chat. É um `onVerticalDragUpdate` no divisor, e a tela do A72 não
+responde a toque — a imagem aparece, o arrasto não acontece. O que *é* verificável
+foi verificado: com o Tev1 carregado a API responde `encoder: None` e
+`classify: False`, que é a condição que faz o painel novo renderizar. O painel em
+si foi exercitado pelos testes de layout das duas telas, e nenhuma regrediu.
+
+### feat: `POST /v1/litert/unload` — e os dois vazamentos que ele escondia
+
+A rota é fina. O que a torna honesta não é.
+
+**Por que esta rota pode existir e `/v1/models/unload` não pode.** A recusa da
+GGUF está escrita em `_handleModelUnload` e o motivo é preciso:
+`ModelController.unloadModel()` chama `_stopServerForMissingModel()`, então
+descarregar o modelo derruba o servidor — responder antes do `stop` dá `Empty
+reply from server` sem status, e responder depois não há mais resposta. **A
+assimetria que salva a GGUF é "carregar mantém o servidor de pé".** E
+`LitertService.unload()` **não toca no servidor**: uma cabeça é um segundo modelo
+em um segundo plugin, não o modelo de que o servidor é uma vista. O obstáculo não
+existe aqui.
+
+**E a rota não era só um botão: havia dois vazamentos que ela expunha:**
+
+1. **`releaseModel()` não fechava o `CompiledModel`.** Ele anulava três
+   referências. `CompiledModel extends JniHandle`, que é `AutoCloseable`, e o
+   `close()` é quem chama o `destroy()` nativo: uma referência anulada não libera
+   o grafo, adia a liberação para um finalizador, *se* o objeto ficar inalcançável
+   e *se* o finalizador rodar. Um `unload` que responde 200 com 705 MB ainda na
+   mão é uma mentira sobre memória — e era o que a rota ia expor.
+2. **`run()` não fechava nenhum `TensorBuffer`.** `TensorBuffer` também é um
+   `JniHandle`, e isso é **vazamento por execução, não por carga**: uma execução
+   aloca um buffer por input nomeado e um por output nomeado, e o act head tem
+   três. Uma janela de testes que roda a cabeça cem vezes vaza trezentos handles
+   nativos, e nada na contabilidade do app enxerga. Agora é **um** `finally`
+   cobrindo preparação, execução e leitura — e um por `return` conserta os quatro
+   de hoje e reabre silenciosamente no quinto que alguém acrescentar.
+
+O guarda de concorrência também estava faltando e **pertence ao serviço**:
+`unload()` não checava `_running`, e liberar o grafo debaixo de uma inferência em
+voo é um crash em código nativo sem frame de Dart para apontar. `load` já usava a
+mesma flag com a mesma razão, então `unload` passou a recusar com a **mesma
+palavra** (`busy`), e a rota a traduz para 409.
+
+**`200` mesmo quando não havia nada carregado.** A pergunta que um cliente faz é
+"estou descarregado agora?", e a resposta é sempre sim. Recusar o no-op deixaria um
+estado limpo inalcançável pela API. O campo `unloaded` carrega a diferença entre
+liberar algo e não encontrar nada — a resposta honesta está no corpo, não no
+código de status.
+
+Medido no A72, ida e volta completa:
+
+| | |
+|---|---|
+| `POST /v1/litert/unload` com cabeça | **200**, `unloaded: true`, `server: running` |
+| `GET /health`, `/v1/models/local`, `/v1/server/capabilities` | **200, 200, 200** — o servidor fica de pé |
+| `GET /v1/litert/status` | `loaded: null` |
+| `POST /v1/litert/run` | **400** `no_model`, nomeando a carga |
+| `POST /v1/classify` com `.tflite` | **400**, nomeando `/v1/litert/load` |
+| unload de novo, sem nada | **200**, `unloaded: false`, e a nota que diz isso |
+| recarregar e rodar | `logits [0.02017, -0.06129]`, `top_index 0`, `auxiliary_used ["feats"]` |
+
+**Os logits são byte a byte os de antes do unload** (o mesmo vetor deu
+`[0.02016770839691162, -0.06128545477986336]`), o que é a prova de que fechar os
+buffers não corrompe a saída. E `released the compiled model` aparece no logcat,
+o que prova que o `close()` rodou.
+
+**O que não foi medido: a memória devolvida.** A única cabeça no aparelho tem
+1,0 MB, e 1 MB é invisível contra 2,9 GB de `MemAvailable`. O `close()` disparando
+é evidência do caminho de código, não de um número. A medição de memória precisa de
+um grafo grande o bastante para importar — o encoder ModernBERT de 705 MB serve,
+e ele ainda não tem host.
+
 ### fix: a janela dizia "nothing loaded" com uma cabeça carregada — e lia um campo que não existe
 
 O sintoma era uma frase; o que estava uma linha acima dela era o defeito, e

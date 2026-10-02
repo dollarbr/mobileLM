@@ -257,6 +257,43 @@ void main() {
     _drain(tester);
   });
 
+
+  testWidgets('o botao de free so existe quando ha o que liberar', (tester) async {
+    // Um botao que nao libera nada so serve para dizer que nao liberou nada.
+    await hostile(tester, shape: SystemOneShape.tfliteHead, withContract: false);
+    expect(find.text('free the compiled head'), findsNothing);
+    _drain(tester);
+  });
+
+  testWidgets('com uma cabeca carregada, o botao de free aparece e diz a rota',
+      (tester) async {
+    // E o que torna o estado "nada carregado" alcancavel pela tela. Sem
+    // `POST /v1/litert/unload` uma cabeca so era trocada carregando outra, e uma
+    // janela de teste que nao esvazia continua testando o que ficou.
+    await hostile(tester, shape: SystemOneShape.tfliteHead, withContract: true);
+    final button = find.text('free the compiled head');
+    await tester.dragUntilVisible(button, find.byType(ListView), const Offset(0, -300));
+    expect(button, findsOneWidget);
+    // Scrolled to again: the note naming the route is **below** the button, and
+    // one scroll reaches the button and not the paragraph under it. The lazy
+    // `ListView` fold, for the fifth time in this feature.
+    final note = find.textContaining('POST /v1/litert/unload');
+    await tester.dragUntilVisible(note, find.byType(ListView), const Offset(0, -300));
+    expect(
+      note,
+      findsOneWidget,
+      reason: 'a rota e o endpoint novo, e a tela nomeia o caminho como o resto '
+          'da janela faz',
+    );
+    expect(
+      find.textContaining('untouched'),
+      findsOneWidget,
+      reason: 'descarregar uma cabeca NAO descarrega o modelo que o chat usa, e '
+          'uma tela que deixa isso implicito esta errando',
+    );
+    _drain(tester);
+  });
+
   testWidgets('the harness can fail: no root Material, it throws',
       (tester) async {
     // The proof that the tests above are not vacuous. A `TextField` with no
