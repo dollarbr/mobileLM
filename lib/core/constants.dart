@@ -162,6 +162,16 @@ class AppConstants {
   /// launch and relocateable later from Settings.
   static const String keyWorkspaceTreeUri = 'workspace_tree_uri';
 
+  /// The last project the user chose through the picker, so a new conversation
+  /// starts there after a cold start.
+  ///
+  /// Without it the workspace was only in memory: `loadSessions()` loads the
+  /// list and opens nothing, so `ChatController.currentProjectPath` was null
+  /// until a conversation was opened, and the first new conversation after a
+  /// restart asked which project to use. The tile said the choice was
+  /// remembered — the inheritance was real, it just did not survive a restart.
+  static const String keyLastProjectName = 'last_project_name';
+
   // Default Model Config
   static const double defaultTemperature = 0.20;
   static const int defaultMaxTokens = 1024;

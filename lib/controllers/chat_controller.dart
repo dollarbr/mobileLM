@@ -445,7 +445,15 @@ class ChatController extends GetxController {
     // picker belongs to *choosing* a project, not to starting a conversation;
     // asking on every single chat is what made the workspace unusable. The
     // app bar's project chip is how you change or drop it.
-    String? projectPath = currentProjectPath.value;
+    //
+    // **Three sources in order, and the middle one is what was missing.** The
+    // open conversation's binding, then the last project the user *chose*
+    // (restored from disk — the cold-start case), then the picker. The middle
+    // source did not exist: `loadSessions()` loads the list and opens nothing,
+    // so after a restart `currentProjectPath` was null and the first new
+    // conversation asked again, while the tile said the choice was remembered.
+    String? projectPath =
+        currentProjectPath.value ?? workspace.rememberedProject.value;
     if (projectPath == null && workspace.isReady) {
       final answer = await _askForProject(workspace);
       projectPath = answer == kNoProjectSentinel ? null : answer;
@@ -472,6 +480,17 @@ class ChatController extends GetxController {
     if (picked == null || picked == kNoProjectSentinel) return picked;
     if (picked.isEmpty) return null;
     if (!projects.contains(picked)) await workspace.createProject(picked);
+    // **This is the only place the default is written**, and it is here because
+    // both callers of this function are a person choosing: the project chip, and
+    // the first conversation on a fresh install. `openChat` does not come
+    // through here and must not — opening an old conversation is not a choice of
+    // workspace, and letting it overwrite the default would mean that reviewing
+    // an old chat quietly moved where new conversations land.
+    //
+    // "No project" (`kNoProjectSentinel`) returned above and writes nothing:
+    // that answer was about this conversation, and the next one still belongs in
+    // the workspace the user works in. The chip is how the default changes.
+    await workspace.rememberProject(picked);
     return picked;
   }
 

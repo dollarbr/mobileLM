@@ -4,6 +4,99 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### feat: o workspace é lembrado entre cold starts, e o caminho não cresce mais
+
+Duas correções no workspace, uma delas a que o app **não** tinha.
+
+## O que não existia: o último projeto sobrevivia só em memória
+
+A herança de projeto estava documentada e funcionava — "conversas seguintes
+herdam silenciosamente o projeto aberto". O que **não existia** era a
+persistência. `ChatController.currentProjectPath` é um `Rxn<String>` em memória,
+e `loadSessions()` carrega a **lista** de conversas e não abre nenhuma. Então
+num cold start:
+
+- `currentProjectPath` é null;
+- a próxima conversa nova abria o **picker de projeto** de novo;
+- e a tela dizia que a escolha lembrava.
+
+O caminho até lá: o usuário escolhe `TESTES`, cria uma conversa, fecha o app, abre
+de novo, e o workspace que ele tinha escolhido some do jeito que estava — sem
+erro, sem aviso, e sem nenhuma pista de que era um resíduo de sessão.
+
+`AppConstants.keyLastProjectName` guarda a escolha, `WorkspaceService` a restaura
+em `initialize()` e aponta a aba Workspace para ela, e `_createNewChat` passou a
+ler **três fontes em ordem**: a ligação da conversa aberta, o último projeto
+escolhido, e só então o picker.
+
+**Três decisões que o conserto precisou tomar, e nenhuma é óbvia:**
+
+1. **Abrir uma conversa não muda o padrão.** `openChat` restaura o projeto
+   daquela conversa, e deixar isso reescrever o padrão faria com que revisar uma
+   conversa antiga mudasse silenciosamente onde as conversas novas caem. Só o
+   picker — que é uma escolha de uma pessoa — grava.
+2. **"Nenhum projeto" não limpa o padrão.** A resposta foi sobre *aquela*
+   conversa; a próxima continua no workspace onde a pessoa trabalha. O chip da
+   barra é quem muda o padrão.
+3. **O nome é validado contra a listagem real.** A pasta pode ser apagada fora do
+   app, e um nome lembrado que não existe mais ligaria toda conversa nova a um
+   lugar onde as tools de arquivo não chegam — silenciosamente, e sempre. O
+   descarte é reportado em `droppedProject` para a UI poder dizer, em vez de
+   perguntar de novo como se nada tivesse acontecido.
+
+Verificado no A72: com `TESTES` escolhido, **force-stop** e cold start, a
+conversa nova já abre em `TESTES` e o **picker não aparece**.
+
+## O caminho que crescia sem parar
+
+O bug que você apontou: selecionar o mesmo workspace várias vezes virando
+`TESTES/TESTES/TESTES/…`.
+
+A causa é estrutural. `openFolder` compunha o caminho com `childRelPath(name)` a
+partir de uma listagem que carrega **só o nome** — `WorkspaceEntry` tem `name`,
+`isDir` e `size`, e nenhum caminho. Então navegar era relativo, recalculado a
+cada toque a partir de onde a tela estivesse, e uma subpasta com o mesmo nome do
+pai produzia `TESTES/TESTES` sem limite e sem reclamação. Como a app mostrava um
+caminho que ela mesma tinha construído, o sintoma parecia o app esquecer onde
+estava.
+
+`lib/services/workspace_paths.dart` (puro, 12 testes) tem a regra:
+**uma pasta não pode ser aberta a partir de um pai que já tem o nome dela.** E
+como a recusa devolve o caminho atual — em vez de lançar — o pai continua
+terminando no mesmo nome, então **os toques seguintes também são recusados** e o
+caminho não cresce. `A/A/B/A` continua legal e alcançável: a regra é sobre o pai
+imediato, não sobre o nome aparecer duas vezes.
+
+**A correção não é a arquitetura que impediria isso**, que é a listagem nativa
+devolvendo o caminho de cada entrada a partir da raiz — isso toca `wsListDir`, o
+stub da web e quatro call sites. A regra vai aqui porque o sintoma relatado é o
+crescimento, e o invariante pertence ao lugar onde o caminho é montado.
+
+Verificado no A72: criei uma subpasta `TESTES` dentro de `TESTES` e toquei nela
+— a breadcrumb continuou `Workspace root / TESTES`. **A pasta foi apagada depois;
+o workspace ficou como estava.**
+
+## O dialogo do projeto: `Wrap`, pela quarta vez
+
+O `Right overflow by 24 pixels` que apareceu nos botões. Medido no A72 na escala
+de fonte **padrão do app** (1.10), então não é caso de quem mexeu no tamanho da
+letra: é o que todo usuário recebe.
+
+A causa é a forma, e é a mesma forma que este repo já pagou três vezes: um `Row`
+com `spaceBetween` e dois botões de texto, **sem nada limitando a soma** — cada
+botão traz seu próprio padding horizontal e os rótulos são frases em português
+("Nenhum projeto", "Criar projeto"). Virou `Wrap`, que mantém o visual atual
+quando os dois cabem (com `spaceBetween` continuam nas pontas opostas) e empilha
+quando não cabem. E os dois são *alternativas* — um liga um projeto, o outro se
+recusa a ligar — então empilhá-los diz isso de um jeito que dois botões deitados
+não dizem.
+
+`test/project_picker_layout_test.dart` fixa a largura e a escala, e o primeiro
+teste monta **o `Row` ruim dentro do próprio teste** e afirma que ele estoura.
+Isso é proposital: a primeira versão abria o diálogo real e afirmava o overflow, o
+que faz a asserção deixar de ser verdade no momento em que o bug é consertado — e
+uma guarda que desaparece junto com o conserto não diz nada.
+
 ### fix: 38 strings que apareciam como o próprio nome da chave, e o teto de hops que não era teto
 
 Duas correções. A primeira é a que o usuário vê; a segunda é a que ele

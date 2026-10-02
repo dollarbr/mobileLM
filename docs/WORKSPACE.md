@@ -29,15 +29,57 @@ raiz. Null = conversa geral, sem projeto, e as tools de arquivo não têm base.
 
 O ciclo:
 
-1. **Primeira conversa, nenhum projeto aberto** — o picker aparece. O usuário
-   escolhe um projeto existente, cria um novo, ou responde "No project".
-2. **Conversas seguintes** — herdam silenciosamente o projeto aberto
-   (`ChatController.currentProjectPath`). O picker **não** reaparece.
+1. **Primeira conversa, nada lembrado** — o picker aparece. O usuário escolhe um
+   projeto existente, cria um novo, ou responde "No project".
+2. **Conversas seguintes** — herdam o projeto, e o picker **não** reaparece. A
+   herança lê **três fontes em ordem**: a ligação da conversa aberta
+   (`ChatController.currentProjectPath`), o último projeto escolhido
+   (`WorkspaceService.rememberedProject`, restaurado do disco) e só então o
+   picker.
 3. **Trocar de projeto** — pelo chip de projeto na app bar do chat. Ele mostra
    a pasta atual (ou "No project") e abre o mesmo picker, religando a conversa
-   aberta.
+   aberta **e gravando o novo padrão**.
 4. **Abrir uma conversa antiga** — `openChat` restaura `currentProjectPath` a
-   partir da sessão e aponta a aba Workspace para aquela pasta.
+   partir da sessão e aponta a aba Workspace para aquela pasta, **sem** mexer no
+   padrão.
+
+## O padrão é uma escolha persistida, e não o estado da tela
+
+`AppConstants.keyLastProjectName` guarda o último projeto que uma pessoa
+**escolheu**. Três regras saíram de não ser a mesma coisa que
+`currentRelPath`:
+
+- **`openChat` não grava.** Abrir uma conversa não é escolher um workspace, e se
+  isso reescrevesse o padrão, revisar uma conversa antiga mudaria silenciosamente
+  onde as conversas novas caem.
+- **"No project" não limpa.** A resposta foi sobre aquela conversa; a próxima
+  continua no workspace onde a pessoa trabalha. O chip é quem muda o padrão.
+- **O nome é validado contra a listagem viva.** A pasta pode ser apagada fora do
+  app, e um nome lembrado que não existe mais ligaria toda conversa nova a um
+  lugar onde as tools de arquivo não chegam. O descarte vai para
+  `droppedProject` para a UI poder dizer, em vez de perguntar de novo como se
+  nada tivesse acontecido.
+
+`null` em `rememberedProject` significa *nada lembrado ainda*, que é o caso de
+instalação nova — o único caso em que perguntar é certo.
+
+## O caminho não cresce: a regra e onde ela mora
+
+`openFolder` **não** desce para uma pasta que repita o nome do pai. A listagem de
+entradas (`WorkspaceEntry`) carrega só `name`, `isDir` e `size` — nenhum caminho
+— então navegar era relativo e recalculado a cada toque, e uma subpasta com o
+mesmo nome do pai produzia `TESTES/TESTES/TESTES` sem limite. Como a tela mostra
+um caminho que o próprio app construiu, o sintoma parecia o app esquecer onde
+estava.
+
+A regra está em `lib/services/workspace_paths.dart` (puro, testado), e a
+recusa **devolve o caminho atual** em vez de lançar: o pai continua terminando no
+mesmo nome, então os toques seguintes também são recusados e o caminho não
+cresce. `A/A/B/A` continua legal.
+
+A correção de arquitetura — a listagem nativa devolver o caminho de cada entrada
+a partir da raiz — é maior, toca `wsListDir` e o stub da web, e está
+conscientemente fora do escopo deste conserto.
 
 ### Por que a herança em vez de perguntar sempre
 

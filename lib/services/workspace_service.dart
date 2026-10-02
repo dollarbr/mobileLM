@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 
+import 'workspace_paths.dart';
 import '../core/constants.dart';
 import '../services/hive_service.dart';
 import 'workspace_native.dart'
@@ -27,6 +28,24 @@ class WorkspaceService extends GetxService {
   /// True before the user has picked a workspace folder (first launch).
   final needsSetup = false.obs;
 
+  /// The last project the user **chose**, kept across a cold start.
+  ///
+  /// **Separate from [currentRelPath] on purpose.** The tab's position and
+  /// "where this user works" are different questions: opening an old chat moves
+  /// the tab to whatever that chat was bound to, and browsing into a subfolder
+  /// moves it deeper, and neither is a decision about the default. Only the
+  /// project picker is.
+  ///
+  /// Null means *nothing remembered yet* — a fresh install, which is the one
+  /// case where asking is right. Choosing "No project" deliberately does **not**
+  /// clear it: that choice was about one conversation, and the next one still
+  /// lands in the workspace the user works in. The app bar chip changes it.
+  final rememberedProject = Rxn<String>();
+
+  /// A remembered project that was dropped because its folder disappeared.
+  /// Read by the UI to say so, rather than silently asking again.
+  final droppedProject = Rxn<String>();
+
   late final HiveService _hive;
 
   @override
@@ -39,15 +58,51 @@ class WorkspaceService extends GetxService {
   bool get isRoot => currentRelPath.value.isEmpty;
   bool get supported => ws.workspaceSupported;
 
-  /// Load the persisted URI on startup and refresh the root listing.
+  /// Load the persisted URI on startup, refresh the root listing, and bring
+  /// back the last chosen project.
+  ///
+  /// The restore is inside here because it needs the root listing to validate
+  /// against, and this is the one place that already has it at boot.
   Future<void> initialize() async {
     final saved = _hive.getSetting<String>(AppConstants.keyWorkspaceTreeUri);
-    if (saved != null && saved.isNotEmpty) {
-      treeUri.value = saved;
-      await refresh();
-    } else {
+    if (saved == null || saved.isEmpty) {
       needsSetup.value = true;
+      return;
     }
+    treeUri.value = saved;
+    await refresh();
+    await restoreRememberedProject();
+  }
+
+  /// Bring back the last chosen project, if it still exists.
+  ///
+  /// **Validated against the live listing, because the folder can be deleted
+  /// outside the app** — in a file manager, by the user, by anything holding the
+  /// SAF grant. A remembered name that no longer exists would bind every new
+  /// chat to a folder whose file tools cannot reach, and it would do it silently
+  /// and repeatedly.
+  Future<void> restoreRememberedProject() async {
+    final gone = <String>[];
+    final resolved = resolveRememberedProject(
+      _hive.getSetting<String>(AppConstants.keyLastProjectName),
+      await listProjects(),
+      onDropped: gone.add,
+    );
+    rememberedProject.value = resolved;
+    droppedProject.value = gone.isEmpty ? null : gone.first;
+    if (resolved != null) await openProject(resolved);
+  }
+
+  /// Remember [name] as the project new conversations start in.
+  ///
+  /// Called from the project picker only, and **not** from `openChat`: opening a
+  /// conversation is not choosing a workspace, and letting it overwrite the
+  /// default would mean reviewing an old chat quietly moves the default.
+  Future<void> rememberProject(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    rememberedProject.value = trimmed;
+    await _hive.setSetting(AppConstants.keyLastProjectName, trimmed);
   }
 
   /// The absolute-ish path of the currently displayed folder, for display only.
@@ -71,8 +126,23 @@ class WorkspaceService extends GetxService {
   }
 
   /// Open a folder (its name relative to the current folder).
+  ///
+  /// **Refuses to descend into a folder that repeats the current one's name.**
+  /// The path used to be composed by [childRelPath] out of a listing that
+  /// carries only a name, so tapping the same folder repeatedly produced
+  /// `TESTES/TESTES/TESTES` with no limit and no complaint. See
+  /// `workspace_paths.dart` for why the guard is here rather than a change to
+  /// the native listing. `A/A/B/A` is still reachable; only the immediate
+  /// re-entry is refused, and refusing it means *not moving*, not an error.
   Future<void> openFolder(String name) async {
-    currentRelPath.value = childRelPath(name);
+    final next = navigateInto(currentRelPath.value, name);
+    if (next == currentRelPath.value) {
+      // Already here. Re-listing is still worth it — the tap may have followed
+      // a rename elsewhere — and it is what makes the refusal invisible.
+      await refresh();
+      return;
+    }
+    currentRelPath.value = next;
     await refresh();
   }
 

@@ -83,6 +83,35 @@ Pasta raiz via SAF + projetos como subpastas; conversa liga-se a um projeto por
 [`docs/WORKSPACE.md`](docs/WORKSPACE.md) — leia antes de mexer no picker, no
 `WorkspaceService` ou em `createNewChat`.
 
+**O último projeto é persistido, e essa era a parte que faltava.** A herança
+existia e funcionava — `currentProjectPath` é lido por `_createNewChat` — mas
+era **só em memória**: `loadSessions()` carrega a lista e não abre conversa
+nenhuma, então num cold start a próxima conversa nova abria o picker de novo
+enquanto a tela dizia que a escolha lembrava. `keyLastProjectName` +
+`WorkspaceService.rememberedProject` fecham isso, e `_createNewChat` lê três
+fontes em ordem: a conversa aberta, o projeto lembrado, o picker.
+
+**Abrir uma conversa não grava o padrão, e "No project" não limpa.** As duas são
+decisões, não efeitos colaterais: `openChat` deixar isso reescrever o padrão faria
+revisar uma conversa antiga mudar silenciosamente onde as novas caem, e um "No
+project" dito sobre *aquela* conversa não é sobre a próxima. Só o picker grava. O
+nome é validado contra a listagem viva porque a pasta pode ser apagada fora do
+app — o descarte vai para `droppedProject` para a UI poder dizer.
+
+**`openFolder` não desce para uma pasta que repita o nome do pai.**
+`WorkspaceEntry` carrega só `name`/`isDir`/`size`, nenhum caminho, então navegar
+era relativo e recalculado a cada toque — e `TESTES` dentro de `TESTES` crescia
+sem limite. A regra está em `lib/services/workspace_paths.dart` (puro, 12
+testes) e a recusa **devolve o caminho atual** em vez de lançar, então o pai
+continua terminando no mesmo nome e os toques seguintes também são recusados.
+`A/A/B/A` continua legal: a regra é sobre o pai imediato.
+
+**O `Row` do dialogo de projeto virou `Wrap`** — quarta vez que este repo paga
+por isso, e o número do log era **24 px na escala de fonte padrão do app**, ou
+seja não é caso de quem mexeu no tamanho da letra. `test/
+project_picker_layout_test.dart` monta **o `Row` ruim dentro do teste** e afirma
+que ele estoura, de propósito: a primeira versão abria o diálogo real e afirmava
+o overflow, o que faz a asserção morrer junto com o conserto.
 ## Alternativas de stack já avaliadas
 
 **Llamatik** ([ferranpons/Llamatik](https://github.com/ferranpons/Llamatik), MIT,
