@@ -1137,6 +1137,18 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     setState(() {});
   }
 
+  /// The card every panel in this window is built from.
+  ///
+  /// **A delegation, and the body it replaces was this widget.** Same margin, same
+  /// radius, same padding, same `Row` with an `Expanded` title and a trailing
+  /// slot, same 8 px gaps, same note styling — the local copy was a fork of
+  /// [consoleCard] that had drifted nowhere. Keeping it meant two places to edit
+  /// for one change, which is the reason the shell exists.
+  ///
+  /// The colours are passed in rather than looked up, because this window already
+  /// resolved them and re-resolving per card would be a read per panel per
+  /// rebuild. [ConsolePalette.explicit] takes the brightness from the card's own
+  /// luminance rather than a second parameter that could contradict it.
   Widget _card(
     Color card,
     Color field,
@@ -1145,61 +1157,18 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     String? note,
     Widget? trailing,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: card,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(title,
-                    style: GoogleFonts.inter(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-              ),
-              if (trailing != null) trailing,
-            ],
-          ),
-          const SizedBox(height: 8),
-          child,
-          if (note != null) ...[
-            const SizedBox(height: 8),
-            Text(note,
-                style: GoogleFonts.inter(
-                    fontSize: 11, color: AppColors.textMuted)),
-          ],
-        ],
-      ),
+    return consoleCard(
+      palette: ConsolePalette.explicit(card, field),
+      title: title,
+      note: note,
+      trailing: trailing,
+      child: child,
     );
   }
 
-  Widget _errorCard(String message) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.error.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.error_outline, size: 18, color: AppColors.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message,
-                style: GoogleFonts.inter(fontSize: 12, color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
-  }
+  /// A refusal, in red. Delegates to the shared [consoleErrorCard] — the body
+  /// it replaced was a fork of it, down to the border alpha.
+  Widget _errorCard(String message) => consoleErrorCard(message);
 
   /// A confirmation, deliberately not the red card.
   ///
@@ -1209,30 +1178,10 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// answering `200` on a no-op unload: the difference between "I did something"
   /// and "something went wrong" belongs in how it is shown, not only in the code
   /// path that produced it.
-  Widget _noticeCard(String message) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.success.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.check_circle_outline,
-              size: 18, color: AppColors.success),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message,
-                style:
-                    GoogleFonts.inter(fontSize: 12, color: AppColors.success)),
-          ),
-        ],
-      ),
-    );
-  }
+  /// A confirmation, and **deliberately not** the red card: an unload that freed
+  /// a head is not an error, and putting all three in one red box makes the
+  /// app look broken every time it worked.
+  Widget _noticeCard(String message) => consoleNoticeCard(message);
 
   Widget _problem(String message) {
     return Padding(
@@ -1283,10 +1232,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// because they are alternatives, and stacking them says that in a way three
   /// side-by-side buttons do not.
   Widget _actions(VoidCallback onRun, String label) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return consoleActions(
       children: [
         FilledButton.icon(
           onPressed: _busy ? null : onRun,

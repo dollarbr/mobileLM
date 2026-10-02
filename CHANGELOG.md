@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### refactor: o vocabulário visual da casca, que eu disse ter entregue e não entreguei
+
+O commit que criou `api_console_shell.dart` adopting **só** o `ApiConsoleClient`
+e dizia que a casca também trazia `consoleCard`, `consoleField`, `consoleMono`, as
+três mensagens e `consoleActions`. **Não trazia nenhuma delas**: os dois consoles
+tinham forks privados, e a auditoria contou **0 ocorrências** de cada símbolo nos
+dois arquivos. A palavra estava errada; o código estava certo.
+
+Agora são **11 usos** no console `.tflite` e **8** na janela System One.
+
+**A adoção levou a um bug que só o aparelho achou, e ele é a parte que vale
+registrar.** `consoleMono` ganhou um `radius` para o console `.tflite` manter
+seus cantos de 8 dp, e a implementação passou a dar ao `Container` um `color:`
+**e** um `decoration:` com a mesma cor. `Container` afirma que não pode receber os
+dois, e o console `.tflite` **travou no primeiro paint**, com o painel sumindo e
+o `uiautomator dump` voltando com 8 nós sem texto.
+
+O teste da casca **passava**. E passou por um motivo que vale mais que o bug: com
+`radius: 0` — o default — o código tomava o ramo `decoration: null`, então **o
+conflito só existia no ramo que eu tinha acabado de adicionar e que nada
+exercitava**. Um parâmetro novo e não coberto é um parâmetro cujos outros valores
+não são testados. `test/api_console_shell_test.dart` agora monta os **dois**
+raios, e a prova de que isso serve é que reintroduzir o `color:` duplicado faz o
+teste falhar com *"Cannot provide both a color and a decoration"* — verificado,
+não suposto.
+
+**Três decisões de escopo, todas registradas no código:**
+
+- **`ConsolePalette.explicit` agora tem dois argumentos e deduz o brilho da
+  própria cor do card.** A forma de três invites a passar um `isDark` que pode
+  contradizer a cor, e nenhum dos dois consoles precisava disso: `consoleCard`
+  lê só a cor. Deduzir de `ThemeData.estimateBrightnessForColor` é honesto aqui
+  porque todo card é `0xFF1C1C1E` ou branco.
+- **A casca cresceu a *união* das duas variantes onde a diferença era um número,
+  e não mudou a tela onde a diferença era uma decisão.** `consoleCard` ganhou
+  `radius` e `consoleMono` ganhou `radius`, porque as duas telas discordavam em
+  12 contra 14 e 10 contra 11. `_field` do console `.tflite` **continua local**,
+  com o motivo escrito no arquivo: ele usa `TextField` `filled`/`isDense` com
+  borda, a casca usa `Container` sem borda, e ele tem um `onFirstBuild` que existe
+  porque um controller não se preenche por `initial` depois de construído.
+  Unificar os dois campos é uma decisão visual numa tela verificada no aparelho,
+  não uma de-duplicação — é trabalho separado.
+- **Não converti um `Row` que já estava certo.** O `_buttons` do console
+  `.tflite` tem `Expanded` nos dois filhos; `consoleActions` é para o caso sem
+  restrição, e trocar código funcionando por widget compartilhado seria churn.
+
+E o `unawaited` local do console `.tflite` virou o `ignoreFuture` da casca, que é
+o mesmo código com outro nome.
+
 ### fix: `feature_source` — o campo que existia, nunca era preenchido, e a tela não mostrava nada
 
 Auditando a classe que mais morde este repo — **campo lido que nada produz**,
@@ -206,9 +255,21 @@ mapa e sob a mesma auditoria; seis foram vistas na tela porque foi o que o
 aparelho deixou alcançar.
 
 **Os `.arb` não cobriram nenhuma das 38.** `app_pt_BR.arb` tem 112 chaves e
-zero sobreposição com as que faltavam — são uma terceira fonte, morta e divergente
-desde que deixaram de ser ligadas ao `.tr`. Continuam não ligadas; apagá-las é
-outro trabalho.
+zero sobreposição com as que faltavam. Continuam não ligadas ao `.tr`.
+
+**E eu escrevi que eram "uma terceira fonte, morta e divergente", e estava
+errado.** A auditoria mecânica diz o contrário, e é um subconjunto, não uma
+divergência: das 112, **91 são usadas** com `.tr` e **106 já estão no mapa** — só
+**6** existem no `.arb` e em lugar nenhum. E essas 6 não são uma lacuna de tradução:
+são `continue_text`, `example`, `explain_better`, `simplify`, `summarize` e
+`translate`, cujos rótulos **já estão em português como literais inline** nos chips
+de ação rápida de `chat_bubble.dart` (`'Explique melhor'`, `'Resuma'`,
+`'Traduza'`, `'Continue'`, `'Exemplo'`, `'Simplifique'`). O usuário vê português.
+Quase transformei uma não-bug em um conserto.
+
+O que sobra é uma **fonte morta** — o `.arb` não está ligado ao `.tr`, então quem
+o editar achando que muda algo não muda. Apagar ou passar a ser gerado é trabalho
+separado, e está na fila com o motivo.
 
 ## 2. `∞` que não era teto: `0`hops significava **zero** chamadas
 

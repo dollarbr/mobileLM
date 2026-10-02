@@ -299,13 +299,30 @@ class ConsolePalette {
 
   /// A palette built from colours a caller **already has in hand**.
   ///
-  /// This constructor exists so a screen that already resolved its own colours
-  /// can adopt the shared widgets without being refactored to thread a palette
-  /// through every signature to get there. `LitertHeadConsole` has carried
-  /// `(isDark, field, card)` as three parameters through five panels for a
-  /// while, and changing all of them to reach one shared widget would be a
-  /// larger, riskier diff than the thing it buys.
-  const ConsolePalette.explicit(this.isDark, this.card, this.field);
+  /// This exists so a screen that already resolved its own colours can adopt the
+  /// shared widgets without being refactored to thread a palette through every
+  /// signature to get there. `LitertHeadConsole` has carried `(isDark, field,
+  /// card)` as three parameters through five panels, and changing all of them to
+  /// reach one shared widget would be a larger and riskier diff than the thing
+  /// it buys.
+  ///
+  /// **Brightness is derived from the card's own luminance**, and not passed in,
+  /// because a caller that has the colour can be asked for less. Every one of
+  /// these cards is either `0xFF1C1C1E` or white, so the estimate is not a
+  /// heuristic doing a hard job — and it removes the temptation to pass a
+  /// `isDark` that is a lie, which the three-argument form invited.
+  factory ConsolePalette.explicit(Color card, Color field) => ConsolePalette._(
+        isDark:
+            ThemeData.estimateBrightnessForColor(card) == Brightness.dark,
+        card: card,
+        field: field,
+      );
+
+  const ConsolePalette._({
+    required this.isDark,
+    required this.card,
+    required this.field,
+  });
 
   final bool isDark;
 
@@ -337,13 +354,14 @@ Widget consoleCard({
   String? note,
   Widget? trailing,
   EdgeInsets padding = const EdgeInsets.all(14),
+  double radius = 14,
 }) {
   return Container(
     margin: const EdgeInsets.only(bottom: 12),
     padding: padding,
     decoration: BoxDecoration(
       color: palette.resolvedCard,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(radius),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -418,18 +436,36 @@ Widget consoleField({
 }
 
 /// A block of fixed-width text — logits, a tensor listing, a refusal.
+///
+/// [radius] exists because the two consoles disagreed: the System One window
+/// wanted square corners and the `.tflite` console a 8 dp radius, and the first
+/// version of this widget had neither parameter, so adopting it would have meant
+/// one of them changing how it looks. The union of both is smaller than the
+/// duplication it replaces.
 Widget consoleMono({
   required ConsolePalette palette,
   required String text,
   double fontSize = 11,
   int? maxHeight,
+  double radius = 0,
 }) {
   return Container(
     width: double.infinity,
-    color: palette.resolvedField,
     padding: const EdgeInsets.all(10),
     constraints:
         maxHeight == null ? null : BoxConstraints(maxHeight: maxHeight.toDouble()),
+    // **The colour lives inside the `decoration`, never in `color:` beside it.**
+    // A `Container` asserts that it was given both — "Cannot provide both a color
+    // and a decoration" — and adding [radius] here put the colour in both places.
+    // It threw on the `.tflite` console's first paint, on the device, and only
+    // there: this widget's own test builds it through a `Material` with a
+    // `Column`, and an assertion thrown inside a `Container`'s constructor
+    // happens before layout, so the test that would have caught it was not the
+    // one running. Which is the point of the device.
+    decoration: BoxDecoration(
+      color: palette.resolvedField,
+      borderRadius: radius == 0 ? null : BorderRadius.circular(radius),
+    ),
     child: SingleChildScrollView(
       child: Text(text,
           style: GoogleFonts.jetBrainsMono(
@@ -520,8 +556,14 @@ Widget _tinted({
 Widget consoleActions({
   required List<Widget> children,
   double spacing = 8,
+  WrapCrossAlignment crossAxisAlignment = WrapCrossAlignment.center,
 }) {
-  return Wrap(spacing: spacing, runSpacing: spacing, children: children);
+  return Wrap(
+    spacing: spacing,
+    runSpacing: spacing,
+    crossAxisAlignment: crossAxisAlignment,
+    children: children,
+  );
 }
 
 /// `void` in a `Future`, so a deliberately un-awaited call reads as deliberate.

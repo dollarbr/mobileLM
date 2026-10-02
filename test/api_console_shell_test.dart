@@ -210,20 +210,23 @@ void main() {
       // would be a larger and riskier diff than the thing it buys.
       const mine = Color(0xFF123456);
       const mineField = Color(0xFF654321);
-      final p = ConsolePalette.explicit(false, mine, mineField);
+      final p = ConsolePalette.explicit(mine, mineField);
       expect(p.resolvedCard, mine);
       expect(p.resolvedField, mineField);
-      expect(p.isDark, isFalse,
-          reason: 'and the brightness it was told is kept, because the caller '
-              'knows more about itself than the palette does');
+      expect(p.isDark, isTrue,
+          reason: 'and the brightness is DERIVED from the card, not passed in — '
+              '0xFF123456 is dark, so a caller cannot hand over a colour and a '
+              'brightness that disagree');
     });
   });
 
   group('the shared look', () {
     testWidgets('a card, a field, a mono block and the three messages build',
         (tester) async {
-      const palette =
-          ConsolePalette.explicit(true, Color(0xFF1C1C1E), Color(0xFF2C2C2E));
+      // Not `const`: the factory derives brightness at runtime, which is the
+      // whole point of it — a compile-time constant could not ask.
+      final palette =
+          ConsolePalette.explicit(const Color(0xFF1C1C1E), const Color(0xFF2C2C2E));
       final ctl = TextEditingController(text: '0.1, 0.2');
       addTearDown(ctl.dispose);
       await tester.pumpWidget(MaterialApp(
@@ -240,7 +243,23 @@ void main() {
                 mono: true,
               ),
             ),
-            consoleMono(palette: palette, text: '0.1000  -0.2082'),
+            // **Both radii, and the reason is a bug this file did not catch.**
+            // `consoleMono` grew a `radius` parameter so the `.tflite` console
+            // could keep its 8 dp corners, and the implementation ended up giving
+            // the `Container` a `color:` *and* a `decoration:` carrying the same
+            // colour. `Container` asserts that it cannot be given both.
+            //
+            // It was green here because at the default `radius: 0` the code took
+            // the `decoration: null` branch, and only the `.tflite` console — the
+            // one caller that passes a radius — ever hit the other branch. **A
+            // parameter added and not covered is a parameter whose other values
+            // are untested**, and the device found it on the first paint.
+            consoleMono(
+              palette: palette,
+              text: '0.1000  -0.2082',
+              radius: 8,
+              fontSize: 10,
+            ),
             consoleErrorCard('a refusal'),
             consoleNoticeCard('a confirmation'),
             consoleProblem('a warning'),

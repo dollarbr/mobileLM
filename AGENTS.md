@@ -1610,14 +1610,39 @@ E **não existe `POST /v1/litert/unload`** — as rotas LiteRT são `screen`, `l
 `status`, `run`. Uma cabeça só é trocada carregando outra, e o estado "nada
 carregado" da janela fica inalcançável depois da primeira carga. Vale uma rota.
 
-**Os dois consoles LiteRT compartilham o TRANSPORTE, e não o widget — e o
-vocabulário visual da casca ainda não foi adotado por nenhum dos dois.**
-`lib/views/api_console_shell.dart` tem o `ApiConsoleClient` (auth por requisição,
-`request(method, path)`, `ping`), que **é** compartilhado, e também
-`ConsolePalette`, `consoleCard`, `consoleField`, `consoleMono`, as três
-mensagens e `consoleActions`, que existem e são testados e **não são usados** —
-0 ocorrências nos dois arquivos. O primeiro commit desta casca dizia o contrário;
-estava errado e o CHANGELOG agora diz isso explicitamente.
+**Os dois consoles LiteRT compartilham o TRANSPORTE e o VOCABULÁRIO VISUAL — e a
+segunda parte só passou a ser verdade depois de um conserto que este guia
+registrou errado uma vez.** `lib/views/api_console_shell.dart` tem o
+`ApiConsoleClient` (auth por requisição, `request(method, path)`, `ping`), e
+também `ConsolePalette`, `consoleCard`, `consoleField`, `consoleMono`, as três
+mensagens e `consoleActions`. O primeiro commit da casca dizia que **todos os dois**
+eram compartilhados, e contava **0 ocorrências** de cada símbolo visual nos dois
+consoles: existiam, eram testados, e ninguém os usava. Agora são **11 usos** no
+console `.tflite` e **8** na janela System One.
+
+**Duas regras que a adoção deixou, e a segunda é a mais importante.** `consoleCard`
+e `consoleMono` ganharam `radius` porque as duas telas discordavam — 12 contra 14,
+e 10 contra 11 — e a casca passou a ser a **união** das variantes em vez de obrigar
+uma tela verificada a mudar de aparência. E `ConsolePalette.explicit` tem **dois**
+argumentos: o brilho é deduzido da luminância do próprio card, porque a forma de
+três convida a passar um `isDark` que **contradiz a cor** — e nenhum dos dois
+consoles precisa dele, já que `consoleCard` só lê a cor.
+
+**O `_field` do console `.tflite` continua local, de propósito, e o motivo está no
+arquivo.** Ele usa `TextField` `filled`/`isDense` com borda; a casca usa
+`Container` sem borda; e ele tem um `onFirstBuild` porque um controller não se
+preenche por `initial` depois de construído. Unificar os dois campos é uma
+**decisão visual** numa tela verificada no aparelho, não uma de-duplicação.
+
+**Um parâmetro novo e não coberto é um parâmetro cujos outros valores não são
+testados — e foi assim que o `radius` do `consoleMono` passou um assert direto no
+aparelho.** Com `radius: 0` o código tomava o ramo `decoration: null`, então o
+conflito de `color:` com `decoration:` só existia no ramo novo; o teste da casca
+passava e o console `.tflite` travava no primeiro paint. O teste monta os **dois**
+raios agora, e `Container` **asserta** que não pode receber cor e decoração ao
+mesmo tempo — o que ele faz acontecer dentro do seu próprio construtor, ou seja
+antes do layout, e é por isso que o `flutter test` do arquivo não pegava.
+
 Este console **inspeciona** uma cabeça, a janela System One **dirige** um modelo,
 e o que elas têm em comum é como falam com o servidor e como desenham a resposta.
 Dois `throwOnError` **deliberadamente diferentes**: aqui `true` (todo call site é

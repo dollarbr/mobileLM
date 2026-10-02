@@ -200,14 +200,14 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
       _base = url;
     });
     if (up) {
-      unawaited(_status());
+      ignoreFuture(_status());
       // Independent of the status, and deliberately so. The first version fired
       // the screen from inside `_status`'s success path, which meant a status
       // failure took the screen down with it — and since the status failure was
       // itself a swallowed exception, the console just sat there saying "not
       // screened yet" with nothing anywhere saying that anything had gone wrong.
       // Two questions, two calls, neither able to silence the other.
-      unawaited(_screenOnce());
+      ignoreFuture(_screenOnce());
     }
   }
 
@@ -975,11 +975,21 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
 
   // ── shared widgets ───────────────────────────────────────────────────────
 
+  /// A note about the file: an icon and a short paragraph.
+  ///
+  /// The **frame** is the shared [consoleCard], at 12 dp and a 12 dp radius,
+  /// which is what this console has always used. The **body** is not shared and
+  /// should not be: an icon plus a sentence is the right shape for "what the
+  /// file says about itself" and the wrong one for a form, and the sibling
+  /// console's form is a form.
   Widget _panel(Color card, IconData icon, String title, String body) {
-    return Container(
+    return consoleCard(
+      palette: ConsolePalette.explicit(card, card),
+      // The icon carries the meaning here, so the title row would be a duplicate
+      // of it. An empty title keeps the shared layout and hides the row.
+      title: '',
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-          color: card, borderRadius: BorderRadius.circular(12)),
+      radius: 12,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1002,6 +1012,18 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
     );
   }
 
+  /// **The one helper here that is NOT shared, and the reason is not laziness.**
+  ///
+  /// The shell's [consoleField] paints the input on a `Container` with a borderless
+  /// `TextField`; this one uses a `filled`, `isDense` `TextField` with its own
+  /// fill colour, and it takes an `onFirstBuild` callback that exists because a
+  /// controller cannot be filled through an `initial` after the field is built.
+  /// Adopting the shared widget would change how a verified screen looks, and
+  /// unifying the two fields is a visual decision rather than a de-duplication —
+  /// so it is a separate piece of work, not a drive-by.
+  ///
+  /// [consoleCard] and [consoleMono] took the union of both variants instead,
+  /// because there the difference was two numbers and a border radius.
   Widget _field(Color field, String label, TextEditingController ctrl,
       {int maxLines = 1, void Function()? onFirstBuild}) {
     // Filled once, when the field first appears. Passing an `initial` to a
@@ -1034,19 +1056,25 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
     );
   }
 
+  /// A block of fixed-width text.
+  ///
+  /// Delegates to the shared [consoleMono], with the two parameters that make it
+  /// look the way it has always looked here: 10 dp rather than 11, and an 8 dp
+  /// radius. Both existed as private forks of the same widget, and the shared one
+  /// grew the union instead of one of the screens being made to match the other
+  /// on a screen that was verified on the device.
   Widget _mono(String s, Color field, {int maxHeight = 200}) {
-    return Container(
-      width: double.infinity,
-      constraints: BoxConstraints(maxHeight: maxHeight.toDouble()),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-          color: field, borderRadius: BorderRadius.circular(8)),
-      child: SingleChildScrollView(
-        child: Text(s, style: GoogleFonts.jetBrainsMono(fontSize: 10)),
+    return consoleMono(
+      palette: ConsolePalette.explicit(
+        Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF1C1C1E)
+            : Colors.white,
+        field,
       ),
+      text: s,
+      fontSize: 10,
+      maxHeight: maxHeight,
+      radius: 8,
     );
   }
 }
-
-/// `void` in a `Future`, so a deliberately un-awaited call reads as deliberate.
-void unawaited(Future<void> f) {}

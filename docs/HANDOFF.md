@@ -360,3 +360,36 @@ adb exec-out run-as com.dollarbr.mobilelm cat app_flutter/logs/app.log > /tmp/mo
 **Medir pelo log é o que resolve.** Foi decisivo em todos os diagnósticos
 desta série — inclusive nos três bugs acima, nenhum dos quais tinha sintoma
 próprio.
+
+## Fila — do mais fácil ao mais difícil
+
+Ordenada por **risco de quebra**, não por tamanho. O item 1 é o que eu disse ter
+entregue e não entreguei, então vai primeiro apesar de não ser o menor.
+
+| # | Item | Tamanho | Por que nesta posição |
+|---|---|---|---|
+| 1 | ~~Adotar o vocabulário visual da casca~~ | **feito** | **11 usos** no console `.tflite` e **8** na janela System One, contra 0 antes. Custou um bug: `consoleMono` ganhou `radius` e o `Container` passou a receber `color:` **e** `decoration:`, que ele **asserta** não poder — o console `.tflite` travou no primeiro paint e o teste passava, porque com `radius: 0` o ramo `decoration: null` escondia o conflito. O teste monta os dois raios agora. `consoleCard`/`consoleMono` ganharam `radius` (a **união** das duas variantes), `ConsolePalette.explicit` passou a 2 argumentos deduzindo o brilho da cor, e o `_field` do `.tflite` **continua local** com o motivo escrito — unificá-lo é decisão visual, não de-duplicação. |
+| 2 | **Varredura de overflow de verdade** | médio, um teste | 26 `Row` sem `Expanded`/`Flexible`/`Spacer`/`Wrap` nos arquivos de view. Corpo longo não é overflow — o que estoura é `Text` sem `Expanded` dentro de `Row`. Em vez de caçar no olho, um teste que monta as telas a 360 dp com texto a 2× e relata **todo** `RenderFlex`, e vira guarda permanente. O quarto caso da mesma família (o dialogo de projeto) foi consertado hoje. |
+| 3 | **Nomes e comentários dos modelos do catálogo** | médio, dado | `description` é texto de display e alguns estão em inglês num catálogo cuja tela é pt_BR. |
+| 4 | **Quantização por swipe no card** | médio, UI | Prometido no `0.2.x`, nunca entregue. Move o `Slider` para longe do cartão e dá um alvo de toque grande. |
+| 5 | **Entrada de catálogo `.tflite`** | médio, dado | O console funciona, mas o único `.tflite` utilizável foi empurrado à mão. A rota barata é uma cabeça de **uma entrada** só — a regra do "maior input" tornou isso trivial e cobre o caminho feliz sem auxiliares. |
+| 6 | **O `.arb` está morto** | pequeno, limpeza | `app_pt_BR.arb` tem 112 chaves, **91 usadas** com `.tr` e 106 já no mapa — então é um **subconjunto**, não a "fonte divergente" que eu escrevi aqui e no CHANGELOG. As 6 que só existem nele são traduções de rótulos que o app **já mostra em português** como literais inline nos chips de ação rápida, então **não há bug visível**: quase consertei uma não-bug. O que sobra é uma fonte morta que alguém pode editar achando que muda algo. Decidir: apaga ou passa a ser gerado. |
+| 7 | **A hipótese da quantização** | alto, **medição** | `Q4_K_M` contra `Q4_0` do **mesmo** modelo. Único item que muda advice para 36 das 46 entradas, e o advice atual está comprovadamente errado (o menor modelo é o mais lento). O catálogo não tem nenhuma família em duas quantizações, então o par vem de fora. |
+| 8 | **Os 4 `litertlm` restantes** | alto, **medição** | "GPU é o melhor LiteRT neste aparelho" veio de **um** modelo, o 0.6B, e nenhum dos outros é um 0.6B. |
+| 9 | **A `0.6.0`** | — | Minor = feature, e "isto faz X, que antes não existia" tem que sair verdadeiro. Depende de escolher o que entra. |
+
+### Não está na fila, e por quê
+
+- **A memória devolvida pelo `/v1/litert/unload`** — precisa de um grafo grande o
+  bastante para aparecer contra 2,9 GB de `MemAvailable`; a única cabeça no
+  aparelho tem 1,0 MB. Bloqueado por lack de material, não por código.
+- **O encoder console adotar a casca** — decisão deliberada e escrita: é um
+  monitor do modelo carregado, sobre o chat, com outro ciclo de vida, e o teste
+  de layout dele já se provou falhando. Refazer essa decisão é trabalho, não
+  bug.
+- **NPU** — o linker namespace do Edge 60 bloqueia `libneuron_adapter_mgvi.so` e
+  o MT6878 não tem prova. Precisa de dispatch reconstruída *e* de firmware.
+- **As 3 pendências de licença do Tev1** — nenhuma se resolve com código.
+- **O host completo da Laya** (o encoder ModernBERT de 705 MB) — fora de escopo
+  por acordo, e agora se sabe que **não** é problema de memória: 804 MB contra
+  `maxModelBytes` de 1,19 GB.
