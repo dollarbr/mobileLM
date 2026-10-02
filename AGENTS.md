@@ -1538,10 +1538,14 @@ E **não existe `POST /v1/litert/unload`** — as rotas LiteRT são `screen`, `l
 `status`, `run`. Uma cabeça só é trocada carregando outra, e o estado "nada
 carregado" da janela fica inalcançável depois da primeira carga. Vale uma rota.
 
-**Os dois consoles LiteRT compartilham uma casca, e não um widget.**
-`lib/views/api_console_shell.dart` — o `ApiConsoleClient` (auth por requisição,
-`request(method, path)`, `ping`) e o vocabulário visual (`ConsolePalette`,
-`consoleCard`, `consoleField`, `consoleMono`, os três mensagens, `consoleActions`).
+**Os dois consoles LiteRT compartilham o TRANSPORTE, e não o widget — e o
+vocabulário visual da casca ainda não foi adotado por nenhum dos dois.**
+`lib/views/api_console_shell.dart` tem o `ApiConsoleClient` (auth por requisição,
+`request(method, path)`, `ping`), que **é** compartilhado, e também
+`ConsolePalette`, `consoleCard`, `consoleField`, `consoleMono`, as três
+mensagens e `consoleActions`, que existem e são testados e **não são usados** —
+0 ocorrências nos dois arquivos. O primeiro commit desta casca dizia o contrário;
+estava errado e o CHANGELOG agora diz isso explicitamente.
 Este console **inspeciona** uma cabeça, a janela System One **dirige** um modelo,
 e o que elas têm em comum é como falam com o servidor e como desenham a resposta.
 Dois `throwOnError` **deliberadamente diferentes**: aqui `true` (todo call site é

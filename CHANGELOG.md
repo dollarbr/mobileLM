@@ -13,9 +13,22 @@ fazer sem piorar as duas telas.
 `request(method, path)`, `get`/`post`, `ping`) e o vocabulário visual
 (`ConsolePalette`, `consoleCard`, `consoleField`, `consoleMono`,
 `consoleErrorCard`, `consoleNoticeCard`, `consoleProblem`, `consoleNote`,
-`consoleActions`). **Nenhum widget novo**: os dois consoles continuam sendo os
-seus, com os seus painéis e o seu corpo. O que eles passam a ter em comum é como
-falam com `127.0.0.1:8091` e como desenham a resposta.
+`consoleActions`).
+
+**Correção ao que o commit `2e2da72ef` disse:** ele两头卸 ("transporta **e** o
+vocabulário visual"), e só o **transporte** foi adotado. Os dois consoles
+continuam **sem usar nenhum** dos widgets da casca — conferência literal: 0
+ocorrências de `consoleCard`, `consoleActions`, `consoleErrorCard`,
+`consoleNoticeCard`, `consoleProblem`, `consoleNote`, `consoleMono` e
+`consoleField` nos dois arquivos; o vocabulário só é exercitado pelo teste. **A
+"interface igual" que você pediu não está entregue** — o arquivo tem as peças e os
+testes as provam, e adoptionlas nas duas telas é trabalho que ficou por fazer.
+O que as telas já têm em comum é o **transporte** (auth por requisição, método
+explícito, `ping` na mesma linha de base) e uma paleta que já era parecida por
+construção, não por ser a mesma.
+
+**Nenhum widget novo**: os dois consoles continuam sendo os seus, com os seus
+painéis e o seu corpo.
 
 Duas políticas **deliberadamente diferentes**, e por isso o parâmetro existe:
 `LitertHeadConsole` usa `throwOnError: true` porque todo call site dele é
