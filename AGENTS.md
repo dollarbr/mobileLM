@@ -1458,7 +1458,16 @@ gate existir mesmo sem ter resolvido isto.
 ## Cloud features (0.3.0)
 ## Tradução (PT-BR)
 
-- **Cobertura:** ~394 `.tr` calls no código, 278+ keys em `app_translation.dart`
+- **Cobertura auditada, não estimada:** 184 chaves usadas com `.tr`, **315** no
+  mapa, e `test/l10n_keys_test.dart` (10 testes) falha se voltar a faltar uma.
+  Antes desta auditoria o mapa tinha 277 e **38 das chaves usadas não estavam
+  nele** — `tool_round_trips` à vista num item de Configurações, `mobile_lm` no
+  Sobre. O GetX devolve a própria chave para uma que não tem, então nada lançou:
+  cada uma renderizou como identificador inglês numa UI portuguesa.
+  **Cada teste desse arquivo tem um irmão que prova que ele ainda vê alguma
+  coisa**, porque um regex que parou de casar reportaria zero faltando e passaria.
+  O `.arb` **não** é fonte para nada: `app_pt_BR.arb` tem 112 chaves e **zero**
+  sobreposição com as que faltavam.
 - **Arquivos:** `lib/l10n/app_translation.dart` (GetX), `lib/l10n/app_en.arb`, `lib/l10n/app_pt_BR.arb`
 - **Templates traduzidos:**
   - Sugestões de chat (16 prompts em PT-BR)
@@ -1470,8 +1479,31 @@ gate existir mesmo sem ter resolvido isto.
 
 
 - **Round-trip ceiling:** cloud = 20 hops fixo; local = `agentMaxHops` (setting).
-  Setting "Tool round-trips" inclui `∞` (valor 0 = infinito) e entrada manual
-  (toque no valor → dialog com TextField, valida 0–8).
+  O setting **não** alcança cloud, e é de propósito: os 20 são sobre créditos.
+  A escada do tile é `[0, 1, 2, 3, 4, 6, 8]` — **um toque chega em 0**, que é o
+  caminho mais fácil para o defeito abaixo. Entrada manual pelo valor abre o
+  diálogo (valida 0–8).
+
+- **`0` é "sem teto seu", e NÃO é `while (hop < 0)`.** Três lugares descreviam
+  `agentMaxHops == 0` e **nenhum era o laço**: o docstring dizia *"0 = infinite
+  (no ceiling)"*, o tile dizia `∞` / *"Unlimited agent mode"*, o diálogo dizia
+  *"Infinite agent mode (no ceiling)"* — e o laço fazia **zero iterações**. Quem
+  escolhia "ilimitado" recebia um agente que não podia chamar uma ferramenta, e a
+  tela dizia o contrário. O conserto é no laço, como este guia já pedia, e a
+  decisão mora em `lib/services/agent_hops.dart` (puro, 8 testes): `0` mapeia
+  para `AppConstants.agentHopBackstop` (50), que existe porque um teto ainda é
+  um teto e um spinner que nunca termina é pior.
+
+  **A mensagem de saída tem duas redações** e essa é a parte que valia: com 0, a
+  frase antiga `'Tool limit reached ($maxHops hop(s)).'` diria *limite atingido
+  (0 hops)*. Quem não pôs teto é dito que **o app** parou em 50; quem digitou um
+  número ouve o número dele de volta. Do mesmo defeito: o subtítulo do tile
+  dizia *"up to 1 hops"* com o default 1 — medido no A72, agora *"up to 1 hop"*.
+
+  Medido no A72 pelo `uiautomator dump`: tile em 0 mostra `∞` e o diálogo diz
+  *"No cap of your own — the app stops at 50 if the model keeps asking for
+  tools"*. **O laço rodando com 0 não foi exercitado** — precisaria de modelo
+  carregado com tools ligadas, e o A72 não aceita digitação.
 - **Context window auto-detect:** `_parseContextWindows()` em
   `cloud_model_controller.dart` — OpenRouter, DeepSeek, NVIDIA, Google, OpenAI.
   Safe maxTokens = 25% do contexto, min 256 (`effectiveMaxTokens()`).

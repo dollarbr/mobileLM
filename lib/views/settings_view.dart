@@ -269,9 +269,15 @@ class SettingsView extends GetView<SettingsController> {
                   leading: _iconBox(
                       const Color(0xFF8B7CFF), Icons.smart_toy_outlined),
                   title: 'tool_round_trips'.tr,
+                  // The plural was wrong on screen, measured here on the A72:
+                  // the default is 1, and the tile read "up to 1 hops". The same
+                  // sentence appears in the ending message the loop writes, and
+                  // that one had the fix; this one had the bug.
                   subtitle: controller.agentMaxHops.value == 0
                       ? 'Unlimited agent mode'
-                      : 'Agent mode: up to ${controller.agentMaxHops.value} hops per message',
+                      : 'Agent mode: up to ${controller.agentMaxHops.value} '
+                          'hop${controller.agentMaxHops.value == 1 ? '' : 's'} '
+                          'per message',
                   trailing: InkWell(
                     onTap: () => _showHopInputDialog(context),
                     child: controller.agentMaxHops.value == 0
@@ -562,10 +568,21 @@ class SettingsView extends GetView<SettingsController> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // **This is where the "unlimited" label did the most damage**, because
+            // it is the screen where somebody chooses it. It read *"Infinite agent
+            // mode (no ceiling)"* next to a field whose `0` reached the loop as
+            // `while (hop < 0)` — so the promise was made at the exact moment it
+            // was broken, and the tile above said the same thing.
+            //
+            // There is a ceiling now, and it is the app's, so it is named here
+            // rather than left for the user to discover on a stuck spinner. The
+            // number is interpolated from the constant so the two cannot drift.
             Text(
               current == 0
-                  ? 'Infinite agent mode (no ceiling)'
-                  : 'Set max hops (1–8) or ∞ for unlimited',
+                  ? 'No cap of your own — the app stops at '
+                      '${AppConstants.agentHopBackstop} if the model keeps '
+                      'asking for tools'
+                  : 'Set max hops (1–8), or 0 for no cap of your own',
               style: GoogleFonts.inter(fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -576,7 +593,7 @@ class SettingsView extends GetView<SettingsController> {
               autofocus: true,
               decoration: const InputDecoration(
                 labelText: 'Value',
-                hintText: '0 = ∞, 1–8 = max hops',
+                hintText: '0 = no cap, 1–8 = max hops',
               ),
               onSubmitted: (v) {
                 final val = int.tryParse(v);

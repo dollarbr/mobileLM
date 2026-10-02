@@ -4,6 +4,109 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### fix: 38 strings que apareciam como o próprio nome da chave, e o teto de hops que não era teto
+
+Duas correções. A primeira é a que o usuário vê; a segunda é a que ele
+configurava.
+
+## 1. Trinta e oito traduções que nunca foram escritas
+
+`tool_round_trips` aparecia **literalmente** num item de Configurações, e
+`mobile_lm` no Sobre. Não era uma chave: eram **38**.
+
+A auditoria de todos os `.tr` do `lib/` contra `app_translation.dart` achou 38
+chaves chamadas e ausentes do mapa. O GetX devolve a própria chave para uma
+chave que não tem, então nada lançou, nada avisou, e cada uma delas renderizou
+como um identificador em inglês dentro de uma UI portuguesa.
+
+**Por que 38 de uma vez, e não uma por forgetting.** A forma do bug é o que
+importa: chamar `.tr` é invisível, a string pedida não aparece em review, e o
+arquivo que diria está três diretórios longe. Nada na escrita do call site falha.
+O conserto sozinho não resolve — a próxima leva viria.
+
+Por isso `test/l10n_keys_test.dart` (10 testes) faz a checagem mecanicamente, e
+**cada teste tem um teste irmão que prova que ele ainda vê alguma coisa**: um
+regex que parou de casar reportaria zero chaves faltando e passaria, que é o pior
+resultado possível num teste sobre dados ausentes.
+
+Quatro coisas que ele fixa, e as quatro já custaram um round:
+
+- **toda chave `.tr` literal existe no mapa** — o defeito original;
+- **valor com underscore não é português** — o "conserto" de `'foo': 'foo'`, que
+  a auditoria de chave faltando **não** pegaria porque a chave existe;
+- **uma chave que o código faz `replaceAll` ainda carrega o placeholder** —
+  `delete_name` e `enter_value_between` são as **primeiras** do mapa a ter um, e
+  `replaceAll` numa string sem a agulha é um no-op silencioso: o usuário veria
+  `$min` cru onde deveria estar um número;
+- **a fronteira de cobertura**: só chaves literais são auditadas, e o teste
+  **afirma** que não existe nenhuma montada em runtime, em vez de listar um
+  montão e parecer cobertura.
+
+**O teste encontrou um bug no próprio teste,** que é a parte que valeu. Um leitor
+do mapa **linha a linha** silenciosamente perdia todo valor quebrado em duas
+linhas de fonte — cinco deles, todos meus — e a auditoria acusava essas cinco de
+faltarem numa chave que existia. Um parser que descarta o que não consegue ver
+é o mesmo defeito um nível acima. O leitor casa o arquivo inteiro, e há um teste
+que nomeia as cinco chaves quebradas à mão.
+
+Verificado no A72, por `uiautomator dump`: **"No aparelho"** (era
+`local_on_device`), **"API na nuvem"** (era `cloud_api`), **"Vale para o local e
+para a nuvem"** (era `applies_to_local_and_cloud`), **"Geração de texto"** (era
+`text_generation`), **"ADB e Shizuku"** (era `adb_shizuku`), **"Voltas de
+ferramenta"** no tile e no diálogo (era `tool_round_trips`). As 38 estão no mesmo
+mapa e sob a mesma auditoria; seis foram vistas na tela porque foi o que o
+aparelho deixou alcançar.
+
+**Os `.arb` não cobriram nenhuma das 38.** `app_pt_BR.arb` tem 112 chaves e
+zero sobreposição com as que faltavam — são uma terceira fonte, morta e divergente
+desde que deixaram de ser ligadas ao `.tr`. Continuam não ligadas; apagá-las é
+outro trabalho.
+
+## 2. `∞` que não era teto: `0`hops significava **zero** chamadas
+
+Três lugares descreviam `agentMaxHops == 0` e **nenhum deles era o laço**:
+
+- o docstring de `setAgentMaxHops`: *"0 = infinite (no ceiling)"*;
+- o tile de Configurações: `∞`, subtítulo *"Unlimited agent mode"*;
+- o diálogo: *"Infinite agent mode (no ceiling)"*;
+- e o laço, em `chat_controller.dart`: `while (hop < maxHops)`, que para 0 são
+  **zero iterações**.
+
+Então quem escolhia "ilimitado" recebia um agente que **não podia chamar uma
+única ferramenta**, e a tela dizia o contrário. Nada lançou, nada avisou, e a
+feature parecia ligada. A escada do tile é `[0, 1, 2, 3, 4, 6, 8]`, então **um
+toque chega em 0** — o caminho mais fácil para o defeito.
+
+**A segunda metade do bug era a mensagem de saída.** `'Tool limit reached
+($maxHops hop(s)).'` teria dito *limite atingido (0 hops)* — citando de volta o
+número que era para significar "nenhum".
+
+O conserto é no laço, não no rótulo, como o guia já pedia. `lib/services/
+agent_hops.dart` é puro e decide: `0` → `AppConstants.agentHopBackstop` (50), que
+existe porque um teto ainda é um teto e um spinner que nunca termina é pior. **A
+mensagem de saída tem duas redações** — quem não pôs teto é dito que o app parou
+em 50 e que esse é o limite **do app**, não dele; quem digitou um número ouve o
+número dele de volta.
+
+**Cloud não muda**, e é deliberado: o laço lia
+`inferenceMode != 'local' ? 20 : agentMaxHops`, então cloud tem teto próprio que o
+setting não alcança, sobre créditos. `AgentHops.resolve` mantém isso.
+
+Também corrigido, do **mesmo defeito**: o subtítulo do tile dizia *"up to 1
+hops"* com o default 1, e a mensagem do laço dizia `hop(s)`. Medido no A72:
+agora **"up to 1 hop per message"**.
+
+Verificado no A72, pelo mesmo dump: o tile em 0 mostra `∞` e o diálogo diz
+**"No cap of your own — the app stops at 50 if the model keeps asking for
+tools"**, no lugar de "no ceiling". O valor foi restaurado a 1.
+
+**O que não foi verificado:** o laço **rodando** com 0. Seria preciso um modelo
+carregado, tools ligadas e um modelo que de fato peça ferramentas em sequência, e
+a entrada de texto do A72 não aceita digitação. O laço é uma linha chamando
+`AgentHops.resolve`, e os 8 testes de `test/agent_hops_test.dart` cobrem a
+resolução e as duas mensagens — inclusive revertendo o `resolve` para 0 e a
+mensagem para a frase única, para ver os testes falharem.
+
 ### refactor: uma casca compartilhada para os consoles da API, e o link do console de encoder
 
 **Interface igual, widget diferente** — que é o que foi pedido e o que dá para

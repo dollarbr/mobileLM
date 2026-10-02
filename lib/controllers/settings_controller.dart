@@ -924,7 +924,14 @@ class SettingsController extends GetxController {
   }
 
   /// Agent depth: how many tool round-trips one message may take.
-  /// 0 = infinite (no ceiling).
+  ///
+  /// **0 means "do not cap the local agent", not "no limit".** It used to mean
+  /// "no limit" here, in the label and in this docstring, while the loop read
+  /// it as `while (hop < 0)` — so picking "unlimited" produced an agent that
+  /// could not call a single tool, and the tile said the opposite. The loop now
+  /// resolves it through `services/agent_hops.dart`, which maps 0 to
+  /// `AppConstants.agentHopBackstop` and words the ending accordingly. Cloud
+  /// ignores this setting and has its own ceiling.
   Future<void> setAgentMaxHops(int hops) async {
     final v = hops.clamp(0, AppConstants.maxAgentHopsCap);
     agentMaxHops.value = v;

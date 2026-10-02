@@ -322,6 +322,68 @@ class AppTranslation extends Translations {
       'unpair': 'Desvincular',
       'use_custom_model_id': 'Usar ID de modelo personalizado',
       'workspace_project': 'Projeto do workspace',
+
+      // ── As 38 chaves que faltavam ──────────────────────────────────────────
+      // Cada uma destas é chamada com `.tr` em pelo menos um lugar do app e
+      // **não** existia neste mapa, o que fazia o GetX devolver a própria chave:
+      // o usuário lia literalmente `tool_round_trips` num item de Configurações,
+      // e `mobile_lm` no Sobre. Uma auditoria de todos os `.tr` contra este
+      // mapa achou 38 de uma vez — nenhuma delas é uma chave solta, é um
+      // arquivo de traduções que cresceu sem o mapa acompanhando.
+      //
+      // Estão num bloco só porque chegaram juntas; um passe futuro pode
+      // dissolvê-las nos temas acima. `test/l10n_keys_test.dart` falha se voltar
+      // a faltar uma, e é ele que impede a próxima leva.
+      //
+      // As três com placeholder (`$name`, `$min`, `$max`) são as **primeiras**
+      // deste mapa a ter um: o consumidor faz `.replaceAll('\$min', ...)`, então
+      // o valor precisa conter o texto `$min` literalmente — daí o `\$` aqui, e
+      // não o `$` solto, que o Dart tentaria interpolar.
+      'adb_shizuku': 'ADB e Shizuku',
+      'applies_to_local_and_cloud': 'Vale para o local e para a nuvem',
+      'as_identity': 'Executando como',
+      'available_ram': 'RAM disponível',
+      'cloud_api': 'API na nuvem',
+      'cloud_models_support_images_and_text_files':
+          'Modelos na nuvem aceitam imagens e arquivos de texto',
+      'default_size': 'Tamanho padrão',
+      'delete_name': 'Excluir \$name',
+      'elapsed': 'Tempo',
+      'enter_value_between': 'Digite um valor entre \$min e \$max',
+      'error_saving_image': 'Erro ao salvar a imagem',
+      'error_sharing_image': 'Erro ao compartilhar a imagem',
+      'failed_to_save_image': 'Falha ao salvar a imagem',
+      'gpu_is_experimental':
+          'A GPU é experimental: mais rápida em alguns modelos e ainda não '
+          'medida em todos.',
+      'initializing_model': 'Iniciando o modelo',
+      'listening_tap_mic_to_stop': 'Ouvindo — toque no microfone para parar',
+      'loading_filename': 'Carregando o modelo',
+      'local_api_server': 'Servidor de API local',
+      'local_on_device': 'No aparelho',
+      'mobile_lm': 'mobileLM',
+      'model_size': 'Tamanho do modelo',
+      'openai_compatible_endpoint': 'Endpoint compatível com OpenAI',
+      'quantisation_aware_only': 'Só os compatíveis com quantização',
+      'recommended_max_8':
+          'Recomendado: no máximo 8 — acima disso quase não muda e demora bem '
+          'mais',
+      'restart_now': 'Reiniciar agora?',
+      'runs': 'Executa',
+      'runtime': 'Runtime',
+      'set_up_workspace': 'Configurar o espaço de trabalho',
+      'some_settings_only_load_at_app_start':
+          'Algumas configurações só valem na próxima vez que o app for aberto',
+      'system_prompt_hint': 'Instruções que o modelo segue em todas as conversas',
+      'text_generation': 'Geração de texto',
+      'tool_round_trips': 'Voltas de ferramenta',
+      'unload_before_loading_another':
+          'Descarregue o modelo atual antes de carregar outro',
+      'use_buttons_to_add_files': 'Use os botões para adicionar arquivos',
+      'view_errors_warnings': 'Ver erros e avisos',
+      'workspace_not_configured': 'Espaço de trabalho não configurado',
+      'you_can_change_this_folder_later': 'Você pode trocar esta pasta depois',
+      'you_need_to_download_a_model': 'Você precisa baixar um modelo',
     }
   };
 }

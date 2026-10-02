@@ -1,0 +1,273 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mobilelm/l10n/app_translation.dart';
+
+/// The pt_BR map must cover **every** key the app asks for.
+///
+/// ## Why this test exists
+///
+/// It exists because it did not. `lib/l10n/app_translation.dart` had 277 keys and
+/// **38 of the keys the app actually calls were not in it** — `tool_round_trips`
+/// among them, on a Settings item, and `mobile_lm` in the About screen. GetX
+/// returns the key itself for a key it does not have, so none of this threw, none
+/// of it warned, and every one of those 38 strings rendered as its own English
+/// identifier inside a Portuguese UI.
+///
+/// The shape of the bug is what makes it worth a test rather than just a fix:
+/// adding a `.tr` call is invisible, the string it asks for is nowhere in
+/// review, and the file that would say so is three directories away. Nothing
+/// about writing the call site fails. So the check has to be mechanical or it
+/// will not happen again by accident.
+///
+/// ## What it cannot see
+///
+/// Only **literal** keys. A call like `'prefix_$name'.tr` assembles the key at
+/// runtime and is invisible here. The last test lists what it found, so a human
+/// knows the coverage boundary instead of assuming it.
+///
+/// ## Why it reads the files instead of importing something
+///
+/// A list of keys inside the test would have to be maintained by hand, and a
+/// hand-maintained list is the same failure wearing a different hat. Reading
+/// `lib/` makes the check true by construction, and the two "the scan actually
+/// finds something" tests exist because a regex that silently matches nothing
+/// turns this whole file green while it protects nothing.
+void main() {
+  /// `lib/`, from the package root that `flutter test` runs in.
+  final libDir = Directory('lib');
+  final mapFile = File('lib/l10n/app_translation.dart');
+
+  /// `'some_key'.tr` and `"some_key".tr`, and nothing built at runtime.
+  ///
+  /// Raw **triple** quotes because the pattern needs a bare `"` inside: a raw
+  /// `r"…"` still ends at the first `"`, and `\"` inside it is backslash-then-
+  /// quote as far as Dart is concerned.
+  final literal = RegExp(r'''(['"])([A-Za-z0-9_]+)\1\s*\.\s*tr\b''');
+
+  /// `replaceAll('\$min', …)` — a needle written with a literal `$`.
+  final needle = RegExp(r'''replaceAll\(\s*['"]\\?\$([A-Za-z0-9_]+)''');
+
+  Map<String, String> readPtBr() {
+    final source = mapFile.readAsStringSync();
+    // The map is a Dart literal, not JSON: single quotes, and `\$` inside values.
+    // Reading it as text keeps this file free of an analyzer dependency.
+    //
+    // **Matched over the whole file, not line by line, and that is a bug this
+    // test already paid for once.** A `^\s*'key':\s*'...'` regex anchored per line
+    // silently skipped every value wrapped across two source lines — five of
+    // them, all of them mine — and the audit then reported those five keys as
+    // missing from a map they were in. A parser that quietly drops the entries
+    // it cannot see is the same failure as a map that is missing them, one level
+    // up, so the wrapping is part of the pattern and there is a test below
+    // naming the wrapped keys by hand.
+    final out = <String, String>{};
+    final pair =
+        RegExp(r'''([A-Za-z0-9_]+)':\s*'((?:[^'\\]|\\.)*)''');
+    for (final m in pair.allMatches(source)) {
+      out[m.group(1)!] = m.group(2)!;
+    }
+    return out;
+  }
+
+  List<File> dartFiles() => libDir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.dart'))
+      .toList();
+
+  /// Every literal `.tr` key in the app, with the files that ask for it.
+  Map<String, List<String>> scanUsages() {
+    final out = <String, List<String>>{};
+    for (final f in dartFiles()) {
+      for (final m in literal.allMatches(f.readAsStringSync())) {
+        (out[m.group(2)!] ??= []).add(f.path);
+      }
+    }
+    return out;
+  }
+
+  /// For every key whose translation is assembled with `replaceAll`, the
+  /// placeholders the code is going to look for.
+  ///
+  /// Two steps on purpose: the needle can appear more than once for one key
+  /// (`enter_value_between` replaces `$min` **and** `$max`), so the tail after the
+  /// `.tr` call is scanned, not just the first match.
+  Map<String, Set<String>> scanPlaceholders() {
+    final out = <String, Set<String>>{};
+    for (final f in dartFiles()) {
+      final src = f.readAsStringSync();
+      for (final m in literal.allMatches(src)) {
+        final tail = src.substring(m.end);
+        // Bounded by the **next key**, not by the end of the statement. The
+        // `confirm_delete` dialog does `Text('confirm_delete'.tr)` as the title
+        // and then, as the content, `Text('${'delete_name'.tr}'.replaceAll(
+        // '$name', …))` — so a tail cut at the `;` swept the second key's
+        // `replaceAll` into the first key's requirements, and the audit then
+        // demanded that "Confirmar exclusão" contain a `$name`. A key boundary
+        // is where the ownership of a `replaceAll` changes hands.
+        final ateSemicolon = tail.indexOf(';');
+        final proxChave = literal.firstMatch(tail);
+        var limite = ateSemicolon;
+        if (proxChave != null && (limite == -1 || proxChave.start < limite)) {
+          limite = proxChave.start;
+        }
+        final trecho = limite == -1 ? tail : tail.substring(0, limite);
+        for (final n in needle.allMatches(trecho)) {
+          (out[m.group(2)!] ??= {}).add(n.group(1)!);
+        }
+      }
+    }
+    return out;
+  }
+
+  test('the map is where this test looks for it', () {
+    // A path that silently matches nothing would make every other test here
+    // pass by finding no usages at all — the failure mode of a test about
+    // missing data.
+    expect(libDir.existsSync(), isTrue,
+        reason: 'tests run from the package root; lib/ must be right there');
+    expect(mapFile.existsSync(), isTrue);
+  });
+
+  test('the scan actually finds usages', () {
+    expect(scanUsages().length, greaterThan(150),
+        reason: 'a regex that stopped matching would make the audit below '
+            'report zero missing keys and pass — the worst possible outcome, '
+            'because the bug it guards is invisible to the user');
+  });
+
+  test('the map is readable as text, not silently empty', () {
+    expect(readPtBr().length, greaterThan(300),
+        reason: 'if the pair regex stopped matching, "every key exists" would '
+            'pass for the same reason a broken scan passes');
+  });
+
+  test('a value wrapped across two source lines is still read', () {
+    // The regression this file was corrected for. These five are wrapped in
+    // `app_translation.dart` because they are long sentences, and a per-line
+    // reader reported every one of them as absent from the map.
+    final map = readPtBr();
+    for (final k in const [
+      'gpu_is_experimental',
+      'recommended_max_8',
+      'cloud_models_support_images_and_text_files',
+      'some_settings_only_load_at_app_start',
+      'unload_before_loading_another',
+    ]) {
+      expect(map.containsKey(k), isTrue,
+          reason: '$k tem o valor quebrado em duas linhas no mapa, e um leitor '
+              'por linha o perderia — e o auditoria o acusaria de estar '
+              'faltando numa chave que existe');
+      expect(map[k]!.length, greaterThan(20),
+          reason: 'e o valor lido tem de ser a frase inteira, não um fragmento');
+    }
+  });
+
+  test('every literal .tr key exists in the pt_BR map', () {
+    final map = readPtBr();
+    final faltando = <String, String>{};
+    for (final e in scanUsages().entries) {
+      if (!map.containsKey(e.key)) faltando[e.key] = e.value.first;
+    }
+    expect(
+      faltando,
+      isEmpty,
+      reason: 'Estas ${faltando.length} chaves são chamadas com .tr e não '
+          'existem no mapa, então o GetX devolve a própria chave e o usuário lê '
+          'o identificador em inglês dentro de uma UI em português:\n'
+          '${faltando.entries.map((e) => '  ${e.key}  (${e.value})').join('\n')}',
+    );
+  });
+
+  test('a value is never the key it answers to', () {
+    // The shape of the bug itself: a translation that repeats its key renders as
+    // English no matter how many keys exist. This catches the "fix" of adding
+    // `'foo': 'foo'`.
+    final identicas = readPtBr().entries
+        .where((e) => e.value == e.key)
+        .map((e) => e.key)
+        .toList();
+    expect(identicas, isEmpty,
+        reason: 'estas traduções são o próprio nome da chave, que é exatamente o '
+            'defeito que o teste anterior existe para evitar');
+  });
+
+  test('a translated string carries no leftover English identifier', () {
+    // The other half of the same bug: a key that *is* in the map but whose
+    // translation was never written down, so the value is the identifier.
+    //
+    // The tell is the **underscore**. A real Portuguese value never has one —
+    // `segundos` is a single lowercase word and is perfectly translated, so
+    // flagging "any value that looks like a bare word" flagged correct entries.
+    // What cannot be prose is `foo_bar`, which is the shape a leaked key has.
+    final suspeitas = readPtBr().entries
+        .where((e) => RegExp(r'^[a-z0-9]+(_[a-z0-9]+)+$').hasMatch(e.value.trim()))
+        .map((e) => '${e.key} = "${e.value}"')
+        .toList();
+    expect(suspeitas, isEmpty,
+        reason: 'valores com underscore não são português, são a chave repetida: '
+            'alguém "traduziu" a chave para a própria chave\n'
+            '${suspeitas.join('\n')}');
+  });
+
+  test('a key the code replaces into still carries the placeholder', () {
+    // `enter_value_between` and `delete_name` are the **first** keys in this map
+    // to have a placeholder, so there is no precedent in the file to copy and no
+    // compiler that would object to a missing one: `replaceAll` on a string
+    // without the needle is a no-op, and the user sees a raw `$min` where a
+    // number should be.
+    final usados = scanPlaceholders();
+    expect(usados, isNotEmpty,
+        reason: 'if the needle regex stopped matching, the check below covers '
+            'nothing — the same failure mode as the usage scan');
+
+    final map = readPtBr();
+    final semPlaceholder = <String>[];
+    for (final e in usados.entries) {
+      for (final p in e.value) {
+        if (!map.containsKey(e.key) || !map[e.key]!.contains(p)) {
+          semPlaceholder.add('${e.key}: o código troca "\$$p", mas o valor é '
+              '"${map[e.key] ?? "(ausente)"}"');
+        }
+      }
+    }
+    expect(semPlaceholder, isEmpty,
+        reason: 'o consumidor faz replaceAll e o valor não tem o texto a '
+            'substituir, então o placeholder aparece cru na tela:\n'
+            '${semPlaceholder.join('\n')}');
+  });
+
+  test('the map the app registers is the one this file audits', () {
+    // The app resolves `locale: Get.deviceLocale` with a pt_BR fallback, and
+    // English UI text is inline literals. If the registered key were renamed,
+    // every value here would be a lookup miss at runtime and this suite would
+    // still be green.
+    final t = AppTranslation().keys;
+    expect(t.keys, contains('pt_BR'));
+    expect(t['pt_BR'], isNotNull);
+    expect(t['pt_BR']!.length, greaterThanOrEqualTo(300));
+  });
+
+  test('the coverage boundary: keys assembled at runtime are not checked', () {
+    // Printed, not asserted. The tell for a genuinely dynamic key is a `$`
+    // **inside the quotes**: `'prefix_$name'.tr`. The first version of this
+    // detector matched `${'runs'.tr` and listed eleven keys as uncovered — but
+    // the `$` there is the interpolation sigil, `'runs'` is a literal, and the
+    // audit above covers it. Reporting a covered key as a gap is how a coverage
+    // note stops being believable.
+    final dinamicas = <String>[];
+    for (final f in dartFiles()) {
+      final src = f.readAsStringSync();
+      for (final m in RegExp(r'''['"][^'"\n]*\$[^'"\n]*['"]\s*\.\s*tr\b''')
+          .allMatches(src)) {
+        dinamicas.add('${f.path}: ${m.group(0)!.replaceAll('\n', ' ')}');
+      }
+    }
+    expect(dinamicas, isEmpty,
+        reason: 'a auditoria acima só vê chaves literais, e estas '
+            '${dinamicas.length} são montadas em runtime — cada uma precisa de '
+            'olho humano:\n${dinamicas.join('\n')}');
+  });
+}

@@ -14,6 +14,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
+import '../services/agent_hops.dart';
 import '../services/video_contact_sheet.dart';
 import '../services/video_frames_service.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1185,13 +1186,18 @@ class ChatController extends GetxController {
       }
 
       // ── Tool hops ─────────────────────────────────────────────────────
-      // Local models are capped by agentMaxHops to prevent small models
-      // from looping forever on their own tool output.
-      // Cloud models get a much higher ceiling (20) so they can do deeper
-      // agent work, but still stop before burning credits.
+      // The ceiling comes from `services/agent_hops.dart` and not straight off
+      // the setting, because `0` used to arrive here as `while (hop < 0)`: the
+      // docstring said infinite, the tile said `∞`, and a user who picked
+      // "unlimited" got **zero** tool calls. Cloud is unaffected on purpose —
+      // it has its own ceiling the setting cannot move.
       if (Get.find<SettingsController>().toolsEnabled.value &&
           generationId == _generationSerial) {
-        final maxHops = inferenceMode != 'local' ? 20 : Get.find<SettingsController>().agentMaxHops.value;
+        final hops = AgentHops.resolve(
+          Get.find<SettingsController>().agentMaxHops.value,
+          isLocal: inferenceMode == 'local',
+        );
+        final maxHops = hops.ceiling;
         var convo = history;
         var hop = 0;
         while (hop < maxHops) {
@@ -1329,7 +1335,12 @@ class ChatController extends GetxController {
         if (overflow != null) {
           rawResponse = rawResponse.replaceAll(overflow.raw, '').trim();
           if (rawResponse.isEmpty) {
-            rawResponse = 'Tool limit reached ($maxHops hop(s)).';
+            // Two wordings, because the two ceilings mean different things. The
+            // old one interpolated `$maxHops` into a fixed sentence, so with the
+            // setting at "unlimited" it would have said *limit reached (0 hops)*
+            // — a limit the user never set, quoting the number that was
+            // supposed to mean "none". See `services/agent_hops.dart`.
+            rawResponse = hops.limitReachedMessage();
           }
         }
       }

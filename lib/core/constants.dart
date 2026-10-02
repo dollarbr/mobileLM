@@ -201,6 +201,27 @@ class AppConstants {
   /// handed its own tool output loops forever); the agent toggle raises it.
   static const int defaultAgentMaxHops = 1;
   static const int maxAgentHopsCap = 8;
+
+  /// Where `agentMaxHops == 0` actually stops.
+  ///
+  /// **Zero cannot mean "no limit", and pretending it does is a hang.** The
+  /// setting is documented as infinite, the UI shows `∞`, and the loop was
+  /// `while (hop < maxHops)` — so picking 0 gave the user **zero** tool calls and
+  /// a Settings tile that said otherwise. The label was not the bug; the loop
+  /// was, and this is the number it needed.
+  ///
+  /// 50 is chosen from what a hop costs, not from taste. Each one is a full
+  /// generation: on the A72's 5 tok/s models a hop runs tens of seconds, so 50
+  /// is minutes of visible work and not a silent stall; against a tool that
+  /// loops (a model re-reading its own output and calling again) it is the
+  /// difference between a message that ends and one that never does. It is
+  /// above the 20 cloud models are held to, because cloud's 20 is about credits
+  /// and this is about a spinner.
+  ///
+  /// A number here is still a ceiling, so the UI's `∞` is the *user's* intent and
+  /// this is the app's. When it is this one that stops the loop, the message says
+  /// so — see `agent_hops.dart`.
+  static const int agentHopBackstop = 50;
   static const int defaultImageSteps = 8;
   static const bool defaultImageGenForceCpu = true;
   /// 0 = half the cores. See the thread-tuning note in inference_android.dart.
