@@ -15,7 +15,7 @@ fazer sem piorar as duas telas.
 `consoleErrorCard`, `consoleNoticeCard`, `consoleProblem`, `consoleNote`,
 `consoleActions`).
 
-**Correção ao que o commit `2e2da72ef` disse:** ele两头卸 ("transporta **e** o
+**Correção ao que o commit `2e2da72ef` disse:** ele tambem levava头卸 ("transporta **e** o
 vocabulário visual"), e só o **transporte** foi adotado. Os dois consoles
 continuam **sem usar nenhum** dos widgets da casca — conferência literal: 0
 ocorrências de `consoleCard`, `consoleActions`, `consoleErrorCard`,
