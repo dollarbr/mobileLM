@@ -328,9 +328,9 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/jolleyboy/gte-reranker-modernbert-base-GGUF/resolve/main/gte-reranker-modernbert-base-Q4_K_M.gguf',
       'size': '101.4 MB',
       'description':
-          'Cross-encoder reranker, ModernBERT, Portuguese and English. Measured '
-              'on an Edge 60 at 111 ms per query with a real logit spread of '
-              '2,07. The one to start with.',
+          'Reranker cross-encoder, ModernBERT, português e inglês. Medido num '
+          'Edge 60 a 111 ms por consulta, com um spread de logit real de '
+          '2,07. É o ponto de partida.',
       'template': 'modern-bert',
       'runtime': 'llama',
     },
@@ -342,8 +342,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/keisuke-miyako/gte-reranker-modernbert-base-gguf-q8_0/resolve/main/gte-reranker-modernbert-base-Q8_0.gguf',
       'size': '153.4 MB',
       'description':
-          'The same reranker in Q8_0, for when the last 0,2 of the NDCG is worth '
-              '54 MB. Verified end to end on an Edge 60.',
+          'O mesmo reranker em Q8_0, para quando os últimos 0,2 de NDCG '
+          'valham os 54 MB. Verificado de ponta a ponta num Edge 60.',
       'template': 'modern-bert',
       'runtime': 'llama',
     },
@@ -355,9 +355,9 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/xinming0111/bge-reranker-base-Q8_0-GGUF/resolve/main/bge-reranker-base-q8_0.gguf',
       'size': '289.7 MB',
       'description':
-          'Cross-encoder reranker, BERT architecture, English. The head and the '
-              'pooler projection are both in the file, which is the check that '
-              'matters.',
+          'Reranker cross-encoder, arquitetura BERT, inglês. A cabeça e a '
+          'projeção do pooler estão ambas no arquivo — é essa a verificação '
+          'que importa.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -369,8 +369,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/jfiekdjdk/bce-reranker-base_v1-Q4_K_M-GGUF/resolve/main/bce-reranker-base_v1-q4_k_m.gguf',
       'size': '208.9 MB',
       'description':
-          'Cross-encoder reranker, BERT, English and Chinese. Well formed: '
-              'cls.output.weight [768] with the 768x768 pooler beside it.',
+          'Reranker cross-encoder, BERT, inglês e chinês. Bem formado: '
+          'cls.output.weight [768] com o pooler 768x768 ao lado.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -383,9 +383,9 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/keisuke-miyako/multilingual-e5-small-gguf-q8_0/resolve/main/multilingual-e5-small-Q8_0.gguf',
       'size': '125.8 MB',
       'description':
-          'Embeds in 100 languages including Portuguese, mean-pooled. The one '
-              'to reach for on a pt_BR device — a purely English embedder makes '
-              'Portuguese search quietly bad.',
+          'Embeda em 100 idiomas, incluindo português, com mean-pooling. O '
+          'primeiro a escolher num aparelho pt_BR — um embedder só em inglês '
+          'degrada a busca em português sem fazer barulho.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -397,8 +397,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/unsloth/bge-small-en-v1.5-GGUF/resolve/main/bge-small-en-v1.5-f16.gguf',
       'size': '64.5 MB',
       'description':
-          'Smallest usable embedder: 33M parameters, 384 dimensions, CLS '
-              'pooling. Verified on an Edge 60.',
+          'O menor embedder utilizável: 33M de parâmetros, 384 dimensões, '
+          'pooling CLS. Verificado num Edge 60.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -410,8 +410,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/bge-small-en-v1.5-Q8_0-GGUF/resolve/main/bge-small-en-v1.5-q8_0.gguf',
       'size': '35.0 MB',
       'description':
-          'The same 33M embedder in Q8_0 — half the bytes of F16 for a 384-float '
-              'vector, where the quantisation is nearly free.',
+          'O mesmo embedder de 33M em Q8_0 — metade dos bytes do F16 para um '
+          'vetor de 384 floats, onde a quantização é quase de graça.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -423,8 +423,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/e5-small-v2-Q8_0-GGUF/resolve/main/e5-small-v2-q8_0.gguf',
       'size': '35.0 MB',
       'description':
-          'Small mean-pooled embedder, English, 384 dimensions. Needs "query: " '
-              'and "passage: " prefixes on the two sides, as every E5 does.',
+          'Embedder pequeno com mean-pooling, inglês, 384 dimensões. Precisa '
+          'dos prefixos "query: " e "passage: " nos dois lados, como todo E5.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -436,8 +436,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q4_K_M.gguf',
       'size': '80.2 MB',
       'description':
-          'Long-context embedder, 8k, mean-pooled, 768 dimensions. The only '
-              'screened option that embeds a whole document in one pass.',
+          'Embedder de contexto longo, 8k, com mean-pooling, 768 dimensões. A '
+          'única opção testada que embeda um documento inteiro numa passada.',
       'template': 'nomic-bert',
       'runtime': 'llama',
     },
@@ -449,9 +449,9 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/keisuke-miyako/modernbert-embed-base-gguf-q8_0/resolve/main/modernbert-embed-base-Q8_0.gguf',
       'size': '152.8 MB',
       'description':
-          'ModernBERT embedder, mean-pooled, 768 dimensions. The same '
-              'architecture as the reranker above, so it is worth having both to '
-              'see the difference a scoring head makes.',
+          'Embedder ModernBERT, com mean-pooling, 768 dimensões. A mesma '
+          'arquitetura do reranker acima, então vale ter os dois para ver a '
+          'diferença que uma cabeça de pontuação faz.',
       'template': 'modern-bert',
       'runtime': 'llama',
     },
@@ -470,11 +470,12 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q4_K_M.gguf',
       'size': '418.1 MB',
       'description':
-          '568M, multilingual, arch bert. Carries both cls.output.weight and '
-          'pooler, and that pair is what decides whether a score is a score — the '
-          'jina v1 file above has the head without the pooler and returns a number '
-          'in (-1,1) that ranks plausibly. Twice the size of the BGE Reranker '
-          'Base and multilingual, which on a pt_BR phone is the part that matters.',
+          '568M, multilíngue, arch bert. Tem cls.output.weight e pooler, e é '
+          'esse par que decide se uma pontuação é uma pontuação — o arquivo '
+          'jina v1 acima tem a cabeça sem o pooler e devolve um número em '
+          '(-1,1) que ordena de forma plausível. O dobro do tamanho do BGE '
+          'Reranker Base, e multilíngue, que num aparelho pt_BR é a parte que '
+          'importa.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -486,8 +487,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q2_K.gguf',
       'size': '349.5 MB',
       'description':
-          'The same reranker in Q2_K: 69 MB cheaper for a quantisation that costs '
-          'a little ordering rather than the shape of the answer.',
+          'O mesmo reranker em Q2_K: 69 MB a menos por uma quantização que '
+          'custa um pouco de ordenação, e não a forma da resposta.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -499,10 +500,10 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/gpustack/jina-reranker-v2-base-multilingual-GGUF/resolve/main/jina-reranker-v2-base-multilingual-Q4_K_M.gguf',
       'size': '212.1 MB',
       'description':
-          '278M, arch bert, head and pooler both present. The smallest reranker '
-          'here that returns a real logit — and it is the v2 of a family whose v1 '
-          'is in this catalogue and does not work, so the version in the name is '
-          'the entire difference.',
+          '278M, arch bert, cabeça e pooler presentes. O menor reranker aqui '
+          'que devolve um logit de verdade — e é o v2 de uma família cujo v1 '
+          'está neste catálogo e não funciona, então a versão no nome é toda '
+          'a diferença.',
       'template': 'bert',
       'runtime': 'llama',
     },
@@ -514,11 +515,12 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/Voodisss/Qwen3-Reranker-4B-GGUF-llama_cpp/resolve/main/Qwen3-Reranker-4B-Q4_K_M.gguf',
       'size': '2.4 GB',
       'description':
-          'The strongest reranker screened, and the first qwen3 the app treats as '
-          'an encoder. It declares its own pooling_type=rank and carries '
-          'cls.output.weight [2560, 2] with yes/no labels — the head llama.cpp '
-          'loads for LLM_ARCH_QWEN3. Unmeasured: every number this catalogue '
-          'quotes is the ModernBERT above, and a qwen3 has never run here.',
+          'O reranker mais forte que passou na triagem, e o primeiro qwen3 '
+          'que o app trata como encoder. Declara o próprio pooling_type=rank '
+          'e traz cls.output.weight [2560, 2] com rótulos sim/não — a cabeça '
+          'que o llama.cpp carrega para LLM_ARCH_QWEN3. Sem medir: todos os '
+          'números que este catálogo cita são do ModernBERT acima, e um qwen3 '
+          'nunca rodou aqui.',
       'template': 'qwen3',
       'runtime': 'llama',
     },
@@ -530,9 +532,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/Voodisss/Qwen3-Reranker-4B-GGUF-llama_cpp/resolve/main/Qwen3-Reranker-4B-Q2_K.gguf',
       'size': '1.7 GB',
       'description':
-          'The same 4B reranker in Q2_K: 2,4 GB becomes 1,7 GB. The size is what '
-          'decides this one, and 4B is already the top of the range this app is '
-          'aimed at.',
+          'O mesmo reranker de 4B em Q2_K: 2,4 GB viram 1,7 GB. O tamanho é o '
+          'que decide este, e 4B já é o topo da faixa que este app atende.',
       'template': 'qwen3',
       'runtime': 'llama',
     },
@@ -544,10 +545,11 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf',
       'size': '609.5 MB',
       'description':
-          'Published by Qwen itself. Arch qwen3, declares pooling_type=last, 1024 '
-          'dimensions. The only embedder here that is a decoder rather than a '
-          'BERT, and the one that reads a whole document in a single pass — which '
-          'is the actual argument for it over the 80 MB Nomic above.',
+          'Publicado pelo próprio Qwen. Arch qwen3, declara '
+          'pooling_type=last, 1024 dimensões. O único embedder aqui que é um '
+          'decoder em vez de um BERT, e o que lê um documento inteiro numa '
+          'única passada — que é o argumento real a favor dele contra o Nomic '
+          'de 80 MB acima.',
       'template': 'qwen3',
       'runtime': 'llama',
     },
@@ -561,7 +563,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm',
       'size': '586 MB',
       'description':
-          'Smallest LiteRT-LM general-purpose chat model for low-RAM phones',
+          'O menor modelo de chat LiteRT-LM de uso geral, para aparelhos com '
+          'pouca RAM',
       'template': 'litert',
       'runtime': 'litert',
     },
@@ -571,7 +574,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm',
       'size': '1.49 GB',
-      'description': 'Balanced LiteRT-LM chat model with int8 quantization',
+      'description': 'Modelo de chat LiteRT-LM equilibrado, com quantização int8',
       'template': 'litert',
       'runtime': 'litert',
     },
@@ -582,7 +585,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm',
       'size': '1.71 GB',
-      'description': 'Reasoning-focused LiteRT-LM model with int8 quantization',
+      'description': 'Modelo LiteRT-LM voltado a raciocínio, com quantização int8',
       'template': 'litert',
       'runtime': 'litert',
     },
@@ -618,8 +621,9 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/LiquidAI/LFM2.5-230M-GGUF/resolve/main/LFM2.5-230M-Q4_0.gguf',
       'size': '0.14 GB',
       'description':
-          'Smallest model here — runs on anything. The benchmark model, so it has '
-          'to be one that answers: see the QAT/QAD note above',
+          'O menor modelo da lista — roda em qualquer aparelho. É o modelo do '
+          'benchmark, então precisa ser um que responda: ver a nota de '
+          'QAT/QAD acima',
       'template': 'chatml',
       'runtime': 'llama',
       'benchmark': 'true',
@@ -637,10 +641,11 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf',
       'size': '0.10 GB',
       'description':
-          'The smallest thing here that still speaks, and the next candidate for '
-          'the CPU benchmark — lighter than the 230M, but not the benchmark yet '
-          'because the pass/fail thresholds are calibrated against the 230M on a '
-          'Galaxy A72, and those need re-measuring before they describe this',
+          'O menor que ainda responde, e o candidato mais leve para o '
+          'benchmark de CPU — mais leve que o 230M, mas ainda não é o '
+          'benchmark porque os limiares de aprovação foram calibrados contra '
+          'o 230M num Galaxy A72, e precisam ser remedidos antes de valer '
+          'para este modelo',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -650,7 +655,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/main/LFM2.5-350M-Q4_0.gguf',
       'size': '0.20 GB',
-      'description': '4-bit, tuned for edge devices',
+      'description': '4 bits, ajustado para aparelhos de borda',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -661,7 +666,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_0.gguf',
       'size': '0.65 GB',
       'description':
-          '4-bit. Multilingual, and the sweet spot for most phones',
+          '4 bits. Multilíngue, e o ponto ideal para a maioria dos aparelhos',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -671,7 +676,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/LiquidAI/LFM2.5-2.6B-GGUF/resolve/main/LFM2.5-2.6B-Q4_0.gguf',
       'size': '1.48 GB',
-      'description': '4-bit, the largest LFM2.5 that still fits comfortably',
+      'description': '4 bits, o maior LFM2.5 que ainda cabe com folga',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -692,7 +697,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF/resolve/main/LFM2.5-VL-450M-Q4_0.gguf',
       'size': '209 MB',
       'description':
-          'Smallest vision-language model here. 209 MB of weights plus a 98 MB projector',
+          'O menor modelo de visão-linguagem da lista. 209 MB de pesos mais '
+          'um projector de 98 MB',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -707,7 +713,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF/resolve/main/LFM2.5-VL-1.6B-Q4_0.gguf',
       'size': '664 MB',
       'description':
-          'The sweet spot of the VL line. The projector is 556 MB, so vision costs more than the weights',
+          'O ponto ideal da linha VL. O projector tem 556 MB, então a visão '
+          'custa mais que os pesos',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -722,7 +729,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF/resolve/main/LFM2.5-VL-3B-Q4_0.gguf',
       'size': '1.52 GB',
       'description':
-          'Largest LFM2.5-VL. Same 556 MB projector as the 1.6B, so the step up buys text quality only',
+          'O maior LFM2.5-VL. O mesmo projector de 556 MB do 1.6B, então '
+          'subir de tamanho só melhora o texto',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -743,7 +751,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/XHToken/Spark-X2.5-1.7B-GGUF/resolve/main/Spark-X2.5-1.7B-Q4_K_M.gguf',
       'size': '1.03 GB',
       'description':
-          'New architecture (LLM_ARCH_SPARK2_5), text only. Needs the engine from the 2026-09-23 sync',
+          'Arquitetura nova (LLM_ARCH_SPARK2_5), só texto. Precisa do motor '
+          'da sincronização de 2026-09-23',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -754,7 +763,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/XHToken/Spark-X2.5-4B-GGUF/resolve/main/Spark-X2.5-4B-Q4_K_M.gguf',
       'size': '2.42 GB',
       'description':
-          'Largest Spark. Same architecture requirement as the 1.7B; needs a roomy phone',
+          'O maior Spark. A mesma exigência de arquitetura do 1.7B; precisa '
+          'de um aparelho espaçoso',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -769,7 +779,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
       'size': '508 MB',
-      'description': 'Multimodal at 0.8B. 195 MB projector, so about 700 MB with vision',
+      'description': 'Multimodal em 0.8B. Projector de 195 MB, então cerca de 700 MB com '
+                     'visão',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -783,7 +794,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
       'size': '1.19 GB',
-      'description': 'The balanced Qwen3.5. 637 MB projector on top of the weights',
+      'description': 'O Qwen3.5 equilibrado. 637 MB de projector somados aos pesos',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -798,7 +809,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf',
       'size': '2.55 GB',
       'description':
-          'Best quality under 4B here, and multimodal. 641 MB projector; a vision turn needs ~3.2 GB',
+          'A melhor qualidade abaixo de 4B na lista, e multimodal. Projector '
+          'de 641 MB; um turno com visão precisa de cerca de 3,2 GB',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -816,7 +828,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/main/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf',
       'size': '2.00 GB',
       'description':
-          "Mistral's own weights, ungated. Vision needs the 803 MB BF16 projector — the heaviest one here",
+          'Os pesos próprios da Mistral, sem censura. A visão precisa do '
+          'projector BF16 de 803 MB — o maior da lista',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -830,7 +843,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf',
       'size': '2.32 GB',
-      'description': 'Microsoft, MIT licence. Strong at reasoning for its size, text only',
+      'description': 'Microsoft, licença MIT. Forte em raciocínio para o tamanho, só '
+                     'texto',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -840,7 +854,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url': 'https://huggingface.co/ggml-org/SmolLM3-3B-GGUF/resolve/main/SmolLM3-Q4_K_M.gguf',
       'size': '1.78 GB',
       'description':
-          "HuggingFace's own 3B, in the llama.cpp org's repo. Text only; reasoning variant exists upstream",
+          'O 3B da própria HuggingFace, no repositório da organização '
+          'llama.cpp. Só texto; existe uma variante de raciocínio a montante',
       'template': 'chatml',
       'runtime': 'llama',
     },
@@ -851,7 +866,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/resolve/main/SmolVLM2-2.2B-Instruct-Q4_K_M.gguf',
       'size': '1.04 GB',
       'description':
-          'The larger sibling of the 500M already listed. 565 MB projector; good at screenshots and UI',
+          'O irmão maior do 500M já listado. Projector de 565 MB; bom em '
+          'capturas de tela e interfaces',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -866,7 +882,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/gemma-3-270m-qat-GGUF/resolve/main/gemma-3-270m-qat-Q4_0.gguf',
       'size': '230 MB',
       'description':
-          'The smallest useful text model here. For testing the pipeline, not for answers',
+          'O menor modelo de texto realmente útil da lista. Serve para testar '
+          'o pipeline, não para responder',
       'template': 'gemma',
       'runtime': 'llama',
     },
@@ -877,7 +894,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/lmstudio-community/gemma-3-1B-it-qat-GGUF/resolve/main/gemma-3-1B-it-QAT-Q4_0.gguf',
       'size': '0.72 GB',
       'description':
-          "Quantisation-aware 4-bit. Google's own QAT weights, mirrored ungated",
+          '4 bits ciente de quantização. Os pesos QAT da própria Google, '
+          'espelhados sem censura',
       'template': 'gemma',
       'runtime': 'llama',
     },
@@ -888,7 +906,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/bartowski/google_gemma-3-4b-it-qat-GGUF/resolve/main/google_gemma-3-4b-it-qat-Q4_0.gguf',
       'size': '2.37 GB',
       'description':
-          'Quantisation-aware 4-bit with vision. Needs a 0.85 GB projector',
+          '4 bits ciente de quantização, com visão. Precisa de um projector '
+          'de 0,85 GB',
       'template': 'gemma',
       'runtime': 'llama',
       'vision': 'true',
@@ -903,7 +922,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/main/gemma-4-E2B_q4_0-it.gguf',
       'size': '3.35 GB',
       'description':
-          'Quantisation-aware 4-bit — text, images and audio. Needs a 0.99 GB projector',
+          '4 bits ciente de quantização — texto, imagens e áudio. Precisa de '
+          'um projector de 0,99 GB',
       'template': 'gemma',
       'runtime': 'llama',
       'vision': 'true',
@@ -918,7 +938,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/main/gemma-4-E4B_q4_0-it.gguf',
       'size': '5.15 GB',
       'description':
-          'Quantisation-aware 4-bit — text, images and audio. Needs a 0.99 GB projector and a roomy phone',
+          '4 bits ciente de quantização — texto, imagens e áudio. Precisa de '
+          'um projector de 0,99 GB e de um aparelho espaçoso',
       'template': 'gemma',
       'runtime': 'llama',
       'vision': 'true',
@@ -933,7 +954,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_0.gguf',
       'size': '2.65 GB',
       'description':
-          'Multimodal — text, images and audio, with GPU offload. Needs a 0.52 GB projector',
+          'Multimodal — texto, imagens e áudio, com offload para a GPU. '
+          'Precisa de um projector de 0,52 GB',
       'template': 'gemma',
       'runtime': 'llama',
       'vision': 'true',
@@ -948,7 +970,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/Qwen2.5-Omni-3B-GGUF/resolve/main/Qwen2.5-Omni-3B-Q4_K_M.gguf',
       'size': '1.96 GB',
       'description':
-          'Omni — images and audio in, text out. Needs a 1.43 GB projector',
+          'Omni — imagens e áudio de entrada, texto de saída. Precisa de um '
+          'projector de 1,43 GB',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -963,7 +986,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf',
       'size': '1.80 GB',
       'description':
-          'Vision — strong at reading text in images. Needs a 0.79 GB projector',
+          'Com visão — forte em ler texto dentro de imagens. Precisa de um '
+          'projector de 0,79 GB',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -978,7 +1002,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/ggml-org/SmolVLM2-500M-Video-Instruct-GGUF/resolve/main/SmolVLM2-500M-Video-Instruct-Q8_0.gguf',
       'size': '0.41 GB',
       'description':
-          'Vision — tiny and quick, for trying image input cheaply. 0.10 GB projector',
+          'Com visão — minúsculo e rápido, para testar entrada de imagem '
+          'barato. Projector de 0,10 GB',
       'template': 'chatml',
       'runtime': 'llama',
       'vision': 'true',
@@ -993,7 +1018,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
       'size': '2.46 GB',
       'description':
-          'Multimodal — reads text, images and audio. Best size/quality balance',
+          'Multimodal — lê texto, imagens e áudio. Melhor equilíbrio entre '
+          'tamanho e qualidade',
       'template': 'litert',
       'runtime': 'litert',
       'vision': 'true',
@@ -1005,7 +1031,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm',
       'size': '3.40 GB',
       'description':
-          'Multimodal — text, images and audio. Highest quality; needs ~5 GB RAM',
+          'Multimodal — texto, imagens e áudio. A maior qualidade; precisa de '
+          'cerca de 5 GB de RAM',
       'template': 'litert',
       'runtime': 'litert',
       'vision': 'true',
@@ -1016,7 +1043,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/mmnga/Moonlight-16B-A3B-Instruct-gguf/resolve/main/Moonlight-16B-A3B-Instruct-Q3_K_S.gguf',
       'size': '7.1 GB',
-      'description': 'Moonshot AI (Kimi) — 3B active MoE, high quality',
+      'description': 'Moonshot AI (Kimi) — MoE com 3B ativos, alta qualidade',
       'template': 'chatml',
     },
     {
@@ -1025,7 +1052,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf',
       'size': '2.1 GB',
-      'description': 'Best balance of speed and quality for mobile',
+      'description': 'O melhor equilíbrio de velocidade e qualidade para celular',
       'template': 'chatml',
     },
     {
@@ -1035,7 +1062,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/bartowski/Qwen2-VL-2B-Instruct-GGUF/resolve/main/Qwen2-VL-2B-Instruct-Q4_K_M.gguf',
       'size': '1.5 GB',
       'description':
-          'Vision-capable model, but images run on LiteRT-LM only — here it is text',
+          'O modelo tem visão, mas as imagens só rodam no LiteRT-LM — aqui '
+          'ele é só texto',
       'template': 'chatml',
       'vision': 'true',
     },
@@ -1045,7 +1073,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf',
       'size': '2.2 GB',
-      'description': 'Microsoft\'s compact reasoning model',
+      'description': 'Modelo compacto de raciocínio da Microsoft',
       'template': 'phi',
     },
     {
@@ -1055,7 +1083,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf',
       'size': '1.71 GB',
       'description':
-          'Google\'s lightweight general chat model — fast and smart',
+          'Modelo de chat leve e rápido da Google',
       'template': 'gemma',
     },
     {
@@ -1064,7 +1092,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/bartowski/gemma-2-2b-it-abliterated-GGUF/resolve/main/gemma-2-2b-it-abliterated-Q4_K_M.gguf',
       'size': '1.6 GB',
-      'description': '🔓 Abliterated — Permanently uncensored, very smart',
+      'description': '🔓 Abliterated — permanentemente sem censura, e esperto',
       'template': 'gemma',
     },
     {
@@ -1073,7 +1101,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/mradermacher/SmolLM2-1.7B-Instruct-Uncensored-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Uncensored.Q4_K_M.gguf',
       'size': '1.1 GB',
-      'description': 'Ultra-compact and unrestricted assistant',
+      'description': 'Assistente ultracompacto e sem restrições',
       'template': 'chatml',
     },
     {
@@ -1082,7 +1110,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/bartowski/Dolphin3.0-Qwen2.5-1.5B-GGUF/resolve/main/Dolphin3.0-Qwen2.5-1.5B-Q4_K_M.gguf',
       'size': '1.1 GB',
-      'description': 'Uncensored Dolphin 3.0 — Fast and unrestricted',
+      'description': 'Dolphin 3.0 sem censura — rápido e sem restrições',
       'template': 'chatml',
     },
     {
@@ -1091,7 +1119,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-uncensored-GGUF/resolve/main/Llama-3.2-3B-Instruct-uncensored-Q4_K_M.gguf',
       'size': '2.1 GB',
-      'description': 'Uncensored Llama 3.2 3B — Smarter and unrestricted',
+      'description': 'Llama 3.2 3B sem censura — mais esperto e sem restrições',
       'template': 'llama3',
     },
     {
@@ -1100,7 +1128,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
       'size': '0.8 GB',
-      'description': 'Ultra-lightweight text model',
+      'description': 'Modelo de texto ultraleve',
       'template': 'llama3',
     },
     {
@@ -1109,7 +1137,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/Lykon/dreamshaper-8-lcm/resolve/main/DreamShaper8_LCM.safetensors',
       'size': '2.0 GB',
-      'description': 'Extremely fast 4-step local image generation',
+      'description': 'Geração de imagem local em 4 passos, extremamente rápida',
       'template': 'sd',
     },
     {
@@ -1119,7 +1147,8 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
           'https://huggingface.co/cyberdelia/CyberRealistic/resolve/main/CyberRealistic_V8_FP16.safetensors',
       'size': '2.0 GB',
       'description':
-          'Photorealistic, uncensored local image generation — FP16 for mobile',
+          'Geração de imagem local fotorrealista e sem censura — FP16 para '
+          'celular',
       'template': 'sd',
     },
     {
@@ -1128,7 +1157,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/SG161222/Realistic_Vision_V5.1_noVAE/resolve/main/Realistic_Vision_V5.1_fp16-no-ema.safetensors',
       'size': '2.0 GB',
-      'description': 'Highly popular photorealistic portrait and scene model',
+      'description': 'Modelo muito popular de retratos e cenas fotorrealistas',
       'template': 'sd',
     },
     {
@@ -1137,7 +1166,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/Lykon/AbsoluteReality/resolve/main/AbsoluteReality_1.8.1_pruned.safetensors',
       'size': '2.0 GB',
-      'description': 'Photorealistic general-purpose image generation',
+      'description': 'Geração de imagem fotorrealista de uso geral',
       'template': 'sd',
     },
     {
@@ -1146,7 +1175,7 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
       'url':
           'https://huggingface.co/Lykon/AnyLoRA/resolve/main/AnyLoRA_noVae_fp16-pruned.safetensors',
       'size': '2.0 GB',
-      'description': 'Highly versatile Anime / Stylized image generator',
+      'description': 'Gerador de imagem anime e estilizado, muito versátil',
       'template': 'sd',
     },
   ];

@@ -327,10 +327,10 @@ class ModelView extends GetView<ModelController> {
                     fontSize: 20, fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
             Text(
-              'These do not chat either. A .tflite is a tensor graph: it takes '
-              'named input tensors and returns named output tensors, and the '
-              'console screens the file first to show you what it wants. The API '
-              'server has to be on to use it.',
+              'Estes também não conversam. Um .tflite é um grafo de tensores: recebe '
+              'tensores de entrada nomeados e devolve tensores de saída nomeados, e o '
+              'console inspeciona o arquivo primeiro para mostrar o que ele quer. O '
+              'servidor da API precisa estar ligado para usar.',
               style: GoogleFonts.inter(
                   fontSize: 12, color: Theme.of(context).hintColor),
             ),
@@ -825,17 +825,17 @@ class ModelView extends GetView<ModelController> {
                 fontSize: 20, fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
             Text(
-              'These do not chat. Loading one replaces the conversation with a '
-              'console that runs the embeddings, rerank and classify endpoints, '
-              'and the API server has to be on to use it.',
+              'Estes não conversam. Carregar um substitui a conversa por um '
+              'console que roda os endpoints de embeddings, rerank e classify, '
+              'e o servidor da API precisa estar ligado para usar.',
               style: GoogleFonts.inter(
                   fontSize: 12, color: Theme.of(context).hintColor),
             ),
             const SizedBox(height: 20),
-            _encoderSection(ctx, 'Rerank — score a query against documents',
+            _encoderSection(ctx, 'Rerank — pontuar uma consulta contra documentos',
                 controller.curatedRerankers),
             const SizedBox(height: 22),
-            _encoderSection(ctx, 'Embed — turn each text into one vector',
+            _encoderSection(ctx, 'Embed — transformar cada texto num vetor',
                 controller.curatedEmbedders),
           ],
         ),

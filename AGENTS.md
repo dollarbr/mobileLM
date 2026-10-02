@@ -357,6 +357,77 @@ que importam: `filename` (nome local), `url`, `size`, `description`, `template`
 `jni_wrapper.cpp` via `llama_model_chat_template`), `runtime` (`llama` | `litert` |
 `sd`) e, para visão, `vision: 'true'` + `mmprojUrl` + `mmprojFilename`.
 
+### A `description` é texto de tela, e ela estava em inglês — com cinco frases partidas
+
+As **62** descrições (46 do catálogo + 16 encoders) estavam em inglês numa tela
+`pt_BR`, e **cinco delas terminavam em meia-frase**: `"…so it has"`,
+`"…the next candidate for"`, `"…The head and the"`, `"…cls.output.weight and"`,
+`"…the app treats as"`. O `Text` da descrição em `model_view.dart:909` não tem
+`maxLines`, então a string inteira era pintada e a tela mostrava a frase partida.
+Não é dialeto: é texto faltando.
+
+**O defeito era maior do que parecia, e a regex foi o que escondeu.** **18 das
+59 descrições originais são literais adjacentes em Dart**, e o Dart concatena
+literais vizinhos em tempo de compilação:
+
+```dart
+'description':
+    'Reranker cross-encoder, ModernBERT, Portuguese and English. Measured '
+    'on an Edge 60 at 111 ms per query with a real logit spread of '
+    '2,07. The one to start with.',
+```
+
+Isso derruba qualquer regex sobre o arquivo, por três motivos ao mesmo tempo: o
+valor pode ocupar **várias linhas**; pode usar **aspas simples ou duplas** (3
+entradas usam duplas, porque contêm `Microsoft's`); e `dart format` **remove o
+espaço entre os segmentos**, então `'a ' 'b'` vira `'a' 'b'`. Três versões de
+regex falharam em sequência, e a última **colou texto novo em cima do antigo** —
+`"…aparelhos compouca RAM"`, que parece traduzido e não está.
+
+**Por isso a reescrita é um programa Dart, não uma regex.**
+`tool/rewrite_catalog_descriptions.dart` usa o scanner do próprio Dart para achar
+o valor, e `tool/catalog_pt.json` guarda as traduções em `nome<TAB>texto`. Ele
+faz três coisas que a regex não conseguia: lê **todos** os segmentos e junta,
+entende **os dois delimitadores**, e devolve **um** literal em vez de N.
+
+**O detalhe do espaço é o que faz o texto colar, e ele fica DENTRO do literal.**
+O Dart concatena vizinhos sem separador, então o espaço vai antes da aspa de
+fechamento — `'texto '`, e **não** `'texto' `, que é o que o formatador produz
+quando tira o espaço entre segmentos e dá o mesmo resultado:
+`"…o primeiro qwen3que o app…"`.
+
+**Não rode `dart format` no `constants.dart` nem no `model_view.dart`.** Nenhum
+dos dois está no formato do formatador no `main` — confirme com
+`dart format --output=none` antes de confiar num diff. Formatá-los reescreve
+~100 linhas sem relação com a tradução: o diff do `model_view.dart` passou de
+**9 linhas** para **129** só por isso.
+
+**O teste de guarda que quase escrevi errado, e o motivo de ele existir.**
+`test/catalog_description_test.dart` tem cinco casos, e três deles já
+reprovaram **texto correto** antes de ficarem como estão:
+
+1. **Idioma, por lista de inglês** — reprovava português. Uma lista do que **não
+   pode** aparecer só funciona se o resto da lista for o universo, e o resto é
+   outro idioma. Invertido: a lista é de **português**, e a pergunta é se falta
+   uma palavra portuguesa.
+2. **Termos técnicos removidos com `replaceAll`** — tirar `encoder` de
+   `cross-encoder` deixa `cross-`, e o detector passou a acusar texto bom. A
+   divisão por palavra vem **antes** da substituição.
+3. **Meia-frase por palavra funcional** — reprovou `"…antes de valer para
+   este"` e `"…como todo E5."`, que são frases completas. A versão seguinte,
+   "não termina com ponto", reprova **todas as 59**: **nenhuma** delas termina
+   com ponto, é a convenção do catálogo, e impor pontuação seria reescrever 59
+   strings para satisfazer um estilo que ninguém pediu. Sobrou a lista das
+   **cinco strings** que não podem reaparecer.
+
+**E um teste que passava não provava nada.** Voltei uma descrição ao inglês e
+`flutter test` deu **5 de 5 verdes**. A causa era o meu próprio comando de
+provocação: um `git checkout` antes de ler o resultado apagava a edição. Só
+descobri porque li o valor por um `flutter test` separado, e ele continuava em
+português. **Um teste verde só vale se ele viu a mudança** — e a forma de ver é
+ler o valor, não confiar que a substituição pegou.
+
+
 Duas regras que custam tempo se ignoradas:
 
 - **O `mmprojFilename` tem que ser único.** O app baixa e guarda o projector por

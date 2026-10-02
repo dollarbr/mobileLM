@@ -1,0 +1,66 @@
+# Traducoes do texto de exibicao do catalogo.
+# Formato: nome<TAB>texto. Um por linha.
+# Gerado por tool/rewrite_catalog_descriptions.dart
+
+Qwen 3 0.6B (LiteRT-LM)	O menor modelo de chat LiteRT-LM de uso geral, para aparelhos com pouca RAM
+Qwen 2.5 1.5B Instruct (LiteRT-LM)	Modelo de chat LiteRT-LM equilibrado, com quantização int8
+DeepSeek R1 Distill Qwen 1.5B (LiteRT-LM)	Modelo LiteRT-LM voltado a raciocínio, com quantização int8
+LFM2.5 230M (Q4_0)	O menor modelo da lista — roda em qualquer aparelho. É o modelo do benchmark, então precisa ser um que responda: ver a nota de QAT/QAD acima
+SmolLM2 135M (Q4_K_M)	O menor que ainda responde, e o candidato mais leve para o benchmark de CPU — mais leve que o 230M, mas ainda não é o benchmark porque os limiares de aprovação foram calibrados contra o 230M num Galaxy A72, e precisam ser remedidos antes de valer para este modelo
+LFM2.5 350M (Q4_0)	4 bits, ajustado para aparelhos de borda
+LFM2.5 1.2B Instruct (Q4_0)	4 bits. Multilíngue, e o ponto ideal para a maioria dos aparelhos
+LFM2.5 2.6B (Q4_0)	4 bits, o maior LFM2.5 que ainda cabe com folga
+LFM2.5-VL 450M (Q4_0 + vision)	O menor modelo de visão-linguagem da lista. 209 MB de pesos mais um projector de 98 MB
+LFM2.5-VL 1.6B (Q4_0 + vision)	O ponto ideal da linha VL. O projector tem 556 MB, então a visão custa mais que os pesos
+LFM2.5-VL 3B (Q4_0 + vision)	O maior LFM2.5-VL. O mesmo projector de 556 MB do 1.6B, então subir de tamanho só melhora o texto
+Spark X2.5 1.7B (Q4_K_M)	Arquitetura nova (LLM_ARCH_SPARK2_5), só texto. Precisa do motor da sincronização de 2026-09-23
+Spark X2.5 4B (Q4_K_M)	O maior Spark. A mesma exigência de arquitetura do 1.7B; precisa de um aparelho espaçoso
+Qwen3.5 0.8B (Q4_K_M + vision)	Multimodal em 0.8B. Projector de 195 MB, então cerca de 700 MB com visão
+Qwen3.5 2B (Q4_K_M + vision)	O Qwen3.5 equilibrado. 637 MB de projector somados aos pesos
+Qwen3.5 4B (Q4_K_M + vision)	A melhor qualidade abaixo de 4B na lista, e multimodal. Projector de 641 MB; um turno com visão precisa de cerca de 3,2 GB
+Phi-4-mini Instruct 3.8B (Q4_K_M)	Microsoft, licença MIT. Forte em raciocínio para o tamanho, só texto
+SmolVLM2 2.2B Instruct (Q4_K_M + vision)	O irmão maior do 500M já listado. Projector de 565 MB; bom em capturas de tela e interfaces
+Gemma 3 270M Instruct (QAT Q4_0)	O menor modelo de texto realmente útil da lista. Serve para testar o pipeline, não para responder
+Gemma 3 4B Instruct (QAT Q4_0)	4 bits ciente de quantização, com visão. Precisa de um projector de 0,85 GB
+Gemma 4 E2B Instruct (QAT Q4_0)	4 bits ciente de quantização — texto, imagens e áudio. Precisa de um projector de 0,99 GB
+Gemma 4 E4B Instruct (QAT Q4_0)	4 bits ciente de quantização — texto, imagens e áudio. Precisa de um projector de 0,99 GB e de um aparelho espaçoso
+Gemma 4 E2B Instruct (GGUF)	Multimodal — texto, imagens e áudio, com offload para a GPU. Precisa de um projector de 0,52 GB
+Qwen2.5-Omni 3B (GGUF)	Omni — imagens e áudio de entrada, texto de saída. Precisa de um projector de 1,43 GB
+Qwen2.5-VL 3B Instruct (GGUF)	Com visão — forte em ler texto dentro de imagens. Precisa de um projector de 0,79 GB
+SmolVLM2 500M Video (GGUF)	Com visão — minúsculo e rápido, para testar entrada de imagem barato. Projector de 0,10 GB
+Gemma 4 E2B Instruct (LiteRT-LM)	Multimodal — lê texto, imagens e áudio. Melhor equilíbrio entre tamanho e qualidade
+Gemma 4 E4B Instruct (LiteRT-LM)	Multimodal — texto, imagens e áudio. A maior qualidade; precisa de cerca de 5 GB de RAM
+Kimi Moonlight 16B-A3B (Q3_K_S)	Moonshot AI (Kimi) — MoE com 3B ativos, alta qualidade
+Qwen2.5-3B Instruct (Q4_K_M)	O melhor equilíbrio de velocidade e qualidade para celular
+Qwen2-VL-2B Instruct (Q4_K_M)	O modelo tem visão, mas as imagens só rodam no LiteRT-LM — aqui ele é só texto
+Phi-3.5 Mini Instruct (Q4_K_M)	Modelo compacto de raciocínio da Microsoft
+Gemma 2 2B Instruct (Q4_K_M)	Modelo de chat leve e rápido da Google
+Gemma-2-2B-Abliterated (Q4_K_M)	🔓 Abliterated — permanentemente sem censura, e esperto
+SmolLM2-1.7B-Uncensored (Q4_K_M)	Assistente ultracompacto e sem restrições
+Dolphin-3.0-Qwen2.5-1.5B (Q4_K_M)	Dolphin 3.0 sem censura — rápido e sem restrições
+Llama-3.2-3B Uncensored (Q4_K_M)	Llama 3.2 3B sem censura — mais esperto e sem restrições
+Llama-3.2-1B Instruct (Q4_K_M)	Modelo de texto ultraleve
+DreamShaper 8 LCM (SD 1.5)	Geração de imagem local em 4 passos, extremamente rápida
+CyberRealistic V8 FP16 (SD 1.5)	Geração de imagem local fotorrealista e sem censura — FP16 para celular
+Realistic Vision V5.1 fp16 (SD 1.5)	Modelo muito popular de retratos e cenas fotorrealistas
+AbsoluteReality 1.8.1 pruned (SD 1.5)	Geração de imagem fotorrealista de uso geral
+AnyLoRA (SD 1.5)	Gerador de imagem anime e estilizado, muito versátil
+GTE Reranker ModernBERT Base (Q4_K_M)	Reranker cross-encoder, ModernBERT, português e inglês. Medido num Edge 60 a 111 ms por consulta, com um spread de logit real de 2,07. É o ponto de partida.
+GTE Reranker ModernBERT Base (Q8_0)	O mesmo reranker em Q8_0, para quando os últimos 0,2 de NDCG valham os 54 MB. Verificado de ponta a ponta num Edge 60.
+BGE Reranker Base (Q8_0)	Reranker cross-encoder, arquitetura BERT, inglês. A cabeça e a projeção do pooler estão ambas no arquivo — é essa a verificação que importa.
+BCE Reranker Base v1 (Q4_K_M)	Reranker cross-encoder, BERT, inglês e chinês. Bem formado: cls.output.weight [768] com o pooler 768x768 ao lado.
+Multilingual E5 Small (Q8_0)	Embeda em 100 idiomas, incluindo português, com mean-pooling. O primeiro a escolher num aparelho pt_BR — um embedder só em inglês degrada a busca em português sem fazer barulho.
+BGE Small EN v1.5 (F16)	O menor embedder utilizável: 33M de parâmetros, 384 dimensões, pooling CLS. Verificado num Edge 60.
+BGE Small EN v1.5 (Q8_0)	O mesmo embedder de 33M em Q8_0 — metade dos bytes do F16 para um vetor de 384 floats, onde a quantização é quase de graça.
+E5 Small v2 (Q8_0)	Embedder pequeno com mean-pooling, inglês, 384 dimensões. Precisa dos prefixos "query: " e "passage: " nos dois lados, como todo E5.
+Nomic Embed Text v1.5 (Q4_K_M)	Embedder de contexto longo, 8k, com mean-pooling, 768 dimensões. A única opção testada que embeda um documento inteiro numa passada.
+ModernBERT Embed Base (Q8_0)	Embedder ModernBERT, com mean-pooling, 768 dimensões. A mesma arquitetura do reranker acima, então vale ter os dois para ver a diferença que uma cabeça de pontuação faz.
+BGE Reranker v2 M3 (Q4_K_M)	568M, multilíngue, arch bert. Tem cls.output.weight e pooler, e é esse par que decide se uma pontuação é uma pontuação — o arquivo jina v1 acima tem a cabeça sem o pooler e devolve um número em (-1,1) que ordena de forma plausível. O dobro do tamanho do BGE Reranker Base, e multilíngue, que num aparelho pt_BR é a parte que importa.
+BGE Reranker v2 M3 (Q2_K)	O mesmo reranker em Q2_K: 69 MB a menos por uma quantização que custa um pouco de ordenação, e não a forma da resposta.
+Jina Reranker v2 Base Multilingual (Q4_K_M)	278M, arch bert, cabeça e pooler presentes. O menor reranker aqui que devolve um logit de verdade — e é o v2 de uma família cujo v1 está neste catálogo e não funciona, então a versão no nome é toda a diferença.
+Qwen3 Reranker 4B (Q4_K_M)	O reranker mais forte que passou na triagem, e o primeiro qwen3 que o app trata como encoder. Declara o próprio pooling_type=rank e traz cls.output.weight [2560, 2] com rótulos sim/não — a cabeça que o llama.cpp carrega para LLM_ARCH_QWEN3. Sem medir: todos os números que este catálogo cita são do ModernBERT acima, e um qwen3 nunca rodou aqui.
+Qwen3 Reranker 4B (Q2_K)	O mesmo reranker de 4B em Q2_K: 2,4 GB viram 1,7 GB. O tamanho é o que decide este, e 4B já é o topo da faixa que este app atende.
+Qwen3 Embedding 0.6B (Q8_0)	Publicado pelo próprio Qwen. Arch qwen3, declara pooling_type=last, 1024 dimensões. O único embedder aqui que é um decoder em vez de um BERT, e o que lê um documento inteiro numa única passada — que é o argumento real a favor dele contra o Nomic de 80 MB acima.
+Ministral 3 3B Instruct (Q4_K_M + vision)	Os pesos próprios da Mistral, sem censura. A visão precisa do projector BF16 de 803 MB — o maior da lista
+SmolLM3 3B (Q4_K_M)	O 3B da própria HuggingFace, no repositório da organização llama.cpp. Só texto; existe uma variante de raciocínio a montante
+Gemma 3 1B Instruct (QAT Q4_0)	4 bits ciente de quantização. Os pesos QAT da própria Google, espelhados sem censura
