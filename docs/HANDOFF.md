@@ -363,14 +363,14 @@ próprio.
 
 ## Fila — do mais fácil ao mais difícil
 
-Ordenada por **risco de quebra**, não por tamanho. O item 1 é o que eu disse ter
-entregue e não entreguei, então vai primeiro apesar de não ser o menor.
+Ordenada por **risco de quebra**, não por tamanho. O item 0 é o único que **mata
+o app**, então vai primeiro apesar de não ser o menor.
 
 | # | Item | Tamanho | Por que nesta posição |
 |---|---|---|---|
 | 0 | **A geração de imagem mata o app** | médio, nativo | `Cannot invoke native callback outside an isolate`: SIGABRT **350 ms** depois de `Creating SdIsolateProcessor`. `Pointer.fromFunction` só pode ser chamado do isolate que o criou, e o `stable-diffusion.cpp` chama dos **workers do ggml**, que são threads do processo. Conserto provável: `NativeCallable.listener`. Detalhe em `AGENTS.md` §"A geração de imagem mata o app". |
 | 1 | ~~Adotar o vocabulário visual da casca~~ | **feito** | **11 usos** no console `.tflite` e **8** na janela System One, contra 0 antes. Custou um bug: `consoleMono` ganhou `radius` e o `Container` passou a receber `color:` **e** `decoration:`, que ele **asserta** não poder — o console `.tflite` travou no primeiro paint e o teste passava, porque com `radius: 0` o ramo `decoration: null` escondia o conflito. O teste monta os dois raios agora. `consoleCard`/`consoleMono` ganharam `radius` (a **união** das duas variantes), `ConsolePalette.explicit` passou a 2 argumentos deduzindo o brilho da cor, e o `_field` do `.tflite` **continua local** com o motivo escrito — unificá-lo é decisão visual, não de-duplicação. |
-| 2 | **Varredura de overflow de verdade** | médio, um teste | 26 `Row` sem `Expanded`/`Flexible`/`Spacer`/`Wrap` nos arquivos de view. Corpo longo não é overflow — o que estoura é `Text` sem `Expanded` dentro de `Row`. Em vez de caçar no olho, um teste que monta as telas a 360 dp com texto a 2× e relata **todo** `RenderFlex`, e vira guarda permanente. O quarto caso da mesma família (o dialogo de projeto) foi consertado hoje. |
+| 2 | ~~Varredura de overflow de verdade~~ | **feito** | `test/row_overflow_audit_test.dart`, 5 testes. Um **scanner estático**, não montagem de tela: nenhuma view é montável (dependem de Hive + controllers GetX), então a auditoria de layout por site é trabalho separado. Ele resolve `.tr` contra `app_translation.dart` e colapsa interpolações para 1 caractere antes de contar, com threshold de 20 caracteres pintados — **sem resolver o `.tr` ele conta 24 achados, com isso conta 3**, e o literal no fonte raramente é o texto que aparece na tela. Os 3 achados foram **corrigidos**, não listados, e por isso a allowlist fica `const <String>[]` **de propósito**: uma allowlist deixa o verde indistinguível dos bugs já consertados e ensina o próximo a listar em vez de ler o próprio `Row`. `chat_view.dart` (pill de escuta → `Flexible`), `model_view.dart` (banner → `Flexible` + ellipsis) e `settings_view.dart` (tile de passos → `Expanded` + ellipsis, `Spacer` removido). **Prova de que falha:** remover o `Flexible` do pill por string exata faz a auditoria acusar `chat_view.dart:831  39 chars  Ouvindo — toque no microfone para parar`. Verificado no A72 a 1.4× de fonte. |
 | 3 | **Nomes e comentários dos modelos do catálogo** | médio, dado | `description` é texto de display e alguns estão em inglês num catálogo cuja tela é pt_BR. |
 | 4 | **Quantização por swipe no card** | médio, UI | Prometido no `0.2.x`, nunca entregue. Move o `Slider` para longe do cartão e dá um alvo de toque grande. |
 | 5 | **Entrada de catálogo `.tflite`** | médio, dado | O console funciona, mas o único `.tflite` utilizável foi empurrado à mão. A rota barata é uma cabeça de **uma entrada** só — a regra do "maior input" tornou isso trivial e cobre o caminho feliz sem auxiliares. |
@@ -383,7 +383,7 @@ entregue e não entreguei, então vai primeiro apesar de não ser o menor.
 
 - **A memória devolvida pelo `/v1/litert/unload`** — precisa de um grafo grande o
   bastante para aparecer contra 2,9 GB de `MemAvailable`; a única cabeça no
-  aparelho tem 1,0 MB. Bloqueado por lack de material, não por código.
+  aparelho tem 1,0 MB. Bloqueado por falta de material, não por código.
 - **O encoder console adotar a casca** — decisão deliberada e escrita: é um
   monitor do modelo carregado, sobre o chat, com outro ciclo de vida, e o teste
   de layout dele já se provou falhando. Refazer essa decisão é trabalho, não
