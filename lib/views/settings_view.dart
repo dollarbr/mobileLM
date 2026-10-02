@@ -1548,10 +1548,25 @@ class SettingsView extends GetView<SettingsController> {
           Row(children: [
             Icon(Icons.image_rounded, size: 16, color: accent),
             const SizedBox(width: 8),
-            Text('image_gen_steps'.tr,
-                style: GoogleFonts.inter(
-                    fontSize: 15, fontWeight: FontWeight.w400)),
-            const Spacer(),
+            // `Expanded` here, not `Flexible`, and the reason is the `Spacer`:
+            // a row with `Expanded`, a `Spacer` and an unbounded `Text` in it
+            // is a row that has already decided to overflow, because both flex
+            // children ask for space while the `Text` asks for all of it. The
+            // `Spacer` was doing nothing that `Expanded` does not do better.
+            //
+            // `Expanded` rather than `Flexible` on purpose: this is a settings
+            // tile, and the label should occupy the gap between the icon and the
+            // value rather than hug the icon. At 15 dp with a 27-character
+            // translation and 32 dp of group padding it fit — this was not the
+            // broken one. It is here because the audit's threshold flagged it and
+            // the shape is the same shape, one translation away from not fitting.
+            Expanded(
+              child: Text('image_gen_steps'.tr,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                      fontSize: 15, fontWeight: FontWeight.w400)),
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(

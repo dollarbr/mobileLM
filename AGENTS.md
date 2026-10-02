@@ -1326,6 +1326,120 @@ na mesma tela, responde a toque normalmente (ele abre um diálogo). Sem esse
 controle, "o `Switch` deste aparelho não responde a `input tap`" e "este `Switch`
 está quebrado" são a mesma frase.
 
+**O procedimento, e ele funciona — o switch não está quebrado.** O que o
+`bounds` do nó não diz é a **posição** do alvo, e é a única coisa que falta.
+Medido no A72: a linha vai de `x=45` a `x=1035`, o switch real tem **169 px** e
+está na **direita**, ou seja `x` entre 866 e 1035. Tocar no centro da linha
+(`540`) acerta o texto e nada acontece; tocar em `950` liga o servidor.
+
+```sh
+A=RQ8R3077LMF
+adb -s $A forward tcp:8091 tcp:8091        # o forward não é opcional: sem ele
+                                             # o curl vai para o vazio, e 000 não
+                                             # distingue "servidor fora" de "porta
+                                             # fechada"
+adb -s $A shell input keyevent KEYCODE_WAKEUP
+adb -s $A shell wm dismiss-keyguard
+adb -s $A shell input tap 405 2253          # aba Configurações
+for i in 1 2 3 4 5 6 7; do adb -s $A shell input swipe 540 1900 540 600; done
+adb -s $A shell input tap 540 1596          # o tile "Servidor de API local"
+adb -s $A shell input tap 950 404           # PONTA DIREITA da linha, y do switch
+curl -s -m 10 http://127.0.0.1:8091/health  # 200 = deu certo
+```
+
+Os `y` acima são de uma rolagem específica e **mudam** se a lista mudar; o `x=950`
+não muda, porque é a ponta da linha. A sequência robusta é: `dump`, achar o nó
+`Switch` cujo texto contém `API Server`, e usar **`x2 - 42`** — um quarto da
+largura do switch para dentro da ponta direita:
+
+```sh
+# com o dump em /tmp/_s.xml
+python3 - <<'PY'
+import re
+d = open('/tmp/_s.xml', encoding='utf-8', errors='replace').read()
+for tag in re.findall(r'<node[^>]*>', d):
+    if 'class="android.widget.Switch"' not in tag:
+        continue
+    t = re.search(r'text="([^"]*)"', tag)
+    label = t.group(1) if t else ''
+    if 'API Server' not in label:
+        continue
+    x1, y1, x2, y2 = map(int, re.search(
+        r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', tag).groups())
+    print(x2 - 42, (y1 + y2) // 2)   # x, y do toque que funciona
+PY
+```
+
+**Confirme pelo estado, não pelo toque.** `HTTP 200` em `/health` é o teste; o
+texto do nó (`API Server Running`) é o segundo. Se os dois falharem, o toque
+errou o alvo — não que o switch esteja quebrado, e não peça para o usuário tocar.
+
+### A geração de imagem mata o app — `Cannot invoke native callback outside an isolate`
+
+**Isto é um defeito, não uma limitação do aparelho, e ele nunca aparece antes de
+existir um `.safetensors`.** A sequência inteira foi medida no A72 com
+`DreamShaper8_LCM` (1,99 GB, sha256 conferido nos dois lados):
+
+```
+[LocalImageService] Trying backend: CPU
+[LocalImageService] Creating SdIsolateProcessor (backend=CPU, quant=Q4_K (recommended))...
+F libc : Fatal signal 6 (SIGABRT) in tid 6679 (DartWorker)
+E Dart : runtime_entry.cc: 5327: error: Cannot invoke native callback outside an isolate.
+E DartVM: Aborting reentrant request for stack trace.
+```
+
+**350 ms entre "criando o processor" e o abort.** O `SIGABRT` é do runtime do
+Dart, não do C++: `abort()` chamado pela VM depois que `Dart_InvokeClosure` recusa
+uma chamada.
+
+**A causa, e ela é de lifecycle e não de thread.** `setupCallbacks` é chamado
+**de dentro** do isolate novo (`sd_isolate_processor.dart:264`) e faz
+`Pointer.fromFunction` de dois callbacks. Um `Pointer.fromFunction` só pode ser
+invocado **daquele isolate** — a VM guarda a identidade no ponteiro e aborta se a
+chamada chegar de outro contexto.
+
+E a chamada chega de outro contexto. `stable-diffusion.cpp` chama o callback de
+progresso dos **workers do ggml**, que são threads do processo e não belongs a
+isolate nenhum. O caminho do trampoline é
+`sd_progress_cb` → `sd_ffi_progress_trampoline` (`:394`) →
+`g_ffi_progress(step, steps, time)`, e essa última linha é um ponteiro para Dart
+called de uma thread sem isolate. Logo: `Cannot invoke native callback outside an
+isolate`, e o processo morre.
+
+**O caminho JNI do mesmo arquivo não tem o problema, e é por isso que ele
+funcionava.** `sd_progress_cb` (`:70`) guarda um `jobject` e usa
+`thread_local JniEnvGuard` — anexa a thread ao JVM e desanexa na saída. O FFI
+não tem equivalente: `Pointer.fromFunction` **não** tem como ser chamado de uma
+thread arbitrária, e nenhum guard nativo resolve, porque o problema é a VM do Dart
+não a thread.
+
+**Três formas de consertar, e a escolha não é minha para fazer aqui:**
+
+1. **`NativeCallable.listener`** em vez de `Pointer.fromFunction`. É o que o Dart
+   oferece justamente para callback vindo de thread arbitrária — o isolate continua
+   sendo o dono, mas a VM cria uma porta de entrada para chamadas de fora. Uma
+   linha nos dois callbacks, e é a mudança menor.
+2. **`NativeCallable.isolateLocal`** **não serve** e é o erro óbvio: ele exige a
+   thread do isolate, que é exatamente o que não existe aqui.
+3. **Não registrar callback pelo FFI** e reportar progresso por outro caminho
+   (o `progress` observable já existe do lado Dart). Mais trabalho e perde o log
+   nativo, que é onde se diagnostica uma carga que falha.
+
+**O que medir depois do conserto, porque é o que interessa:** o RSS com
+`Q4_K` carregado contra o previsto de **0,772 GB**, e o tempo de **1 passo** a
+**256 px**. Sem isso o seletor de quantização é uma tela de promessas — o número
+que a tela mostra é derivado do código nativo e está certo, e nenhuma imagem jamais
+saiu para confirmá-lo.
+
+**E o filtro de exibição é o que escondeu isso.** Os 5 modelos de imagem são
+SD 1.5 FP16 de 1,99 GB, `maxModelBytes` no A72 é **1,19 GB**
+(`totalRamGB * 0.25`), então os 5 cards são **filtrados** de `displayedModels` e
+não há como nem carregá-los pela tela. `GET /v1/models/local` **lista os 5**,
+porque a API não aplica o filtro — e foi por isso que a carga foi possível
+disparar e o crash aparecer. **O filtro é de exibição, não de carga**, e as duas
+coisas precisam ser lidas como o que são: um card ausente na tela não é um modelo
+que não carrega.
+
 ### Um `catch` mudo esconde o defeito, e `takeException` devolve uma por vez
 
 `/v1/litert/status` é `GET`. O console o chamava por um `_post`. O `catch` era

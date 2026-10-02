@@ -812,14 +812,32 @@ class ChatView extends GetView<ChatController> {
                     border: Border.all(
                         color: const Color(0xFFFF3B30).withValues(alpha: 0.3)),
                   ),
+                  // **The `Flexible` is the fix, and the dot staying outside it
+                  // is the other half.** This pill carries the longest translated
+                  // string in the input area — 25 characters in the source and
+                  // 39 painted (`'Ouvindo — toque no microfone para parar'`) —
+                  // and the row is `mainAxisSize: min` inside a pill that also
+                  // refuses to grow, so the `Text` was measured at its full
+                  // intrinsic width with nothing able to absorb it. At the app's
+                  // 2× text scale that is roughly 515 dp of text in ~312 dp of
+                  // space, and the overflow stripe takes the input area with it.
+                  //
+                  // `Expanded` would be wrong here: this is a `min` pill, and an
+                  // `Expanded` inside one demands all the remaining width, which
+                  // is how a short phrase ends up stretched across the whole
+                  // input. `Flexible` lets it be as long as it needs and no
+                  // longer, and wrapping is then possible if even that does not
+                  // fit.
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     const _PulsingDot(),
                     const SizedBox(width: 8),
-                    Text('listening_tap_mic_to_stop'.tr,
-                        style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: const Color(0xFFFF3B30),
-                            fontWeight: FontWeight.w500)),
+                    Flexible(
+                      child: Text('listening_tap_mic_to_stop'.tr,
+                          style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: const Color(0xFFFF3B30),
+                              fontWeight: FontWeight.w500)),
+                    ),
                   ]),
                 ),
               );

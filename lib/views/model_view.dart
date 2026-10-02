@@ -1444,12 +1444,26 @@ class ModelView extends GetView<ModelController> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'loading_into_memory'.tr,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.secondary,
+                // `Flexible` plus ellipsis, which is **the idiom of this very
+                // card** — the filename row right below does exactly this, and
+                // it was written by someone who had already been bitten by a
+                // card that could not wrap. The banner did not get it, so a
+                // 21-character translation sat in an unbounded row and the
+                // overflow stripe took the whole card down.
+                //
+                // Ellipsis rather than wrapping is deliberate: a status line that
+                // grows to two lines moves the filename under it, and the card's
+                // height is part of what the model list is scrolled against.
+                Flexible(
+                  child: Text(
+                    'loading_into_memory'.tr,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.secondary,
+                    ),
                   ),
                 ),
               ],
