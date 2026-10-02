@@ -20,6 +20,7 @@ import 'decision_model.dart';
 import 'encoder_settings_service.dart';
 import 'inference_service.dart';
 import 'litert_service.dart';
+import 'system_one.dart';
 
 class OpenAiServerService {
   HttpServer? _server;
@@ -1217,6 +1218,21 @@ class OpenAiServerService {
         'signature': loaded.signature.key,
         'features_input': head.features.name,
         'auxiliary_used': [for (final t in head.auxiliary) t.name],
+        // **What the head was given, in words.** The head embeds nothing — it
+        // classifies the vector the caller sent — so a caller that pastes 1024
+        // invented numbers and reads a confident class back has been told
+        // nothing about the subject. The field existed on the client since the
+        // window was written and no endpoint filled it; this is the fill.
+        'feature_source': describeVectorSource(
+          length: features.length,
+          tensor: head.features.name,
+          auxiliary: {
+            for (final t in head.auxiliary) t.name: t.shape.fold<int>(
+                  1,
+                  (acc, d) => acc * d,
+                ),
+          },
+        ),
         'n_classes': logits.length,
         'top_index': top,
         'logits': logits.toList(),
@@ -1389,6 +1405,11 @@ class OpenAiServerService {
       'model': inference.loadedModelName.value,
       'label': answer.label,
       'choice': answer.letter,
+      // The counterpart to the head's field: a decision model reads **text**, so
+      // there is no feature tensor to name here and claiming there were numbers
+      // would be inventing them. The option count is the part that moves the
+      // answer, and 2–24 is the range this endpoint accepts.
+      'feature_source': describeTextSource(options: task.choices.length),
       // Null, with the reason, rather than a fabricated number.
       'relevance_score': null,
       'scores': {for (final e in task.choices.entries) e.value: null},

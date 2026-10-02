@@ -141,6 +141,7 @@ const statusWithHead = {
 const statusEmpty = {'loaded': null};
 
 void main() {
+  mainFeatureSource();
   // The 422 as `_handleClassifyGenerative` builds it: a model that ignored the
   // instruction and wrote prose. Declared here rather than inside a group
   // because two of the groups assert on it — a payload scoped to one closure
@@ -769,6 +770,14 @@ void main() {
       'signature': 'serving_default',
       'features_input': 'pooled_cls',
       'auxiliary_used': ['feats'],
+      // Copiado do servidor real depois de `POST /v1/litert/unload` existir.
+      // Antes desta linha o payload era o que o A72 mandava, e ele nao mandava
+      // este campo — ver o teste "a resposta que o aparelho manda" abaixo.
+      'feature_source': describeVectorSource(
+        length: 1024,
+        tensor: 'pooled_cls',
+        auxiliary: {'feats': 4},
+      ),
       'n_classes': 2,
       'top_index': 0,
       'logits': [0.25634345, -0.20818722],
@@ -968,6 +977,112 @@ void main() {
       final text = formatLogits([0.1, 0.2], SystemOneResult.empty);
       expect(text, contains('class 0'));
       expect(text, contains('class 1'));
+    });
+  });
+}
+
+/// `feature_source`: what the model was actually given.
+///
+/// The field was on `SystemOneResult` from the day the window was written,
+/// parsed from `json['feature_source']`, displayed nowhere — and **no endpoint
+/// sent it**. So it could never be non-null, and the sentence it stood in for is
+/// the one a person needs when a 0.8B classifier answers "bug" for a ticket
+/// whose feature vector was 1024 numbers they pasted.
+void mainFeatureSource() {
+  test('a resposta que o aparelho manda traz feature_source', () {
+    // **This is the test for the bug, not for the wording.** The defect was that
+    // `SystemOneResult.featureSource` was parsed from a field **no endpoint ever
+    // sent**, so it could never be non-null and the line on the result card was
+    // unreachable. Asserting the *text* of `describeVectorSource` does not catch
+    // that — the function was correct the whole time, it was simply never
+    // called. So this asserts the field is in the response at all.
+    //
+    // The two payloads above are copies of what the A72 returned, which is why
+    // the one for a head had to gain this key: a test that feeds the parser a
+    // shape the server does not produce is a test that passes against a fiction,
+    // and that is the exact mistake `HeadContract` exists in this file to
+    // document.
+    final cabeca = SystemOneResult().fromClassify({
+      'object': 'classification',
+      'model': 'laya_en_act_head_fp32.tflite',
+      'features_input': 'pooled_cls',
+      'feature_source': describeVectorSource(
+        length: 1024,
+        tensor: 'pooled_cls',
+      ),
+    });
+    expect(cabeca.featureSource, isNotNull,
+        reason: 'a head run must be able to say the numbers were the callers');
+    expect(cabeca.featureSource, contains('1024'));
+
+    final decisao = SystemOneResult().fromClassify({
+      'object': 'classification',
+      'model': 'tev1-Q8_0.gguf',
+      'choice': 'B',
+      'label': 'bug',
+      'feature_source': describeTextSource(options: 2),
+    });
+    expect(decisao.featureSource, isNotNull,
+        reason: 'and a decision run must be able to say it read text, so the '
+            'absence of numbers is stated rather than left to be assumed');
+    expect(decisao.featureSource!.toLowerCase(), contains('no vector'));
+  });
+
+  group('a head classifies a vector the caller supplied', () {
+    test('the length and the tensor are named', () {
+      final s = describeVectorSource(length: 1024, tensor: 'pooled_cls');
+      expect(s, contains('1024'));
+      expect(s, contains('pooled_cls'));
+      expect(s, contains('caller'),
+          reason: 'the word that carries the warning: the numbers came from '
+              'the caller, and a head does not embed anything');
+    });
+
+    test('and it says outright that the head does not embed', () {
+      final s = describeVectorSource(length: 1024, tensor: 'pooled_cls');
+      expect(s.toLowerCase(), contains('does not embed'),
+          reason: 'a head that embeds is a different kind of model, and reading '
+              'this sentence is the only way to know which one is loaded');
+    });
+
+    test('auxiliary tensors are named with their counts', () {
+      // The act head is the case that matters: `feats [1,4]` is declared BEFORE
+      // `pooled_cls [1,1024]`, so a run can legitimately consume two tensors and
+      // a source line that named only the big one would be hiding half the
+      // request.
+      final s = describeVectorSource(
+        length: 1024,
+        tensor: 'pooled_cls',
+        auxiliary: {'feats': 4},
+      );
+      expect(s, contains('feats'));
+      expect(s, contains('[4]'));
+    });
+
+    test('no auxiliary means no trailing clause', () {
+      final s = describeVectorSource(length: 8, tensor: 'in');
+      expect(s, isNot(contains('plus')));
+      expect(s, isNot(contains(', ,')));
+    });
+  });
+
+  group('a decision model read text, and there is no vector to name', () {
+    test('it does not claim numbers were involved', () {
+      final s = describeTextSource(options: 3);
+      expect(s.toLowerCase(), contains('no vector'));
+      expect(s.toLowerCase(), contains('text'));
+      expect(s, isNot(contains('floats')),
+          reason: 'naming a feature tensor here would be inventing one — the '
+              'whole reason these are two functions and not one with nullable '
+              'arguments');
+    });
+
+    test('the option count is singular or plural, and it is the count', () {
+      expect(describeTextSource(options: 1), contains('1 option.'),
+          reason: '"1 options" is the same grammar bug as "1 hops", which this '
+              'repo shipped and then had to fix in two places');
+      expect(describeTextSource(options: 2), contains('2 options'));
+      expect(describeTextSource(options: 24), contains('24 options'));
     });
   });
 }

@@ -1399,6 +1399,30 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                   style: GoogleFonts.inter(
                       fontSize: 11, color: AppColors.textMuted)),
           ],
+          // **What the model was given, and the last thing on the card on
+          // purpose.** It is the answer to the question a person asks when a
+          // classifier is confident and the input was a number they typed, so it
+          // goes below the letter and the logits rather than above them — up
+          // there it competes with the result, and the result is what was asked
+          // for. The field was on `SystemOneResult` from the day the window was
+          // written and no endpoint filled it, so this line used to be
+          // unreachable.
+          if (r.featureSource != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.input_rounded,
+                    size: 14, color: AppColors.textMuted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(r.featureSource!,
+                      style: GoogleFonts.inter(
+                          fontSize: 11, color: AppColors.textMuted)),
+                ),
+              ],
+            ),
+          ],
           if (r.model.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('model: ${r.model}',

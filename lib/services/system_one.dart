@@ -863,6 +863,14 @@ class SystemOneResult {
       label: _str(json['label']),
       letter: _str(json['choice']),
       whyNoScore: _str(json['why_no_scores']),
+      // **Read on this branch too, and it was not.** The field was wired only
+      // into the `logits` return above — the `.tflite` head — so a decision
+      // model, which is the path a person is on when they ask "why did it say
+      // that", had its `feature_source` handed to it by the server and dropped
+      // on the floor here. `featuresInput` and `requestedAccelerator` are
+      // LiteRT-specific and correctly absent; this one is not, it is the sentence
+      // that says the model read text and nothing was embedded.
+      featureSource: _str(json['feature_source']),
       notes: _notes(json),
     );
   }
@@ -974,6 +982,49 @@ List<String> _notes(Map<String, dynamic> json) {
 /// back from a head that diverged is exactly how that happens. The window would
 /// then show an exception where the honest answer is "the model produced a
 /// number JavaScript does not have", which is a real and diagnosable state.
+/// What the model was actually given, in one line.
+///
+/// ## Why this had to be written
+///
+/// `SystemOneResult.featureSource` was declared, parsed from
+/// `json['feature_source']`, and **never shown to anyone** — because no endpoint
+/// ever sent that field. A contract with a field that can never be non-null is
+/// not a contract, and the gap it was standing in for is real:
+///
+/// **A head does not embed anything.** `laya_en_act_head_fp32.tflite` is a
+/// classifier over a vector of 1024 floats that the *caller* supplies. So a
+/// confident letter computed from numbers someone typed is a statement about
+/// those numbers and about nothing else, and the screen had no way to say so —
+/// which is exactly the question a person asks when a 0.8B classifier answers
+/// "bug" for a support ticket.
+///
+/// The two shapes are separate functions and not one with nullable arguments,
+/// because they are genuinely different facts and merging them is what produces
+/// a sentence that is half true.
+String describeVectorSource({
+  required int length,
+  required String tensor,
+  Map<String, int> auxiliary = const {},
+}) {
+  final aux = auxiliary.isEmpty
+      ? ''
+      : ', plus ${auxiliary.entries.map((e) => '${e.key} [${e.value}]').join(', ')}';
+  return '$length floats supplied by the caller into `$tensor`$aux. '
+      'A head classifies a vector it is given; it does not embed anything, so '
+      'this says nothing about the subject beyond those numbers.';
+}
+
+/// The decision-model shape: there is no vector at all.
+///
+/// The input is a structured prompt — a state, a question and N options — so
+/// naming a feature tensor here would be inventing one. The number of options is
+/// included because the option count is the thing that changes the answer, and
+/// because 2–24 is the range the endpoint enforces.
+String describeTextSource({required int options}) =>
+    'No vector: a state and a question, as text, with $options '
+    'option${options == 1 ? '' : 's'}. The model read the text; nothing was '
+    'embedded.';
+
 String encodeBody(Object? body) {
   try {
     return jsonEncode(body);

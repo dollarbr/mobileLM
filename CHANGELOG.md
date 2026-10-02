@@ -4,6 +4,61 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### fix: `feature_source` — o campo que existia, nunca era preenchido, e a tela não mostrava nada
+
+Auditando a classe que mais morde este repo — **campo lido que nada produz**,
+que é a mesma do `loaded['classifier']` — achei três coisas empilhadas.
+
+**1. O campo era morto nos dois sentidos.** `SystemOneResult.featureSource` foi
+declarado e parseado de `json['feature_source']` no dia em que a janela foi
+escrita, **nenhum endpoint mandava esse campo**, e nenhuma tela o exibia. Um
+contrato com um campo que nunca pode ser não-nulo não é um contrato.
+
+**2. O servidor não dizia o que o modelo recebeu.** E a lacuna que ele cobria é
+real: **uma cabeça não embute nada.** A `laya_en_act_head_fp32.tflite` classifica
+um vetor de 1024 floats que o *chamador* forneceu. Então uma letra confiante
+calculada de números que alguém digitou é uma afirmação sobre esses números e
+sobre mais nada — e a tela não tinha como dizer isso, que é exatamente a
+pergunta de quem recebe "bug" para um ticket cujo vetor era invenção.
+
+Os dois caminhos do `/v1/classify` agora mandam o campo, e são **duas funções
+separadas** e não uma com argumentos nulos, porque são fatos diferentes:
+`describeVectorSource` nomeia o tensor e a contagem (`1024 floats supplied by
+the caller into pooled_cls, plus feats [4]`) e `describeTextSource` diz que não
+há vetor nenhum (`No vector: a state and a question, as text, with 3 options`).
+Nomear um tensor no caminho do decision model seria inventar um.
+
+**3. O cliente jogava o campo fora — em metade dos casos.** `fromClassify` tem
+dois retornos, e `featureSource` só estava no das **logits** (cabeça `.tflite`).
+O ramo do **decision model** recebia o campo do servidor e o deixava no chão.
+Ou seja: o defeito que eu ia consertar estava no caminho que a pessoa percorre
+quando pergunta "por que ele disse isso". `featuresInput` e
+`requestedAccelerator` continuaram fora do segundo ramo de propósito — são
+específicos do LiteRT.
+
+A linha entra no card de resultado **abaixo** da letra e dos logits, e não acima:
+em cima ela disputa com o resultado, e o resultado é o que foi pedido.
+
+Verificado no A72, pelos dois caminhos, por `curl` e pela tela:
+
+| caminho | resposta |
+|---|---|
+| `.tflite` (cabeça da Laya) | `1024 floats supplied by the caller into pooled_cls, plus feats [4]` |
+| decision model (Tev1) | `No vector: a state and a question, as text, with 3 options` |
+
+Na tela, com o Tev1 carregado e a decisão rodada pelo usuário: o card traz
+`B` → `billing` → o motivo da ausência de confiança → **a linha nova** →
+`model: tev1-Q8_0.gguf`.
+
+**Um erro meu que a verificação pegou, e que é o mais instrutivo da sessão.** A
+tela deu `B / billing` e meu `curl` deu `A / billing`, e eu escrevi que isso era
+não-determinismo apesar do `temperature: 0`. Não era: eu tinha montado o `curl`
+com `{'A':'billing','B':'bug'}` e a tela tinha `A=bug, B=billing`. **A letra é
+relativa ao mapa de cada pedido**, e as duas responderam `billing`. Reproduzido
+com o mapa da tela: `B / billing` três vezes, igual à tela. Um erro que se
+apresenta como outro — e que só apareceu porque o mesmo resultado foi procurado
+por dois caminhos independentes.
+
 ### feat: o workspace é lembrado entre cold starts, e o caminho não cresce mais
 
 Duas correções no workspace, uma delas a que o app **não** tinha.

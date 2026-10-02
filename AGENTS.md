@@ -1577,6 +1577,17 @@ Quatro regras que a tela guarda, e todas custaram uma decisão:
    (`SystemOneOptions`, `SystemOneLabels`) porque os limites não são o mesmo, e
    recusar 25 rótulos de uma cabeça de 512 classes seria inventar uma regra.
 
+**`feature_source` é o que o modelo recebeu, e uma cabeça não embute nada.** O
+campo existia no `SystemOneResult` desde o dia da janela, **nenhum endpoint o
+mandava** e nenhuma tela o mostrava — e a lacuna que ele cobria é a pergunta de
+quem recebe "bug" de um classificador de 0,8 B para um ticket cujo vetor de
+features eram 1024 números digitados. Os dois caminhos mandam, por **duas
+funções** (`describeVectorSource` e `describeTextSource`) e não uma com
+argumentos nulos, porque são fatos diferentes: nomear um tensor no caminho do
+decision model seria inventar um. E `fromClassify` lia o campo **só no ramo das
+logits** — o decision model recebia do servidor e jogava fora, que é exatamente
+o caminho de quem pergunta "por que ele disse isso".
+
 **`HeadContract` existe porque eu parseei o payload errado e o teste passou.** A
 primeira versão procurava um `signature` **objeto** com `inputs` dentro; o
 aparelho devolve uma **array** `signatures`. A consequência foi silenciosa: a
