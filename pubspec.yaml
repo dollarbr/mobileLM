@@ -9,6 +9,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # **As strings do proprio Material seguem o idioma do app sem isto.**
+  # O botao de voltar, o OK/Cancel de um AlertDialog, o Copy e as datas dos
+  # seletores vem todos de MaterialLocalizations, e o GetX instala sozinho o stub
+  # **so em ingles** -- foi o que deixou o tooltip do botao voltar em ingles numa
+  # tela que ja estava em portugues. Ver main.dart.
+  flutter_localizations:
+    sdk: flutter
   # State Management
   get: ^4.6.6
   # Persistent Storage

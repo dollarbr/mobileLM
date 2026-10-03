@@ -731,6 +731,43 @@ no fonte, que é o mesmo resultado de uma lista vazia por um motivo diferente.
   contagem. Subir só quando a linha de cima é a condição de um ternário, senão um
   `label:` uma linha acima seria pego.
 
+#### `BackButton` já desenha uma seta — o que estava em inglês era o tooltip
+
+O `dump` do A72 mostrou `Back` no botão de voltar da tela do servidor, e a
+reação natural é trocar o botão por uma seta. **A seta já estava lá**:
+`BackButton` é o `leading` padrão de todo `AppBar`, e ele desenha
+`Icons.arrow_back`. O `Back` não era texto pintado — era o
+`tooltip`, e o `uiautomator` expõe tooltip como `content-desc`.
+
+E o tooltip vinha de `MaterialLocalizations.backButtonTooltip`, que o GetX
+instala **só em inglês**: o `GetMaterialApp` registra o
+`DefaultMaterialLocalizations`, um stub sem nenhum outro idioma. O resultado é o
+mesmo defeito de sempre — uma tela em português com uma palavra em inglês — e a
+mesma ausência de aviso: nada no repositório diz que as strings do Material
+existem em dois idiomas, porque elas **não são do app**.
+
+`flutter_localizations` no `pubspec.yaml` e três delegates em `main.dart`
+resolvem. E resolvem **muito mais que o tooltip**: `OK`/`Cancel` de
+`AlertDialog`, `Copy`, `Retry`, as datas de todos os seletores e qualquer
+`tooltip` do Material passam a seguir o idioma escolhido — que é exatamente o
+que o seletor de idioma promete.
+
+**`supportedLocales` é obrigatório junto, e sem ele o conserto não pega.** Com os
+dois delegates e sem a lista, o `GlobalMaterialLocalizations` resolve só os
+idiomas que já vêm no padrão e o `locale` escolhido cai no primeiro. Foi o
+segundo `dump` que disse: `Settings`/`Appearance` trocavam, o botão não.
+
+**A ordem dos delegates importa** — Material depois de Cupertino, e o do app por
+último, porque cada um sobrescreve o anterior.
+
+Verificado no A72 nos dois sentidos: **Português → `Voltar`**, **English →
+`Back`**. O botão em si é a seta nos dois.
+
+**Uma coisa que continua em inglês e não é do Material:** o `AppBar` sem
+`AppBarTheme` próprio não tem título de accessibility próprio, e o `Back` do
+Material é a única palavra que vinha de fora. Se um dia aparecer outra, o
+delegado é o caminho.
+
 #### Dois helpers com o mesmo nome e contratos diferentes
 
 `settings_view.dart` e `server_view.dart` têm **os dois** um

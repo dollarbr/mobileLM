@@ -31,6 +31,8 @@ import 'services/scheduled_task_service.dart';
 import 'services/workspace_service.dart';
 import 'services/privileged_service.dart';
 import 'core/constants.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+
 import 'l10n/app_translation.dart';
 
 void main() {
@@ -273,6 +275,30 @@ class MobileLMApp extends StatelessWidget {
         // falha de CI.
         fallbackLocale: const Locale('en', 'US'),
         debugShowCheckedModeBanner: false,
+        // **As strings do proprio Material seguem o idioma do app.**
+        //
+        // O GetX instala sozinho o `DefaultMaterialLocalizations`, que e **so em
+        // ingles**, e sem esta lista o tooltip do botao de voltar, o OK/Cancel de
+        // um `AlertDialog`, o `Copy` e as datas dos seletores ficam em ingles numa
+        // tela que ja esta em portugues. Foi o `dump` do A72 que mostrou
+        // `Back` — e a correcao nao e um icone, porque **o icone ja e a seta**:
+        // `BackButton` desenha `Icons.arrow_back` e o que estava em ingles era o
+        // `tooltip`, que vem de `MaterialLocalizations.backButtonTooltip`.
+        //
+        // A ordem importa: os delegates do Material tem que vir **depois** dos do
+        // Cupertino, e o do app por ultimo, porque cada um sobrescreve o
+        // anterior. E `supportedLocales` e obrigatorio: sem ele o
+        // `GlobalMaterialLocalizations` so resolve os dois idiomas que ja vem no
+        // padrao, e o `locale` escolhido cai no primeiro.
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('en', 'US'),
+          Locale('pt', 'BR'),
+        ],
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: themeMode,
