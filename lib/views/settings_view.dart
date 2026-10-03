@@ -342,7 +342,7 @@ class SettingsView extends GetView<SettingsController> {
                     leading: _iconBox(
                         isDark ? const Color(0xFFB9F53E) : AppColors.primary,
                         Icons.speed_rounded),
-                    title: 'CPU benchmark',
+                    title: 'set_cpu_benchmark'.tr,
                     subtitle: st.running.value
                         ? 'set_benchmark_running'.tr
                         : st.summary.value.isEmpty
@@ -1105,8 +1105,17 @@ class SettingsView extends GetView<SettingsController> {
                         style: GoogleFonts.inter(
                             fontSize: 15, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 2),
+                    // **Três valores, uma frase, e a ordem muda entre idiomas.**
+                    // `'@ram GB'` em português vira `'@ram GB'` em inglês, mas
+                    // `Context: @ctx` não pode virar `@ctx de contexto` sem
+                    // reescrever o mapa inteiro — e é por isso que `preencher`
+                    // substitui por nome em vez de interpolar.
                     Text(
-                        'Available: ${device.availableRamGB.value.toStringAsFixed(1)}GB · Context: ${device.recommendedContextSize} · Tokens: ${device.recommendedMaxTokens}',
+                        preencher('set_device_budget', {
+                          'ram': device.availableRamGB.value.toStringAsFixed(1),
+                          'ctx': '${device.recommendedContextSize}',
+                          'tok': '${device.recommendedMaxTokens}',
+                        }),
                         style: GoogleFonts.inter(
                             fontSize: 12, color: Theme.of(context).hintColor)),
                   ])),

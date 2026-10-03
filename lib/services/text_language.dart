@@ -42,8 +42,32 @@ class TextLanguage {
     'served', 'serves', 'occupied', 'optimized', 'helper', 'corrupt',
     'valid', 'built', 'updated', 'unknown', 'empty', 'full', 'busy',
     'done', 'stop', 'start', 'restart',
+    // ── os 27 buracos que `tool/word_list_probe.dart` mediu ──
+    //
+    // **A lista é uma afirmação, e uma afirmação não se prova sozinha** — é o
+    // mesmo modo de falha das sete omissões de escopo da trava, agora no
+    // **conteúdo** em vez do alcance. As sete apareciam por causa externa (o
+    // `dump` do aparelho, a lista de palavras alargada por outro motivo); esta
+    // apareceu porque alguém leu os 212 achados e encontrou `'Show it anyway'`,
+    // `'Benchmark usability'` e `'Verifying...'` **na lista de dívida e na
+    // lista de buraco ao mesmo tempo**.
+    //
+    // **As duas direções da sondagem, e a que importa é a que falha.** Um texto
+    // de tela que a lista **vê** é dívida conhecida. Um que ela **não vê** é
+    // dívida invisível, e é a mesma forma dos 38 chaves que `.tr` devolvia pelo
+    // próprio nome: nada lança, a contagem bate, e o defeito só aparece no
+    // aparelho. `word_list_probe.dart` é a sonda, e ela julga a lista com
+    // **texto de tela lido no fonte**, não com um resumo de memória.
+    //
+    // As 27 entradas vieram de uma passagem pelos achados existentes, e cada uma
+    // está aqui porque **a retirada devolve um texto de tela ao silêncio**. A
+    // ordem é por arquivo, e `back`/`next`/`open`/`close` estão aqui porque são
+    // botão — e um botão que a trava não vê é um botão que nunca é traduzido.
+    'show', 'hide', 'open', 'close', 'enter', 'clear', 'copy', 'paste',
+    'read', 'write', 'send', 'format', 'keep', 'turn', 'next', 'back',
+    'loading', 'available', 'verifying', 'benchmark', 'usability', 'anyway',
+    'progress', 'projector', 'name', 'url',
   };
-
 
   /// Nomes próprios, formatos e exemplos de API: não são idioma.
   ///
@@ -103,7 +127,18 @@ class TextLanguage {
   ///
   /// O delimitador pode mudar entre segmentos (`'a' "b"` é um valor só), e o
   /// escape é obrigatório: `'…da Microsoft's…'` fecha num `'` que não é o fim.
-  static (String, int) juntarSegmentos(String src, int ini) {
+  ///
+  /// **[inicios] recebe a posição de abertura de cada segmento, e é o que fecha
+  /// a sobreposição.** Quem deduplica por posição precisa marcar os inicios
+  /// **todos**: um literal adjacente de quatro linhas tem três inicios no meio,
+  /// e o de cada um deles reconstrói a mesma frase **sem o primeiro segmento**.
+  /// Sem isto a lista de pendências enche de `'know whether a local model is
+  /// worth the download.'` — texto que não é traduzível, porque a frase está no
+  /// segmento de cima e é ele que a tela mostra. Medido: **87 grupos com 155
+  /// inicios extras** em `views`/`widgets`/`controllers`, e nenhum deles é uma
+  /// dívida real.
+  static (String, int) juntarSegmentos(String src, int ini,
+      {List<int>? inicios}) {
     final n = src.length;
     var abre = ini;
     final partes = <String>[];
@@ -112,6 +147,7 @@ class TextLanguage {
         abre++;
       }
       if (abre >= n || (src[abre] != "'" && src[abre] != '"')) return ('', ini);
+      inicios?.add(abre);
       final delim = src[abre];
       var k = abre + 1;
       final sb = StringBuffer();
@@ -149,8 +185,7 @@ class TextLanguage {
   ///
   /// O nome é o mesmo da ferramenta de reescrita de propósito: são a mesma
   /// regra, e mudar um dos dois deixa as contagens divergindo sem ninguém avisar.
-  static String _unescape(String c) =>
-      c == 'n' ? '\n' : (c == 't' ? '\t' : c);
+  static String _unescape(String c) => c == 'n' ? '\n' : (c == 't' ? '\t' : c);
 
   /// O texto que sobra depois de tirar as interpolações: `${…}` e `$ident`.
   ///
@@ -232,6 +267,40 @@ class TextLanguage {
         'não o botão',
     'mobilelm-config.json': 'nome do arquivo de configuração gravado em SAF',
     'mobilelm-config': 'nome do arquivo de configuração, sem a extensão',
+    // ── os que a lista de palavras alargada trouxe ──
+    //
+    // **Nenhum destes é botão, rótulo nem mensagem.** São chave de mapa,
+    // valor de sentinela, nome de pasta e substring comparada. A lista de
+    // palavras cresceu 27 entradas e subiu o texto de tela de 212 para 252 — e
+    // parte desse acréscimo é dívida de verdade e parte é dado que passou a ter
+    // palavra de inglês dentro. Separar os dois é o que a lista faz, e é por
+    // isso que cada linha abaixo carrega o motivo.
+    //
+    // **Uma entrada que também é texto pintado é um buraco silencioso.**
+    // `'running'` é o status de um passo de tarefa, comparado com `==` em quatro
+    // lugares — e é **também** o rótulo do botão dos dois consoles enquanto o
+    // pedido está em curso. Uma entrada no mapa apagaria os dois de uma vez, e o
+    // botão ficaria em inglês para sempre sem nada reclamar. A ordem importa:
+    // traduzir o rótulo primeiro, e só depois declarar a comparação como dado.
+    'name': 'chave de mapa no perfil de cloud salvo em Hive',
+    'url': 'chave do payload passado ao plugin de download',
+    'unknown': 'sentinela de imageGpuVendor, comparada com == num ternário',
+    'once': 'valor de frequência salvo em Hive e comparado com == no subtítulo',
+    'downloaded': 'chave do balde de seções do catálogo, comparada por índice',
+    'Downloaded': 'title de ModelSection, persistida no Hive como chave de '
+        'expandedSections; o rótulo vem de mv_section_downloaded',
+    'settings/mobilelm-config.json': 'caminho do arquivo de configuração, '
+        'gravado em SAF',
+    'new-folder': 'heroTag do FloatingActionButton, identificador do widget',
+    'new-file': 'heroTag do FloatingActionButton, identificador do widget',
+    'Unknown': 'segmento de caminho usado como nome de pasta no backup '
+        '(classifyModelPath monta Vendor/Family)',
+    'text-only': 'substring do erro do engine procurada com contains(); '
+        'traduzi-la faz a detecção de fallback parar de casar',
+    'unknown model architecture': 'substring do erro do engine procurada com '
+        'contains() dentro de _getFriendlyErrorMessage',
+    'unsupported model architecture': 'substring do erro do engine procurada '
+        'com contains() dentro de _getFriendlyErrorMessage',
   };
 
   /// `texto` tem palavra de inglês **sem** a regra do `$`, para a varredura ampla.
@@ -243,8 +312,23 @@ class TextLanguage {
   /// é o modo de falha que já atingiu a auditoria de overflow, a de overflow de
   /// linha e a de descrição de catálogo neste repo, e a razão de esta estar aqui
   /// e não em dois arquivos.
+  ///
+  /// **As interpolações são removidas antes de julgar, e essa é a nona
+  /// omissão.** `DateTime.now()` está dentro de `${…}`, `now` é palavra da
+  /// lista, e o literal `'mobilelm_${DateTime.now()…}.png'` — o nome do arquivo
+  /// temporário do compartilhamento de imagem — entrava como texto de tela em
+  /// inglês. Não é texto: é **código dentro de uma interpolação**, e o nome do
+  /// arquivo é o mesmo nos dois idiomas.
+  ///
+  /// A omissão é do mesmo tipo das outras oito — a lista do que a trava mede
+  /// estava incompleta — mas aqui a lista que estava incompleta era a de
+  /// **conteúdo**, e o sintoma é o inverso: o teto **sobe** com falso positivo,
+  /// que é mais difícil de ver do que um número baixo. Remover as interpolações
+  /// é a mesma regra que a trava dos interpolados já usava
+  /// ([tirarInterpolacoes]): o idioma é do **trecho fixo**, e o trecho fixo é
+  /// o que vai para o mapa de tradução.
   static bool pareceInglesAmplo(String texto) {
-    var probe = texto.toLowerCase();
+    var probe = tirarInterpolacoes(texto).toLowerCase();
     for (final t in notText) {
       probe = probe.replaceAll(t, ' ');
     }
@@ -367,7 +451,8 @@ class TextLanguage {
       // Há um argumento antes deste, então não é o primeiro.
       final virgula = entreParentes.indexOf(',');
       final fechaAntes = entreParentes.lastIndexOf(')');
-      if (virgula >= 0 && (fechaAntes < 0 || virgula < fechaAntes)) return false;
+      if (virgula >= 0 && (fechaAntes < 0 || virgula < fechaAntes))
+        return false;
     }
     final antesDoParen = antes.substring(0, abre);
     return RegExp(r'\.(error|warning|info|debug)\s*$').hasMatch(antesDoParen);

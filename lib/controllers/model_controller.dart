@@ -636,10 +636,10 @@ class ModelController extends GetxController {
   Future<String> detectUrlSize(String url) async {
     try {
       final bytes = await _download.getRemoteFileSize(url);
-      if (bytes <= 0) return 'Unknown size';
+      if (bytes <= 0) return AppConstants.kUnknownSize;
       return DownloadService.formatBytes(bytes);
     } catch (_) {
-      return 'Unknown size';
+      return AppConstants.kUnknownSize;
     }
   }
 
@@ -662,7 +662,9 @@ class ModelController extends GetxController {
       name: name.trim().isEmpty ? resolvedFilename : name.trim(),
       filename: resolvedFilename,
       url: url.trim(),
-      size: size == null || size.trim().isEmpty ? 'Unknown size' : size.trim(),
+      size: size == null || size.trim().isEmpty
+          ? AppConstants.kUnknownSize
+          : size.trim(),
       // Um modelo digitado à mão tem a ficha que a pessoa escreveu, e ela
       // vale nos dois idiomas: não há como saber em que língua foi escrita, e
       // inventar uma tradução seria pior do que repetir o que foi digitado.
@@ -1922,12 +1924,16 @@ class ModelController extends GetxController {
     final availableRamGb = await _refreshAvailableRamGb();
 
     final availableBytes = (availableRamGb * 1024 * 1024 * 1024).round();
+    // **Estes dois são pintados, e é por isso que a sentinela vira tradução
+    // aqui e não antes.** `modelLabel` e `ramLabel` entram em `Text(...)` duas
+    // linhas abaixo; a mesma string que `detectUrlSize` devolve como
+    // comparação chega aqui como rótulo, e as duas coisas eram o mesmo literal.
     final modelLabel = fileBytes > 0
         ? DownloadService.formatWholeMb(fileBytes)
-        : 'Unknown size';
+        : 'mc_unknown_size'.tr;
     final ramLabel = availableBytes > 0
         ? DownloadService.formatWholeMb(availableBytes)
-        : 'Unknown';
+        : 'mc_unknown_size'.tr;
     final lower = filename.toLowerCase();
     final hasMeasuredMemory = availableBytes > 0 && fileBytes > 0;
     final isCriticallyLow = hasMeasuredMemory &&

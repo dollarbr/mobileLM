@@ -262,7 +262,11 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
       // `size` describes the one file `filename` names, and the completeness
       // guard in ModelController compares that file's bytes against it. A
       // combined figure here makes a fully downloaded model look truncated.
-      size: file.sizeLabel,
+      //
+      // **É `sizeValor`, não `sizeLabel`.** Este é o valor que vai para
+      // `AiModel.size`, que é guardado no Hive e comparado com a sentinela
+      // `kUnknownSize`; a tradução pertence só ao rótulo pintado.
+      size: file.sizeValor,
       // Only read for LiteRT: a GGUF's vision comes from the projector, which
       // ModelController infers from mmprojFilename below.
       isVision: file.isLiteRt &&

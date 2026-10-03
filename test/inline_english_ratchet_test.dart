@@ -76,14 +76,28 @@ List<_Achado> broad() {
     // entre eles. A contagem ficava 12 abaixo, e a ferramenta — que declara o
     // conjunto dentro de `_varre` — dizia 258. Um número menor não é um número
     // errado que se vê; é um que parece certo e protege menos do que parece.
+    //
+    // **`vistos` marca os inicios que `juntarSegmentos` consumiu, e não só o
+    // primeiro e o fim.** Ver a nota do teto abaixo: marcar os dois extremos
+    // deixava passar o início de cada segmento do meio, e cada um reportava a
+    // mesma frase sem o primeiro segmento.
     final vistos = <int>{};
     for (final m in re.allMatches(src)) {
       if (!vistos.add(m.start)) continue;
       // **Os mesmos passos e a mesma função da ferramenta**, porque as duas têm
       // que contar a mesma coisa: enquanto a ferramenta juntava segmentos e o
       // teste não, os números divergiam sem nenhum dos dois reclamar.
-      final (joined, fim) = TextLanguage.juntarSegmentos(src, m.start);
+      //
+      // **`vistos` marca os inicios que `juntarSegmentos` consumiu, todos.**
+      // Marcando só o primeiro e o fim, cada início do meio de um literal
+      // adjacente reportava a mesma frase sem o primeiro segmento — e o teto
+      // media dívida que não existe. Foi o que o `tool/dup_probe.dart` contou:
+      // 87 grupos, 155 inicios extras.
+      final inicios = <int>[];
+      final (joined, fim) =
+          TextLanguage.juntarSegmentos(src, m.start, inicios: inicios);
       if (joined.isEmpty) continue;
+      vistos.addAll(inicios);
       vistos.add(fim);
       final texto = joined.trim();
       if (texto.length < 3) continue;
@@ -428,7 +442,8 @@ void main() {
     // em zero com 61 linhas reais seria um teste que passa pelo motivo errado,
     // que é a mesma falha do teto alto. **Zero em views/widgets** está na
     // asserção seguinte, e é lá que ela não pode voltar.
-    // **257, e este número nasceu de um bug de regex, não de trabalho novo.**
+    // **212, e este número é o terceiro a nascer de um defeito da própria
+    // varredura, não de trabalho novo.**
     //
     // A varredura ampla reportava **zero** texto de tela com 263 textos em
     // inglês na tela, porque a classe de caracteres do regex estava errada desde
@@ -442,7 +457,7 @@ void main() {
     // zero controller, zero chave faltando, `flutter test` verde. Um detector
     // que não casa nada reporta a mesma coisa que um detector que não acha nada,
     // e a única forma de saber qual é o dos é ter **um irmão que prova que ele
-    // ainda vê alguma coisa** — que é este teste.
+    // ainda case com alguma coisa** — que é este teste.
     //
     // Corrigir a classe e subir a janela para 240 levou a 264, dos quais 12 eram
     // fragmentos de literal adjacente: a varredura ampla não juntava segmentos,
@@ -451,10 +466,49 @@ void main() {
     // cuja primeira metade já é `.tr`. `TextLanguage.juntarSegmentos` é agora a
     // implementação única, e as três ferramentas a chamam.
     //
-    // **O que sobrou são 221 textos distintos** de `views`, `widgets` e
-    // `controllers` — rótulos, mensagens de `snackbar` e diálogo, e prosa de
-    // explicação. São tela, todos eles, e é o item 3e do `HANDOFF`.
-    const teto = 257;
+    // **O `juntarSegmentos` resolveu o primeiro segmento e não os do meio.** Com
+    // ele a contagem foi para 257 — e era **12 a mais** do que a dívida real,
+    // que é a **sexta** vez que a lista do que a trava mede estava incompleta,
+    // agora por *omissão de posição*. O `vistos` marcava `m.start` e o `fim`, e um
+    // literal adjacente de quatro linhas tem **três inicios no meio**: cada um
+    // passava por `vistos.add` sem estar lá dentro e reportava a mesma frase
+    // **sem o primeiro segmento**. `tool/dup_probe.dart` mediu **87 grupos com
+    // 155 inicios extras**, e nenhum deles era dívida. `juntarSegmentos` passou a
+    // devolver **quais inicios consumiu**, e são 212.
+    //
+    // **O número antigo estava em três lugares deste repositório** — este teto,
+    // `AGENTS.md` e `docs/HANDOFF.md` — e a tabela de omissões já tinha sete
+    // linhas. A oitava é esta, e a forma dela é diferente das outras sete: as
+    // anteriores eram uma **ausência** (uma pasta, um parâmetro, uma letra), e
+    // esta é uma **repetição**, que nenhuma lista de "o que a trava cobre"
+    // denuncia. Repetição não se acha olhando o que a trava mede; só se acha
+    // perguntando **quantas vezes ela mede a mesma coisa** — e essa pergunta não
+    // tinha sido feita em nenhum dos itens anteriores.
+    //
+    // **O que sobrou são 205 literais** de `views`, `widgets` e `controllers` —
+    // rótulos, mensagens de `snackbar` e diálogo, e prosa de explicação. São
+    // tela, todos eles, e é o item 3e do `HANDOFF`.
+    //
+    // **A nona omissão é a primeira cujo sintoma é um teto ALTO.** As oito
+    // anteriores faziam a trava medir de menos, e um número baixo parece
+    // seguro. Esta fazia o contrário: `pareceInglesAmplo` julgava **código**
+    // dentro de `${…}` como se fosse idioma, e `DateTime.now()` é `now`, que é
+    // palavra da lista — então `'mobilelm_${DateTime.now()…}.png'`, o nome do
+    // arquivo temporário do compartilhamento de imagem, entrava como texto de
+    // tela. Medido: **36 entradas**, todas com a mesma forma (`$name`,
+    // `$filename`, `$e`, `DateTime.now`). Remover a interpolação **antes** de
+    // julgar é a mesma regra que a trava dos interpolados já usava.
+    //
+    // **E a décima omissão estava do lado do conteúdo, não do alcance.** As 27
+    // palavras medidas (`show`, `back`, `copy`, `benchmark`, `clear`, `name`…)
+    // expuseram **10 textos** que estavam em inglês na tela desde sempre e que
+    // nenhuma das duas varreduras contava: `Copy important logs`, `Clear logs`,
+    // `Show it anyway`, `Provider name`, `Base URL`, `Projector`, `Turn off
+    // anyway`, `CPU benchmark`, `Back to projects`, `New project name` — mais o
+    // literal interpolado `Available: …GB · Context: …` de Configurações. Um
+    // detector que não conhece a palavra não denuncia o texto, e o teto em zero
+    // da varredura estreita era verdadeiro **e** a tela estava em inglês.
+    const teto = 205;
     final texto = broad();
     expect(texto.length, lessThanOrEqualTo(teto),
         reason: 'literal em inglês que é texto de tela. A lista de não-texto é '
@@ -511,6 +565,70 @@ void main() {
             'aí a entrada sai da lista — ou alguém traduziu o valor, que é '
             'exatamente o que ela existe para impedir:\n'
             '  ${ausentes.join('\n  ')}');
+  });
+
+  test('a varredura ampla não conta o mesmo literal duas vezes', () {
+    // **Este é o irmão do defeito do teto, e ele é uma pergunta nova.** As sete
+    // omissões anteriores eram uma **ausência** — uma pasta, um parâmetro de
+    // call site, uma letra na classe do regex — e nenhuma delas se acha olhando
+    // o que a trava mede: acha-se porque **faltou** algo, e falta se nota. Esta é
+    // uma **repetição**, e repetição não denuncia: ela só aparece perguntando
+    // **quantas vezes a mesma posição é medida**.
+    //
+    // O `vistos` da varredura marcava o início do primeiro segmento e o fim da
+    // cadeia. Um literal adjacente de quatro linhas tem **três inicios no meio**,
+    // e cada um passava por `vistos.add` sem estar lá dentro — reconstruindo a
+    // mesma frase **sem o primeiro segmento**. `'know whether a local model is
+    // worth the download.'` estava na lista como pendência, e não é traduzível:
+    // a frase completa está no segmento de cima, e é ela que a tela mostra.
+    //
+    // **`tool/dup_probe.dart` mediu 87 grupos com 155 inicios extras** e o teto
+    // estava 45 acima do real. `juntarSegmentos` agora devolve quais inicios
+    // consumiu, e os dois os marcam.
+    //
+    // **Um literal aninhado não conta aqui, e a distinção é o que faz o teste
+    // valer.** `'${x ? '' : ' '}'` tem dois literais dentro de um terceiro, e
+    // sempre vai ter: os três alcançam o mesmo `fim`, mas **só um** passa pelo
+    // `vistos`. O que este teste proíbe é dois **achados** com o mesmo `fim`, e
+    // não dois literais que se encontram — que é uma propriedade do fonte e não
+    // um defeito. Os 4 que sobram em `server_view.dart` são aspas duplas dentro
+    // de um `'''` de exemplo de `curl`, classificados `DADO`, e o teto conta só
+    // texto; a sonda registra por que eles ficam.
+    final repetidos = <String>[];
+    for (final f in telas()) {
+      final src = f.readAsStringSync();
+      final re = RegExp("\\'([^\\'\\n]{2,240})\\'|\"([^\"\\n]{2,240})\"");
+      final vistos = <int>{};
+      // `fim` -> o texto do achado que chegou nele. Dois achados com o mesmo `fim`
+      // leram o mesmo trecho do fonte, e um é um fragmento do outro.
+      final fins = <int, String>{};
+      for (final m in re.allMatches(src)) {
+        if (!vistos.add(m.start)) continue;
+        final inicios = <int>[];
+        final (joined, fim) =
+            TextLanguage.juntarSegmentos(src, m.start, inicios: inicios);
+        if (joined.isEmpty) continue;
+        vistos.addAll(inicios);
+        vistos.add(fim);
+        final antes = fins[fim];
+        if (antes == null) {
+          fins[fim] = joined;
+          continue;
+        }
+        // **Só o que é texto de tela reprova.** Os 4 de `server_view.dart` são
+        // exemplo de HTTP e Python dentro de `'''`, e o teste não pode exigir
+        // que o scanner entenda interpolação raw para contar uma dívida que
+        // ele não está contando.
+        if (!TextLanguage.eTextoDeTela(joined, src, m.start)) continue;
+        repetidos
+            .add('${f.path}:${src.substring(0, m.start).split('\n').length}'
+                '  "$joined"\n    repetindo "$antes"');
+      }
+    }
+    expect(repetidos, isEmpty,
+        reason: 'a varredura ampla reportou o mesmo literal mais de uma vez, e '
+            'cada uma das cópias é um fragmento que não é traduzível:\n'
+            '  ${repetidos.join('\n  ')}');
   });
 
   test('a lista notText não engole telas inteiras', () {

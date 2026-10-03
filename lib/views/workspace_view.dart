@@ -16,7 +16,7 @@ class WorkspaceView extends GetView<WorkspaceService> {
         actions: [
           IconButton(
             icon: const Icon(Icons.folder_open),
-            tooltip: 'Back to projects',
+            tooltip: 'ws_back_to_projects'.tr,
             onPressed: () {
               Get.dialog<void>(
                 _ProjectListDialog(),
@@ -25,7 +25,7 @@ class WorkspaceView extends GetView<WorkspaceService> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: 'ws_refresh'.tr,
             onPressed: () => controller.refresh(),
           ),
         ],

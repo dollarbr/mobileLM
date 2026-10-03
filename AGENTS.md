@@ -195,7 +195,7 @@ minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é 
 **inglês como padrão**. A frase sai verdadeira — *antes não existia escolha de
 idioma*: era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência
 medida foram 62 fichas de modelo em inglês numa tela que se dizia portuguesa.
-Agora existem **658 chaves nos dois idiomas** e uma ficha por modelo em cada um.
+Agora existem **674 chaves nos dois idiomas** e uma ficha por modelo em cada um.
 Isto está em "O idioma é escolhido, e o padrão é inglês".
 
 Não é minor "traduzir o app para inglês": a 0.5.1 já tinha metade das chaves
@@ -450,7 +450,7 @@ Quatro decisões que não são óbvias:
 1. **O padrão é `en`, não `auto`.** O GetX devolve a própria chave para uma
    tradução que não existe, e foi assim que 38 chaves apareceram como
    `tool_round_trips` e `mobile_lm` sem nada lançar. Um idioma sem mapa inteiro
-   renderiza 658 identificadores. `LanguagePreference.padrao` tem um teste que
+   renderiza 674 identificadores. `LanguagePreference.padrao` tem um teste que
    falha se virar `auto`.
 2. **O `fallbackLocale` é `en_US`, não `pt_BR`.** Com o fallback em português, uma
    chave que faltasse em inglês aparecia *traduzida* e ninguém notava que faltava.
@@ -573,11 +573,15 @@ Os números que saem:
 | varredura | total | de que é |
 |---|---|---|
 | estreita | **0** | nada sobrou reescrevível |
-| ampla | **611** | **257 de texto de tela**, 354 de identificador, dado, rota, exemplo e comentário |
+| ampla | **526** | **205 de texto de tela**, 321 de identificador, dado, rota, exemplo e comentário |
 
-**Os 258 são o item 3e, e só apareceram porque um bug de regex foi corrigido** —
+**Os 205 são o item 3e, e só apareceram porque um bug de regex foi corrigido** —
 antes deles a mesma varredura reportava **zero**. A seção "O bug que escondeu 263
-textos" está abaixo e vale mais que o número.
+textos" está abaixo e vale mais que o número. E eles já foram **257**: a seção
+"O `vuntarSegmentos` resolveu o primeiro segmento e não os do meio" diz por que
+45 deles nunca foram dívida. Subiram para **252** quando a lista de palavras foi
+alargada por uma sonda, e desceram para 205 depois das duas correções que a seção
+"O `@ramGB` que pintava uma tela vermelha" descreve.
 
 **`lib/controllers` entrou porque o A72 mostrou `DOWNLOADED` numa tela em
 português.** O título da seção do catálogo é texto de tela e vivia no controller,
@@ -597,19 +601,19 @@ pinta `section.label.toUpperCase()`.
 nome do formato e o do repositório de origem, e traduzi-los diria algo diferente
 do que o arquivo é.
 
-**O teto da varredura ampla é 257, não zero, e a escolha é deliberada.** Um teto
-em zero com 257 linhas reais seria um teste que passa pelo motivo errado — a mesma
+**O teto da varredura ampla é 205, não zero, e a escolha é deliberada.** Um teto
+em zero com 205 linhas reais seria um teste que passa pelo motivo errado — a mesma
 falha do teto alto. **A trava estreita continua em zero**, e é a que protege o
 que a máquina reescreve.
 
-**Os 356 da ampla não se traduzem, e a lista diz por quê.** `TextLanguage.naoTexto`
-tem 34 entradas, cada uma com o motivo: `'local'` é identificador de runtime
-comparado com `==`, `json['loaded']` é chave de payload, `frequency.startsWith(
-'every')` é comparação, `'List models'` é chave de exemplo JSON, `'# 202, then
-poll …'` é comentário de shell. **Traduzir qualquer um deles muda comportamento
-sem erro nenhum** — o item some da lista, o acesso devolve `null` e o `??` cobre.
-Uma lista de exclusão sem motivo é uma lista que ninguém confere, e o efeito é
-o oposto do pretendido.
+**Os 321 da ampla não se traduzem, e a lista diz por quê.**
+`TextLanguage.naoTexto` tem 50 entradas, cada uma com o motivo: `'local'` é
+identificador de runtime comparado com `==`, `json['loaded']` é chave de payload,
+`frequency.startsWith('every')` é comparação, `'List models'` é chave de exemplo
+JSON, `'# 202, then poll …'` é comentário de shell. **Traduzir qualquer um deles
+muda comportamento sem erro nenhum** — o item some da lista, o acesso devolve
+`null` e o `??` cobre. Uma lista de exclusão sem motivo é uma lista que ninguém
+confere, e o efeito é o oposto do pretendido.
 
 Cinco regras de contexto, cada uma com forma própria de detecção: **dentro de
 comentário** (`//` no começo da linha), **dentro de exemplo de comando** (`curl `,
@@ -659,12 +663,50 @@ sexta vez que o número esteve errado. A tabela:
 | **`lib/controllers` na lista de diretórios** | `DOWNLOADED` em português, teto em zero |
 | **a letra `n` na classe do regex** | 263 textos de tela com o teto em zero |
 | a janela de 90 caracteres | as mensagens de aviso mais longas |
+| **os inicios do meio de um literal adjacente** | **45 fragmentos no teto, que era 257 e é 212** |
+| **`${…}` julgado como idioma** | **36 falsos positivos: `DateTime.now()` é `now`** |
+| **palavras medidas fora da lista** | **10 textos que nenhuma das duas varreduras contava** |
 
-**A lição que vale para as sete**: uma lista do que a trava mede é uma
+**A lição que vale para as dez**: uma lista do que a trava mede é uma
 **afirmação**, e uma afirmação não se prova sozinha. Cada uma delas só apareceu
 por causa externa — o `dump` do aparelho, ou a lista de palavras alargada por um
 motivo completamente diferente. A defesa não é revisar a lista com cuidado, é
 **ter um teste que conte o que está do outro lado**.
+
+⚠️ **A oitava linha é de uma família diferente das outras sete, e é por isso
+que ela custou mais para achar.** As sete são **ausência** — uma pasta, um
+parâmetro, uma letra na classe do regex. Ausência se nota, porque o que falta
+aparece. A oitava é **repetição**, e **repetição não denuncia**: nada está
+faltando, o contador só contou a mesma coisa duas vezes, e o resultado é um teto
+maior que o necessário — que é a falha mais difícil de ver deste arquivo inteiro,
+porque um teto alto parece conservative e não errado.
+
+⚠️ **A nona linha inverte o sinal, e é a única que é um falso positivo.** As oito
+anteriores medem de menos; esta media **a mais**, e a defesa é a mesma pergunta
+com o sinal trocado: **o que a trava está contando que não é texto?** O caso é
+`DateTime.now()`: `now` é palavra da lista, o `${…}` é código, e
+`'mobilelm_${DateTime.now()…}.png'` — o nome do arquivo temporário do
+compartilhamento de imagem — entrava como texto de tela em inglês. **36 entradas**,
+todas com a mesma forma. `pareceInglesAmplo` remove a interpolação antes de
+julgar, que é a mesma regra que a trava dos interpolados já usava.
+
+⚠️ **A décima é a mais quieta de todas, porque o sintoma é um teto em zero que
+está certo.** As 27 palavras medidas (`show`, `back`, `copy`, `benchmark`,
+`clear`, `name`…) expuseram **10 textos que estavam em inglês na tela desde
+sempre** e que nenhuma das duas varreduras contava: `Copy important logs`,
+`Clear logs`, `Show it anyway`, `Provider name`, `Base URL`, `Projector`, `Turn
+off anyway`, `CPU benchmark`, `Back to projects`, `New project name` — mais o
+literal interpolado `Available: …GB · Context: …` de Configurações. **Um detector
+que não conhece a palavra não denuncia o texto**, e nenhuma das três travas pode
+acusar o que elas não veem. A defesa é a sonda: `tool/word_list_probe.dart` julga
+a lista pelo lado que falha — texto de tela que ela **deveria** ver e não vê.
+
+**A defesa da oitava também é diferente, e é uma pergunta que nenhuma das outras
+sete exigiu: quantas vezes a mesma posição é medida?** Detalhar o que a trava mede
+não responde isso — as duas contas podem estar certas e ainda assim somar a mesma
+frase duas vezes. Está em `test/inline_english_ratchet_test.dart`, com o nome de
+`a varredura ampla não conta o mesmo literal duas vezes`, e em
+`tool/dup_probe.dart` como a medição que deu 87 grupos e 155 inicios extras.
 
 #### `juntarSegmentos` passou a ser do módulo compartilhado
 
@@ -684,8 +726,107 @@ em `model_controller.dart` suprime o literal que começa na **mesma posição
 numérica** de `server_view.dart`: os arquivos têm comprimentos diferentes e as
 posições não significam nada entre eles. A contagem ficava 12 abaixo, e a
 ferramenta — que declara o conjunto dentro de `_varre` — dizia 258. Um número
-menor não é um número errado que se vê; é um que parececerto e protege menos do
+menor não é um número errado que se vê; é um que parece certo e protege menos do
 que parece.
+
+#### O `juntarSegmentos` resolveu o primeiro segmento e não os do meio
+
+Com ele a contagem foi para **257**, e **45 deles nunca foram dívida**. O
+`vistos` marcava `m.start` e o `fim` da cadeia — e um literal adjacente de quatro
+linhas tem **três inicios no meio**, que passavam por `vistos.add` sem estar lá
+dentro. Cada um deles **reconstruía a mesma frase sem o primeiro segmento**:
+
+```dart
+? 'Downloads the 230M model and runs it in '
+    'CPU Safe mode, then reports your real '   // ← contada como achado próprio
+    'tok/s. Nothing is downloaded or run '
+    'until you tap.'
+```
+
+`'CPU Safe mode, then reports your real tok/s. Nothing is downloaded or run
+until you tap.'` estava na lista como pendência, e não é traduzível: a frase
+completa começa no segmento de cima, e é ela que a tela mostra. Traduzir o
+fragmento apagaria o resto da frase.
+
+**`juntarSegmentos` recebe agora `inicios:` e devolve quais posições consumiu.**
+Os dois chamadores marcam todos, e o teto passou de 257 para **212**. `tool/
+dup_probe.dart` é a medição — 87 grupos, 155 inicios extras — e ela espelha o
+`vistos` da ferramenta **letra por letra**, porque uma sonda com lógica própria de
+deduplicação mede a si mesma.
+
+**Um literal aninhado não é repetição, e a distinção é o que segura o teste.**
+`'${x ? '' : ' '}'` tem dois literais dentro de um terceiro e sempre vai ter: os
+três alcançam o mesmo `fim`, mas **só um** passa pelo `vistos`. O que o teste
+proíbe é dois **achados** com o mesmo `fim`. Sobram **4** em `server_view.dart` —
+aspas duplas dentro de um `'''` de exemplo de `curl`, que o regex vê e o
+`juntarSegmentos` atravessa — e os quatro são `DADO`, então não entram no teto,
+que conta só texto. Fechar os 4 exige saber que a interpolação raw começou num
+`'''`, que o regex não vê; a sonda registra por que eles ficam.
+
+#### A nona omissão: `${…}` é código, e `DateTime.now()` é `now`
+
+`pareceInglesAmplo` julgava o literal **inteiro**, interpolação inclusive, e
+`now` é palavra da lista. Então `'mobilelm_${DateTime.now()…}.png'` — o nome do
+arquivo temporário do compartilhamento de imagem — entrava como **texto de tela em
+inglês**, junto com `$name`, `$filename`, `$e` e cia. **36 entradas**, e nenhuma
+delas é dívida.
+
+É a **única** das dez omissões que é um falso positivo: as outras nove medem de
+menos, e esta media a mais. E o sintoma de um número alto é o mais difícil de ver
+deste arquivo inteiro, porque teto alto parece conservative.
+
+O conserto é `pareceInglesAmplo` chamar `tirarInterpolacoes` antes de julgar, que
+é a mesma regra que a trava dos interpolados já usava — o idioma é do **trecho
+fixo**, e o trecho fixo é o que vai para o mapa. Não é uma lista de exclusão nova
+para cada `${…}` que apareça: é a regra, e a regra não cresce.
+
+#### `Unknown size` era sentinela e texto ao mesmo tempo
+
+A mesma string estava em **dois papéis que não podem coexistir**:
+
+- `detectUrlSize` a devolve, o diálogo compara com `==`, e `AiModel.size` a guarda
+  no Hive. **Traduzir quebra a comparação**, e o sintoma não é um texto errado na
+  tela: é um `Unknown size` do runtime caindo na frase genérica de erro.
+- `Text(model.size)` a pinta, e o campo **é** o valor nos dois idiomas.
+
+Um literal solto não separa "comparei com isto" de "isto vai para a tela", e é essa
+separação que a varredura não conseguia fazer. `AppConstants.kUnknownSize` é o
+nome, e a tradução existe em **um** ponto de pintura. `hf_search_service` tem os
+dois getters pelo mesmo motivo — `sizeLabel` traduzido, `sizeValor` cru — e o
+diálogo de adicionar usa o segundo, porque é ele que vai para o Hive.
+
+**O campo de tamanho do diálogo ficou vazio em vez de escrito com um rótulo.** O
+campo é editável e o que está nele vira `AiModel.size` quando a pessoa confirma:
+escrever "Tamanho desconhecido" ali gravaria a tradução no Hive, e o card
+mostraria português num app configurado para inglês, para sempre. A linha de aviso
+logo abaixo é o que a pessoa precisa ler.
+
+#### O `@ramGB` que pintava uma tela vermelha
+
+O conserto acima jogou 16 chaves novas no mapa, e uma delas era
+`'Available: @ramGB · Context: @ctx · Tokens: @tok'`. O `preencher` lê
+`@([A-Za-z_][A-Za-z0-9_]*)`, e **`GB` colado no nome é parte do nome**: `@ramGB` é
+*um* placeholder, não `@ram` seguido de `GB`. A tradutora escreveu o que parece
+perfeito, porque `@ram` é o nome do valor e `GB` é a unidade, e a leitura humana
+faz a separação que o regex não pode fazer.
+
+O sintoma no aparelho foi o pior possível para um erro de texto: a `ArgumentError`
+de `preencher` **cai dentro do `build`**, e o Flutter troca o `Text` inteiro por um
+retângulo **vermelho** que ocupa a linha toda. O log dizia `a chave
+"set_device_budget" tem @ramGB sem valor`, e a tela dizia Configurações inteira
+vermelha — a leitura óbvia é "o app quebrou", não "faltou um espaço na tradução".
+
+**A regra: unidade, sufixo e pontuação vão FORA do placeholder.** `@ram GB`,
+`@ctx tokens`, `@n×` — nunca `@ramGB`. Sem o espaço não há como distinguir, e a
+distinção é o que o helper existe para fazer. O teste novo em
+`test/text_interpolation_test.dart` procura `@nome` com letra ou dígito colado em
+**todo** valor dos dois mapas.
+
+Isto é a décima omissão da lista de palavras em forma de **consequência**: as 27
+palavras medidas expuseram o literal interpolado que nenhuma das duas varreduras
+contava, e traduzi-lo **no mesmo dia** expôs o defeito do helper. Nenhum dos dois
+seria visível sozinho — o primeiro porque a lista era curta, o segundo porque o
+texto estava em inglês e portanto nunca tinha sido escrito como chave.
 
 #### O que a varredura ampla achou que não era texto
 
@@ -2164,7 +2305,7 @@ Os dois mudaram: o app agora fala **inglês por padrão** e o idioma é uma
 **preferência salva** com três opções. Ver "O idioma é escolhido, e o padrão é
 inglês" mais acima, que tem as quatro decisões que não são óbvias.
 
-- **Cobertura auditada, não estimada:** **658 chaves**, **as mesmas nos dois
+- **Cobertura auditada, não estimada:** **674 chaves**, **as mesmas nos dois
   idiomas**, e `test/l10n_keys_test.dart` (10 testes) falha se uma faltar em
   **qualquer** dos dois. Antes desta auditoria o mapa tinha 277 e **38 das chaves
   usadas não estavam nele** — `tool_round_trips` à vista num item de Configurações,

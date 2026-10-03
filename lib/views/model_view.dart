@@ -8,6 +8,7 @@ import '../controllers/model_controller.dart';
 import 'hf_search_sheet.dart';
 import '../controllers/settings_controller.dart';
 import '../core/colors.dart';
+import '../core/constants.dart';
 import '../models/ai_model.dart';
 import '../services/cpu_self_test.dart';
 import '../services/cpu_self_test_service.dart';
@@ -720,7 +721,7 @@ class ModelView extends GetView<ModelController> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text('Show it anyway',
+                  child: Text('mv_show_it_anyway'.tr,
                       style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -906,7 +907,16 @@ class ModelView extends GetView<ModelController> {
                         style: GoogleFonts.inter(
                             fontSize: 14, fontWeight: FontWeight.w600)),
                   ),
-                  Text(model.size,
+                  // **A sentinela entra guardada no Hive e sai pintada.** Um
+                  // modelo importado por URL sem cabeçalho tem `size` igual a
+                  // `kUnknownSize`, e `Text(model.size)` é onde esse valor
+                  // vira texto. É o único ponto de pintura da sentinela, e ele
+                  // existe porque o valor **é** o texto nos dois idiomas: sem
+                  // a checagem aqui, o cartão mostraria a string inglesa.
+                  Text(
+                      model.size == AppConstants.kUnknownSize
+                          ? 'mc_unknown_size'.tr
+                          : model.size,
                       style: GoogleFonts.inter(
                           fontSize: 11, color: Theme.of(ctx).hintColor)),
                 ]),
@@ -2215,22 +2225,22 @@ class ModelView extends GetView<ModelController> {
                 }),
                 TextField(
                   controller: cloud.customNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Provider name',
-                    prefixIcon: Icon(Icons.badge_outlined, size: 23),
-                    contentPadding:
-                        EdgeInsets.symmetric(vertical: 20, horizontal: 18),
+                  decoration: InputDecoration(
+                    labelText: 'mv_cloud_provider_name'.tr,
+                    prefixIcon: const Icon(Icons.badge_outlined, size: 23),
+                    contentPadding: const EdgeInsets.symmetric(
+                        vertical: 20, horizontal: 18),
                   ),
                 ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: cloud.customBaseUrlController,
-                  decoration: const InputDecoration(
-                    labelText: 'Base URL',
+                  decoration: InputDecoration(
+                    labelText: 'mv_cloud_base_url'.tr,
                     hintText: 'https://example.com/v1',
-                    prefixIcon: Icon(Icons.link, size: 23),
-                    contentPadding:
-                        EdgeInsets.symmetric(vertical: 20, horizontal: 18),
+                    prefixIcon: const Icon(Icons.link, size: 23),
+                    contentPadding: const EdgeInsets.symmetric(
+                        vertical: 20, horizontal: 18),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -3496,7 +3506,7 @@ class ModelView extends GetView<ModelController> {
                     _buildInlineDownloadProgress(
                       context,
                       model.mmprojFilename,
-                      label: 'Projector',
+                      label: 'mv_projector'.tr,
                     ),
                   ],
                 ],
@@ -3712,7 +3722,13 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
         _urlError.value =
             'Invalid URL format. Must start with http:// or https://';
         _urlWarning.value = '';
-        widget.sizeController.text = 'Unknown size';
+        // **O campo fica VAZIO, e não escrito com um rótulo.** Este campo é
+        // editável e o que está nele vai para `AiModel.size` quando o usuário
+        // confirma — escrever "Tamanho desconhecido" aqui gravaria a tradução no
+        // Hive, e o card passaria a exibir português num app em inglês, para
+        // sempre. `_submit` já troca campo vazio pela sentinela, e a linha de
+        // aviso logo abaixo é o que a pessoa precisa ler.
+        widget.sizeController.text = '';
         return;
       }
 
@@ -3721,17 +3737,17 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
       widget.isDetecting.value = true;
       try {
         final sizeLabel = await widget.modelController.detectUrlSize(url);
-        if (sizeLabel == 'Unknown size') {
+        if (sizeLabel == AppConstants.kUnknownSize) {
           _urlWarning.value =
               'Could not resolve file size. Ensure the URL is accessible.';
-          widget.sizeController.text = 'Unknown size';
+          widget.sizeController.text = '';
         } else {
           _urlWarning.value = '';
           widget.sizeController.text = sizeLabel;
         }
       } catch (e) {
         _urlWarning.value = 'Could not resolve file size: $e';
-        widget.sizeController.text = 'Unknown size';
+        widget.sizeController.text = '';
       } finally {
         widget.isDetecting.value = false;
       }
@@ -3744,17 +3760,17 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
     widget.isDetecting.value = true;
     try {
       final sizeLabel = await widget.modelController.detectUrlSize(url);
-      if (sizeLabel == 'Unknown size') {
+      if (sizeLabel == AppConstants.kUnknownSize) {
         _urlWarning.value =
             'Could not resolve file size. Ensure the URL is accessible.';
-        widget.sizeController.text = 'Unknown size';
+        widget.sizeController.text = '';
       } else {
         _urlWarning.value = '';
         widget.sizeController.text = sizeLabel;
       }
     } catch (e) {
       _urlWarning.value = 'Could not resolve file size: $e';
-      widget.sizeController.text = 'Unknown size';
+      widget.sizeController.text = '';
     } finally {
       widget.isDetecting.value = false;
     }
@@ -3784,7 +3800,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
       url: url,
       filename: widget.filenameController.text,
       size: widget.sizeController.text.isEmpty
-          ? 'Unknown size'
+          ? AppConstants.kUnknownSize
           : widget.sizeController.text,
       description: 'mv_added_custom_url'.tr,
       template: widget.templateController.text,

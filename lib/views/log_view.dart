@@ -53,12 +53,12 @@ class LogView extends StatelessWidget {
             style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
-            tooltip: 'Copy important logs',
+            tooltip: 'log_copy_important'.tr,
             icon: Icon(Icons.copy_rounded,
                 size: 20, color: Theme.of(context).hintColor),
             onPressed: () async {
               await logs.copyImportantLogs();
-              Get.snackbar('Copied', 'Important logs copied to clipboard.',
+              Get.snackbar('log_copied'.tr, 'log_copied_detail'.tr,
                   snackPosition: SnackPosition.BOTTOM);
             },
           ),
@@ -78,7 +78,7 @@ class LogView extends StatelessWidget {
             },
           ),
           IconButton(
-            tooltip: 'Clear logs',
+            tooltip: 'log_clear'.tr,
             icon: Icon(Icons.delete_outline_rounded,
                 size: 20, color: Theme.of(context).hintColor),
             onPressed: logs.clear,

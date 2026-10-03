@@ -189,6 +189,23 @@ class AppConstants {
   /// states it, because .litertlm headers carry no context field of their own.
   static const int liteRtContextCap = 4096;
 
+  /// A sentinela de "o tamanho não se resolve", e **o valor é uma string em
+  /// inglês de propósito**.
+  ///
+  /// Ela viaja por três caminhos que são comparação, não pintura:
+  /// `detectUrlSize` a devolve, quem chama compara com `==`, e `AiModel.size`
+  /// a guarda no Hive. Traduzir a string faria a comparação parar de casar, e o
+  /// sintoma não seria um texto errado na tela — seria um `Unknown size` do
+  /// runtime caindo na frase de erro genérica.
+  ///
+  /// **O valor continua sendo pintado em um lugar só**, e é por isso que a
+  /// sentinela é nomeada em vez de o texto ser traduzido: `Text(model.size)`
+  /// precisa dizer alguma coisa quando o campo é este, e o campo **é** o valor.
+  /// Um literal solto não separa "comparei com isto" de "isto vai para a tela",
+  /// e é essa separação que a varredura de texto de tela não conseguia fazer.
+  /// Ver `mv_size_unknown` no mapa de tradução, que é o único ponto de pintura.
+  static const String kUnknownSize = 'Unknown size';
+
   /// 'auto' leaves the model to its own habits; 'on'/'off' send the soft switch.
   static const String defaultThinkingMode = 'auto';
 

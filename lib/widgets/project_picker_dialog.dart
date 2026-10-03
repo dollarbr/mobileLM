@@ -66,10 +66,10 @@ class _ProjectPickerDialogState extends State<_ProjectPickerDialog> {
               const Divider(),
               TextField(
                 controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'New project name',
-                  hintText: 'e.g. my-website',
-                  prefixIcon: Icon(Icons.create_new_folder),
+                decoration: InputDecoration(
+                  labelText: 'pp_new_project_name'.tr,
+                  hintText: 'pp_name_hint'.tr,
+                  prefixIcon: const Icon(Icons.create_new_folder),
                 ),
                 onSubmitted: (_) => _createProject(context),
               ),

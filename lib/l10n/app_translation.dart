@@ -104,6 +104,37 @@ class AppTranslation extends Translations {
       'mc_model_already_imported': 'A model file named "@f" is already imported in your local app '
           'storage. Want to load the copy that is already there?',
       'mc_restart_recommended': 'Restart recommended',
+      'mc_unknown_size': 'Unknown size',
+      // ── o que o alargamento da lista de palavras expôs ──
+      // A lista de `TextLanguage.englishWords` cresceu 27 palavras medidas, e
+      // isso expôs texto que estava em inglês na tela desde sempre **e fora do
+      // alcance das duas varreduras**: `show`, `back`, `copy`, `benchmark` e
+      // `clear` não estavam na lista, então estes catorze literais não eram
+      // contados por nada. Um detector que não conhece a palavra não denuncia
+      // o texto — e nenhuma das três travas pode acusar o que elas não veem.
+      'log_copy_important': 'Copy important logs',
+      'log_clear': 'Clear logs',
+      'log_copied': 'Copied',
+      'log_copied_detail': 'Important logs copied to clipboard.',
+      'ws_back_to_projects': 'Back to projects',
+      'ws_refresh': 'Refresh',
+      'pp_new_project_name': 'New project name',
+      'pp_name_hint': 'e.g. my-website',
+      'set_cpu_benchmark': 'CPU benchmark',
+      // **A única interpolada das 16, e substituiu um literal com `${…}`** que a
+      // trava dos interpolados não via porque `available` não estava na lista.
+      //
+      // **O espaço em `@ram GB` é o que segura a tela, e o teste novo prova.** O
+      // regex de `preencher` lê `@ramGB` como *um* placeholder, a chamada não tem
+      // valor para ele, e a `ArgumentError` cai dentro do `build` — o Flutter
+      // troca o `Text` por um retângulo vermelho que ocupa a linha toda. Unidade
+      // e pontuação vão sempre FORA do placeholder.
+      'set_device_budget': 'Available: @ram GB · Context: @ctx · Tokens: @tok',
+      'mv_show_it_anyway': 'Show it anyway',
+      'mv_cloud_provider_name': 'Provider name',
+      'mv_cloud_base_url': 'Base URL',
+      'mv_projector': 'Projector',
+      'sc_turn_off_anyway': 'Turn off anyway',
       'mc_load_model': 'Load model?',
       'mc_gpu_may_crash': 'GPU can make LiteRT models much faster, closer to Edge Gallery '
           'speed. On some phones GPU/OpenCL can crash the app while loading. '
@@ -848,6 +879,23 @@ class AppTranslation extends Translations {
       'mc_model_already_imported': 'Já existe um arquivo de modelo chamado "@f" importado no '
           'armazenamento local do app. Quer carregar a cópia que já está lá?',
       'mc_restart_recommended': 'Reinício recomendado',
+      'mc_unknown_size': 'Tamanho desconhecido',
+      'log_copy_important': 'Copiar logs importantes',
+      'log_clear': 'Limpar logs',
+      'log_copied': 'Copiado',
+      'log_copied_detail': 'Logs importantes copiados para a área de transferência.',
+      'ws_back_to_projects': 'Voltar aos projetos',
+      'ws_refresh': 'Atualizar',
+      'pp_new_project_name': 'Nome do novo projeto',
+      'pp_name_hint': 'ex.: meu-site',
+      'set_cpu_benchmark': 'Benchmark da CPU',
+      'set_device_budget':
+          'Disponível: @ram GB · Contexto: @ctx · Tokens: @tok',
+      'mv_show_it_anyway': 'Mostrar mesmo assim',
+      'mv_cloud_provider_name': 'Nome do provedor',
+      'mv_cloud_base_url': 'URL base',
+      'mv_projector': 'Projetor',
+      'sc_turn_off_anyway': 'Desligar mesmo assim',
       'mc_load_model': 'Carregar modelo?',
       'mc_gpu_may_crash': 'A GPU pode deixar os modelos LiteRT bem mais rápidos, perto da '
           'velocidade do Edge Gallery. Em alguns aparelhos a GPU/OpenCL pode '

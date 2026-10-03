@@ -5,6 +5,13 @@ import 'package:get/get.dart';
 import 'package:mobilelm/l10n/app_translation.dart';
 import 'package:mobilelm/services/text_interpolation.dart';
 
+/// Um mapa do `AppTranslation` por idioma.
+///
+/// `AppTranslation().keys` é `Map<idioma, Map<chave, texto>>`, e o índice é a
+/// única forma de ler um idioma sem o outro — o teste de cobertura já registra
+/// que a lista **mesclada** devolveria o `pt_BR` para as chaves dos dois.
+Map<String, String> _mapa(String lang) => AppTranslation().keys[lang]!;
+
 /// A interpolação é a única classe de texto que a varredura **recusa** de
 /// propósito, e "recusa" não é o mesmo que "coberta".
 ///
@@ -62,6 +69,58 @@ void main() {
           preencher('mv_memory_free', {'f': 'a@b', 't': '1'}), 'a@b free of 1');
       final t = preencher('mv_delete_filename', {'f': 'meu@model.gguf'});
       expect(t, 'meu@model.gguf will be permanently removed from this device.');
+    });
+
+    test(
+        'todo @nome do mapa tem valor em toda chamada, ou a tela fica vermelha',
+        () {
+      // **Este teste existe por causa do `@ramGB`, e a forma do defeito é
+      // diferente da de todos os outros deste arquivo.**
+      //
+      // `preencher` lê `@([A-Za-z_][A-Za-z0-9_]*)`, e `GB` colado no nome é
+      // parte do nome: `@ramGB` é *um* placeholder, não `@ram` seguido de
+      // `GB`. A tradutora escreveu `'Available: @ramGB · …'` — que parece
+      // perfeito, porque `@ram` é o nome do valor e `GB` é a unidade, e a
+      // leitura humana faz a separação que o regex não pode fazer.
+      //
+      // O sintoma no aparelho foi o pior possível para um erro de texto: a
+      // `ArgumentError` de [preencher] **cai dentro do `build`**, e o Flutter
+      // troca o `Text` inteiro por um retângulo **vermelho** que ocupa a linha
+      // toda. O log dizia `a chave "set_device_budget" tem @ramGB sem valor`, e
+      // a tela dizia Configurações inteira vermelha — a leitura óbvia é "o app
+      // quebrou", não "faltou um espaço na tradução".
+      //
+      // **A defesa é o espaço, e a regra é:** unidade, sufixo e pontuação vão
+      // **fora** do placeholder. `@ram GB`, `@ctx tokens`, `@n×` — nunca
+      // `@ramGB`. Sem o espaço não há como distinguir, e a distinção é o que
+      // o helper inteiro existe para fazer.
+      for (final lang in const ['en_US', 'pt_BR']) {
+        final mapa = _mapa(lang);
+        final colados = <String>[];
+        for (final entrada in mapa.entries) {
+          final re = RegExp(r'@[A-Za-z_][A-Za-z0-9_]*[A-Z0-9]');
+          for (final m in re.allMatches(entrada.value)) {
+            colados.add('$lang  ${entrada.key}  "${m.group(0)}"');
+          }
+        }
+        expect(colados, isEmpty,
+            reason: 'placeholder com letra ou dígito colado depois. O regex de '
+                '`preencher` lê "@ramGB" como UM nome, e a chamada não tem '
+                'valor para ele: a `ArgumentError` cai dentro do build e a '
+                'tela fica com um retângulo vermelho no lugar do texto. Ponha '
+                'o espaço — "@ram GB".\n  ${colados.join('\n  ')}');
+      }
+      // **E o caso que está certo continua funcionando**, para o teste não
+      // passar por não rodar nada.
+      expect(
+          preencher('set_device_budget',
+              {'ram': '1.2', 'ctx': '2048', 'tok': '1024'}),
+          contains('1.2 GB'));
+      Get.locale = const Locale('pt', 'BR');
+      expect(
+          preencher('set_device_budget',
+              {'ram': '1.2', 'ctx': '2048', 'tok': '1024'}),
+          'Disponível: 1.2 GB · Contexto: 2048 · Tokens: 1024');
     });
 
     test('uma chave que não existe devolve a própria chave, e não @algo', () {

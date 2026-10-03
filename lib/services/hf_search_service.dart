@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:get/get.dart';
+
+import '../core/constants.dart';
 
 /// One repository as it comes back from a Hugging Face search.
 class HfRepo {
@@ -38,7 +41,11 @@ class HfProjector {
 
   String get filename => path.split('/').last;
   String get url => 'https://huggingface.co/$repoId/resolve/main/$path';
-  String get sizeLabel => _formatBytes(sizeBytes);
+
+  /// Traduzido, como [HfFile.sizeLabel]. O projetor não vai para
+  /// `AiModel.size` — ele tem o próprio campo `mmprojFilename` — então aqui
+  /// basta o rótulo de tela.
+  String get sizeLabel => _rotulo(_formatBytes(sizeBytes));
   String get quant => _quantOf(filename);
 }
 
@@ -83,12 +90,35 @@ class HfFile {
   /// when the name does not follow the convention.
   String get quant => _quantOf(filename);
 
-  String get sizeLabel => _formatBytes(sizeBytes);
+  /// O rótulo como a pessoa lê, **traduzido**.
+  ///
+  /// É getter e não constante porque `.tr` é método de runtime sobre o locale
+  /// atual: um `static const` congelaria a língua do boot, que não é a que a
+  /// pessoa escolheu.
+  String get sizeLabel => _rotulo(_formatBytes(sizeBytes));
+
+  /// O mesmo rótulo **sem traduzir**, para o valor que vai para `AiModel.size`.
+  ///
+  /// A distinção existe porque [AppConstants.kUnknownSize] é uma sentinela
+  /// guardada no Hive e comparada com `==`, e a ficha do modelo importado por
+  /// aqui a recebe como valor. Passar a tradução nesse caminho gravaria
+  /// português num app configurado para inglês, para sempre.
+  String get sizeValor => _formatBytes(sizeBytes);
 
   /// Weights plus [projector], which is what the download actually costs.
   String totalSizeLabel([HfProjector? projector]) =>
-      _formatBytes(sizeBytes + (projector?.sizeBytes ?? 0));
+      _rotulo(_formatBytes(sizeBytes + (projector?.sizeBytes ?? 0)));
 }
+
+/// Traduz o rótulo de tamanho, e só ele.
+///
+/// O único valor que precisa de tradução é a sentinela — `1.2 GB` é o mesmo
+/// texto nos dois idiomas. A checagem é por igualdade com a constante e não por
+/// lista, porque **a sentinela é o valor que o campo guarda** e trocar a
+/// comparação por uma heurística seria trocar uma comparação exata por uma
+/// adivinhação.
+String _rotulo(String formatado) =>
+    formatado == AppConstants.kUnknownSize ? 'mc_unknown_size'.tr : formatado;
 
 /// The marker can sit on the repo or on any file inside it, so both are read.
 bool _repoIsQuantAware(Map<dynamic, dynamic> raw) {
@@ -110,7 +140,7 @@ String _quantOf(String filename) {
 }
 
 String _formatBytes(int bytes) {
-  if (bytes <= 0) return 'Unknown size';
+  if (bytes <= 0) return AppConstants.kUnknownSize;
   const gb = 1024 * 1024 * 1024;
   const mb = 1024 * 1024;
   if (bytes >= gb) return '${(bytes / gb).toStringAsFixed(2)} GB';

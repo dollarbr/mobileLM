@@ -107,9 +107,17 @@ List<_Achado> _varre(File f) {
     // **Junta os segmentos.** O regex casa um segmento por vez, e um literal
     // adjacente de três linhas vira três achados — metades de frase, que não são
     // traduzíveis porque a frase não está ali. `juntarSegmentos` devolve o valor
-    // real e **onde parou**.
-    final (joined, fim) = TextLanguage.juntarSegmentos(src, m.start);
+    // real, **onde parou** e **quais inicios consumiu**.
+    //
+    // **Os inicios do meio são o que fecha a sobreposição.** Marcar só `m.start`
+    // e o `fim` deixava passar os três do meio, e cada um deles reportava a
+    // mesma frase sem o primeiro segmento — 155 entradas em 87 grupos, nenhuma
+    // delas uma dívida real. Medido antes de corrigir; ver `juntarSegmentos`.
+    final inicios = <int>[];
+    final (joined, fim) =
+        TextLanguage.juntarSegmentos(src, m.start, inicios: inicios);
     if (joined.isEmpty) continue;
+    vistos.addAll(inicios);
     vistos.add(fim);
     final texto = joined.trim();
     // O mesmo piso de tamanho que a trava usa. Sem ele as duas contam coisas

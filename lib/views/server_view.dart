@@ -559,7 +559,7 @@ class ServerView extends GetView<ServerController> {
               foregroundColor: Theme.of(context).colorScheme.onError,
             ),
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Turn off anyway'),
+            child: Text('sc_turn_off_anyway'.tr),
           ),
         ],
       ),

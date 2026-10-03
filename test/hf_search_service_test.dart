@@ -1,8 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' show Locale;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get/get.dart';
+import 'package:mobilelm/core/constants.dart';
+import 'package:mobilelm/l10n/app_translation.dart';
 import 'package:mobilelm/services/hf_search_service.dart';
 
 /// Serves one canned JSON body so the parsing can be tested without network.
@@ -180,6 +184,53 @@ void main() {
     expect(small.totalSizeLabel(small.recommendedProjector), isNot('Unknown size'));
   });
 
+  group('o tamanho desconhecido é sentinela num caminho e texto no outro', () {
+    // **A distinção que este teste segura é a que o `size:` do diálogo de
+    // adicionar depende.** `sizeLabel` é o que a pessoa lê e vai traduzido;
+    // `sizeValor` é o que vai para `AiModel.size`, e esse campo é guardado no
+    // Hive e comparado com `kUnknownSize`. Se os dois fossem o mesmo getter, ou
+    // o valor seria a tradução — e o card de um modelo importado por aqui
+    // mostraria "Tamanho desconhecido" num app configurado para inglês, para
+    // sempre — ou o rótulo ficaria em inglês.
+    setUp(() {
+      Get.addTranslations(AppTranslation().keys);
+      Get.locale = const Locale('en', 'US');
+    });
+
+    final semTamanho = HfFile(
+      repoId: 'owner/repo',
+      path: 'sem-tamanho.gguf',
+      sizeBytes: 0,
+    );
+
+    test('sizeValor devolve a sentinela, nos dois idiomas', () {
+      expect(semTamanho.sizeValor, AppConstants.kUnknownSize);
+      Get.locale = const Locale('pt', 'BR');
+      // **O valor não muda com o idioma.** É o que a comparação `==` e o Hive
+      // esperam; se mudasse, a ficha já gravada deixaria de casar com a
+      // sentinela e o `Text` de unknown size nunca apareceria.
+      expect(semTamanho.sizeValor, AppConstants.kUnknownSize);
+    });
+
+    test('sizeLabel devolve o texto, e segue o idioma escolhido', () {
+      expect(semTamanho.sizeLabel, 'Unknown size');
+      Get.locale = const Locale('pt', 'BR');
+      expect(semTamanho.sizeLabel, 'Tamanho desconhecido');
+    });
+
+    test('um tamanho conhecido é o mesmo texto nos dois idiomas', () {
+      final comTamanho = HfFile(
+        repoId: 'owner/repo',
+        path: 'model.gguf',
+        sizeBytes: 1536 * 1024 * 1024,
+      );
+      expect(comTamanho.sizeLabel, '1.50 GB');
+      expect(comTamanho.sizeValor, '1.50 GB');
+      Get.locale = const Locale('pt', 'BR');
+      expect(comTamanho.sizeLabel, '1.50 GB');
+    });
+  });
+
   test('a repo with no projector reports none', () async {
     final service = _serving([
       {'type': 'file', 'path': 'plain-Q4_K_M.gguf', 'size': 400},
@@ -197,7 +248,8 @@ void _quantAwareTests() {
   group('quantisation-aware detection', () {
     test('catches the markers each vendor actually ships', () {
       // The marker sits on the repo for Google and on the file for Liquid.
-      expect(isQuantizationAware('google/gemma-4-E2B-it-qat-q4_0-gguf'), isTrue);
+      expect(
+          isQuantizationAware('google/gemma-4-E2B-it-qat-q4_0-gguf'), isTrue);
       expect(isQuantizationAware('LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf'), isTrue);
       expect(isQuantizationAware('bartowski/google_gemma-3-4b-it-qat-GGUF'),
           isTrue);

@@ -522,14 +522,33 @@ void main() {
     // do resultado ser lido, e apagava a edição. Desde então a provocação é
     // feita e conferida na mesma volta.
     test('a contagem de chaves é a que o catálogo tem hoje', () {
-      // 656 = 361 do que já existia + 139 literais de tela em telas
-      // secundárias (`tool/inline_english_scan.dart`) + 35 interpolados
-      // (`lib/services/text_interpolation.dart`) + 24 da varredura ampla em
-      // `views`/`widgets` + 53 do item 3d (`lib/controllers`) + 6 da tela do
-      // servidor e o aviso de limite de contexto. Este número já esteve errado
-      // seis vezes neste repo (45, 62, 10 encoders, 484, 522, 535), então o
-      // teste afirma em vez de descrever.
-      expect(en.length, 658);
+      // 674 = 658 do que já existia + **16 chaves desta rodada**.
+      //
+      // **Dez delas são o alargamento da lista de palavras expôs.** As 27
+      // palavras medidas (`show`, `back`, `copy`, `benchmark`, `clear`, `name`,
+      // `open`, `close`…) revelaram uma dívida que nenhuma das duas varreduras
+      // contava: `log_copy_important`, `log_clear`, `log_copied`,
+      // `log_copied_detail`, `ws_back_to_projects`, `ws_refresh`,
+      // `pp_new_project_name`, `pp_name_hint`, `set_cpu_benchmark`,
+      // `mv_show_it_anyway`, `mv_cloud_provider_name`, `mv_cloud_base_url`,
+      // `mv_projector`, `sc_turn_off_anyway` — 14 literais estreitos mais
+      // `set_device_budget`, que é interpolada.
+      //
+      // **As outras duas são a sentinela de tamanho.** `mc_unknown_size` é o
+      // texto do `kUnknownSize`, que viaja como valor comparado e guardado no
+      // Hive e só vira texto em um ponto de pintura. Antes disso, `Unknown size`
+      // estava nos dois papéis ao mesmo tempo e a varredura não conseguia
+      // distinguir: traduzir quebrava a comparação, não traduzir deixava
+      // inglês na tela.
+      //
+      // **`set_device_budget` substituiu um literal com `${…}`** que a trava dos
+      // interpolados não via porque `available` não estava na lista de palavras.
+      // É a **décima** omissão do ratchet e a primeira em que a lista de
+      // palavras — e não o alcance da varredura — é o que estava incompleto.
+      //
+      // Este número já esteve errado seis vezes neste repo (45, 62, 10 encoders,
+      // 484, 522, 535), então o teste afirma em vez de descrever.
+      expect(en.length, 674);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {
