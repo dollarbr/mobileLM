@@ -8,6 +8,7 @@ import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 import '../core/constants.dart';
 import '../services/app_log_service.dart';
+import '../services/text_interpolation.dart';
 import '../services/hive_service.dart';
 import '../services/inference_service.dart';
 import '../services/openai_server_service.dart';
@@ -21,7 +22,7 @@ class ServerController extends GetxController {
   final isRunning = false.obs;
   final isStarting = false.obs;
   final localUrl = RxnString();
-  final serverStatus = 'Server stopped'.obs;
+  final serverStatus = 'sc_stopped'.tr.obs;
   final lastError = RxnString();
 
   final useApiKey = false.obs;
@@ -200,14 +201,14 @@ class ServerController extends GetxController {
       final chosen = await findAvailablePort(configured + 1);
       serverPort.value = chosen;
       Get.snackbar(
-        'Port occupied',
-        'Port $configured is already in use. Server will run on $chosen.',
+        'sc_port_occupied'.tr,
+        preencher('sc_port_in_use', {'a': '$configured', 'b': '$chosen'}),
         snackPosition: SnackPosition.BOTTOM,
       );
     }
 
     isStarting.value = true;
-    serverStatus.value = 'Starting server...';
+    serverStatus.value = 'sc_starting'.tr;
 
     try {
       await _server.start(
@@ -217,15 +218,15 @@ class ServerController extends GetxController {
       );
       localUrl.value = _server.localUrl;
       isRunning.value = true;
-      serverStatus.value = 'Server running';
+      serverStatus.value = 'sc_running'.tr;
       // Persist the actual port used (might differ from user setting).
       await _hive.setSetting(
           AppConstants.keyServerPort, serverPort.value);
     } catch (e) {
       lastError.value = '$e';
-      serverStatus.value = 'Server failed';
+      serverStatus.value = 'sc_failed'.tr;
       Get.find<AppLogService>().error('API server failed', details: e);
-      Get.snackbar('Server failed', '$e');
+      Get.snackbar('sc_failed'.tr, '$e');
     } finally {
       isStarting.value = false;
     }
@@ -236,7 +237,7 @@ class ServerController extends GetxController {
     await _server.stop();
     isRunning.value = false;
     localUrl.value = null;
-    serverStatus.value = 'Server stopped';
+    serverStatus.value = 'sc_stopped'.tr;
   }
 
   Future<void> saveSettings() async {

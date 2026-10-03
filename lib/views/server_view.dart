@@ -59,16 +59,17 @@ class ServerView extends GetView<ServerController> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                           Text(
-                              isRunning
-                                  ? 'API Server Running'
-                                  : 'API Server Stopped',
+                              (isRunning
+                                      ? 'sc_title_running'
+                                      : 'sc_title_stopped')
+                                  .tr,
                               style: GoogleFonts.inter(
                                   fontSize: 15, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 2),
                           Text(
                               isRunning
                                   ? controller.serverStatus.value
-                                  : 'Expose your local model as an OpenAI API.',
+                                  : 'sc_subtitle_stopped'.tr,
                               style: GoogleFonts.inter(
                                   fontSize: 13,
                                   color: Theme.of(context).hintColor)),
@@ -133,7 +134,7 @@ class ServerView extends GetView<ServerController> {
             const SizedBox(height: 12),
 
             // Port
-            _sectionLabel(context, 'sv_port_label'.tr),
+            _sectionLabel(context, 'sv_port_label'),
             _groupedCard(isDark, children: [
               Padding(
                   padding: const EdgeInsets.all(14),
@@ -197,7 +198,7 @@ class ServerView extends GetView<ServerController> {
             const SizedBox(height: 12),
 
             // Security
-            _sectionLabel(context, 'SECURITY'),
+            _sectionLabel(context, 'sc_section_security'),
             _groupedCard(isDark, children: [
               _switchTile(isDark,
                   title: 'sv_require_api_key'.tr,
@@ -231,12 +232,12 @@ class ServerView extends GetView<ServerController> {
                     )),
                     const SizedBox(width: 6),
                     IconButton(
-                        tooltip: 'Generate',
+                        tooltip: 'sc_generate_key'.tr,
                         onPressed: controller.generateApiKey,
                         icon: Icon(Icons.auto_awesome_rounded,
                             size: 20, color: accent)),
                     IconButton(
-                        tooltip: 'Copy',
+                        tooltip: 'sc_copy'.tr,
                         onPressed: hasKey
                             ? () => controller.copyText(
                                 controller.apiKey.value, 'mv_api_key'.tr)
@@ -248,7 +249,7 @@ class ServerView extends GetView<ServerController> {
             const SizedBox(height: 12),
 
             if (isRunning) ...[
-              _sectionLabel(context, 'ENDPOINTS'),
+              _sectionLabel(context, 'sc_section_endpoints'),
               _groupedCard(isDark, children: [
                 Padding(
                     padding: const EdgeInsets.all(14),
@@ -292,7 +293,7 @@ class ServerView extends GetView<ServerController> {
                         ])),
               ]),
               const SizedBox(height: 12),
-              _sectionLabel(context, 'USAGE EXAMPLES'),
+              _sectionLabel(context, 'sc_section_examples'),
               _usageExamples(context, isDark, controller),
             ],
 
@@ -449,10 +450,24 @@ class ServerView extends GetView<ServerController> {
     );
   }
 
-  Widget _sectionLabel(BuildContext context, String title) {
+  /// Recebe uma **chave** e traduz aqui, como o `_sectionLabel` de
+  /// `settings_view.dart`.
+  ///
+  /// **Os dois helpers tinham o mesmo nome e contratos diferentes**, e era o que
+  /// quebrava: o de settings fazia `Text(chave.tr.toUpperCase())` e o daqui
+  /// `Text(title)` — ou seja, um recebia chave e o outro texto pronto. Passar
+  /// `'sc_section_security'` para o segundo renderizava **o identificador na
+  /// tela**, e nada reclamava: o `l10n_keys_test` só afirma que a chave existe
+  /// no mapa, e ela existia. A tela do servidor mostrou `sc_section_security`
+  /// onde deveria mostrar `SEGURANÇA`, e foi o `dump` do A72 que disse.
+  ///
+  /// Receber a chave é o contrato que não se esquece: quem escreve
+  /// `_sectionLabel(context, …)` não tem como passar texto sem `.tr` por acidente,
+  /// porque a tradução está dentro do helper.
+  Widget _sectionLabel(BuildContext context, String chave) {
     return Padding(
       padding: const EdgeInsets.only(left: 16, bottom: 6, top: 8),
-      child: Text(title,
+      child: Text(chave.tr,
           style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w400,
@@ -641,7 +656,7 @@ class ServerView extends GetView<ServerController> {
                   style: GoogleFonts.firaCode(
                       fontSize: 12, color: Theme.of(context).hintColor))),
           IconButton(
-              tooltip: 'Copy',
+              tooltip: 'sc_copy'.tr,
               onPressed: url == null
                   ? null
                   : () => controller.copyText(url, '$label URL'),
@@ -665,7 +680,7 @@ class ServerView extends GetView<ServerController> {
                   style: GoogleFonts.inter(
                       fontSize: 13, fontWeight: FontWeight.w600))),
           IconButton(
-              tooltip: 'Copy',
+              tooltip: 'sc_copy'.tr,
               onPressed: () => controller.copyText(code, title),
               icon: Icon(Icons.copy_outlined,
                   size: 16, color: Theme.of(context).hintColor)),

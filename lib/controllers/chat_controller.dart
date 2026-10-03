@@ -15,6 +15,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../services/agent_hops.dart';
+import '../services/text_interpolation.dart';
 import '../services/video_contact_sheet.dart';
 import '../services/video_frames_service.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1082,7 +1083,7 @@ class ChatController extends GetxController {
               AppConstants.defaultImageSteps;
           final sizeSetting = settings.imageGenSize.value;
           final sizeLabel =
-              sizeSetting == 0 ? 'Auto size' : '${sizeSetting}x$sizeSetting';
+              sizeSetting == 0 ? 'cc_auto_size'.tr : '${sizeSetting}x$sizeSetting';
           final backendLabel = localImage.currentBackend.value == Backend.cpu
               ? 'CPU'
               : localImage.currentBackend.value.displayName
@@ -1466,7 +1467,7 @@ class ChatController extends GetxController {
         id: _uuid.v4(),
         chatId: currentSessionId.value,
         role: 'assistant',
-        content: '❌ Error: $e',
+        content: preencher('cc_error_bubble', {'e': '$e'}),
       );
       messages.add(errorMsg);
       _hive.saveMessage(errorMsg.id, errorMsg.toMap());

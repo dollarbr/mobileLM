@@ -530,7 +530,7 @@ class ModelController extends GetxController {
 
   String _formatModelSize(String filename) {
     final bytes = fileSizes[filename] ?? 0;
-    if (bytes <= 0) return 'Local File';
+    if (bytes <= 0) return 'mc_local_file'.tr;
     return DownloadService.formatBytes(bytes);
   }
 
@@ -1016,7 +1016,7 @@ class ModelController extends GetxController {
         log.error('Backup: folder picker threw', details: '$e');
       }
       if (treeUri == null || treeUri.isEmpty) {
-        Get.snackbar('Backup', 'No folder selected',
+        Get.snackbar('mc_backup'.tr, 'mc_no_folder_selected'.tr,
             snackPosition: SnackPosition.BOTTOM);
         return;
       }
@@ -1124,13 +1124,12 @@ class ModelController extends GetxController {
         }
       }
       log.info('Backup done (settings/ + Vendor/Family tree)');
-      Get.snackbar('Backup',
-          'Saved: configs in settings/ + models in Vendor/Family folders',
+      Get.snackbar('mc_backup'.tr, 'mc_backup_saved'.tr,
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 5));
     } catch (e) {
       log.error('Backup failed', details: '$e');
-      Get.snackbar('Backup failed', '$e',
+      Get.snackbar('mc_backup_failed'.tr, '$e',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
     } finally {
@@ -1147,14 +1146,14 @@ class ModelController extends GetxController {
     try {
       final settingsCount = await _applyTemplateFile(File(path));
       if (settingsCount < 0) return; // user cancelled the overwrite dialog
-      Get.snackbar('Restore', 'Configs applied. Restart to fully reload.',
+      Get.snackbar('mc_restore'.tr, 'mc_restore_applied'.tr,
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
       final restart = await _askRestart();
       if (restart) await _download.restartApp();
     } catch (e) {
       Get.find<AppLogService>().error('Restore failed', details: '$e');
-      Get.snackbar('Restore failed', '$e',
+      Get.snackbar('mc_restore_failed'.tr, '$e',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
     }
@@ -1172,16 +1171,18 @@ class ModelController extends GetxController {
       if (settingsCount < 0) return; // user cancelled the overwrite dialog
       final restored = await restoreModelsFromBackup();
       Get.snackbar(
-          'Restore',
-          'Configs applied ($settingsCount value(s)) · '
-              '$restored model file(s) restored',
+          'mc_restore'.tr,
+          preencher('mc_restore_applied_count', {
+            's': '$settingsCount',
+            'm': '$restored',
+          }),
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
       final restart = await _askRestart();
       if (restart) await _download.restartApp();
     } catch (e) {
       log.error('Restore failed', details: '$e');
-      Get.snackbar('Restore failed', '$e',
+      Get.snackbar('mc_restore_failed'.tr, '$e',
           snackPosition: SnackPosition.BOTTOM,
           duration: const Duration(seconds: 6));
     }
@@ -1261,7 +1262,7 @@ class ModelController extends GetxController {
       return seen.add(name); // first hit wins on duplicate names
     }).toList();
     if (files.isEmpty) {
-      Get.snackbar('Restore', 'No model files found in the backup folder.',
+      Get.snackbar('mc_restore'.tr, 'mc_restore_no_files'.tr,
           snackPosition: SnackPosition.BOTTOM);
       return 0;
     }
@@ -1288,7 +1289,8 @@ class ModelController extends GetxController {
     }
     isBackingUp.value = false;
     await refreshDownloaded();
-    Get.snackbar('Restore', '$restored model file(s) restored',
+    Get.snackbar('mc_restore'.tr,
+        preencher('mc_restore_count', {'n': '$restored'}),
         snackPosition: SnackPosition.BOTTOM);
     return restored;
   }
@@ -1404,8 +1406,8 @@ class ModelController extends GetxController {
         availableModels.firstWhereOrNull((m) => m.filename == filename);
     if (_isAuxiliaryImageFile(filename)) {
       Get.snackbar(
-        'Helper File',
-        '$filename is used internally by image generation and cannot be loaded as a model.',
+        'mc_helper_file'.tr,
+        preencher('mc_helper_file_detail', {'f': filename}),
         snackPosition: SnackPosition.BOTTOM,
       );
       return;
@@ -1443,8 +1445,8 @@ class ModelController extends GetxController {
         details: '$filename failed safetensors header validation',
       );
       Get.snackbar(
-        'Corrupt Model File',
-        '$filename did not download correctly. Delete it and download again.',
+        'mc_corrupt_file'.tr,
+        preencher('mc_corrupt_detail', {'f': filename}),
         snackPosition: SnackPosition.BOTTOM,
         duration: const Duration(seconds: 6),
       );
@@ -1456,8 +1458,8 @@ class ModelController extends GetxController {
         details: '$filename failed LiteRT file validation; size=$fileBytes',
       );
       Get.snackbar(
-        'Corrupt Model File',
-        '$filename is not a valid LiteRT-LM file. Delete it and download again.',
+        'mc_corrupt_file'.tr,
+        preencher('mc_not_valid_litert', {'f': filename}),
         snackPosition: SnackPosition.BOTTOM,
         duration: const Duration(seconds: 6),
       );
@@ -1534,7 +1536,7 @@ class ModelController extends GetxController {
 
       final isError = !_localImage.isModelLoaded.value;
       Get.snackbar(
-        isError ? 'Model Not Loaded' : 'Image Model',
+        (isError ? 'mc_model_not_loaded' : 'mc_image_model').tr,
         result,
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: isError
@@ -1599,7 +1601,7 @@ class ModelController extends GetxController {
             ? false
             : (model == null ? false : isVisionModel(model));
         await _settings.setInferenceMode('local');
-        Get.snackbar('Model Loaded', result,
+        Get.snackbar('mc_model_loaded'.tr, result,
             snackPosition: SnackPosition.BOTTOM);
       } else {
         bool showDetails = false;
@@ -1685,7 +1687,7 @@ class ModelController extends GetxController {
                       if (result.toLowerCase().contains('litert') ||
                           filename.toLowerCase().endsWith('.litertlm'))
                         _buildTipRow(context, Icons.settings_suggest_rounded,
-                            'Double check if this LiteRT-LM file matches your architecture.'),
+                            'mc_check_arch'.tr),
                       const SizedBox(height: 12),
 
                       // Technical Details Toggle Button
@@ -1827,7 +1829,7 @@ class ModelController extends GetxController {
       case AiModel.runtimeLlama:
         return 'GGUF';
       default:
-        return 'local model';
+        return 'mc_runtime_local'.tr;
     }
   }
 
@@ -1972,8 +1974,9 @@ class ModelController extends GetxController {
               const SizedBox(height: 12),
               Text(
                 isSameModelLoaded
-                    ? 'This model is already loaded.'
-                    : 'Already loaded: $loadedName',
+                    ? 'mc_already_loaded'.tr
+                    : preencher(
+                        'mc_already_loaded_named', {'l': loadedName}),
               ),
               if (!isSameModelLoaded) Text('unload_before_loading_another'.tr),
             ],
@@ -2094,8 +2097,8 @@ class ModelController extends GetxController {
             );
             await unloadModel();
             Get.snackbar(
-              'Memory Optimized',
-              'Unloaded "$loadedName" to free memory for the new model.',
+              'mc_memory_optimized'.tr,
+              preencher('mc_memory_freed', {'l': loadedName}),
               snackPosition: SnackPosition.BOTTOM,
               backgroundColor: const Color(0xFFFF9500).withValues(alpha: 0.15),
               colorText: const Color(0xFFFF9500),
@@ -2216,8 +2219,8 @@ class ModelController extends GetxController {
     if (!server.isRunning.value) return;
     await server.stopServer();
     Get.snackbar(
-      'API server stopped',
-      'It serves the model that was just unloaded.',
+      'mc_api_server_stopped'.tr,
+      'mc_api_server_stopped_detail'.tr,
       snackPosition: SnackPosition.BOTTOM,
       duration: const Duration(seconds: 3),
     );
@@ -2268,7 +2271,7 @@ class ModelController extends GetxController {
                 ? 0
                 : await file.length();
         if (totalBytes <= 0) {
-          Get.snackbar('Import Failed', 'The selected file is empty.',
+          Get.snackbar('mc_import_failed'.tr, 'mc_import_empty'.tr,
               snackPosition: SnackPosition.BOTTOM);
           return;
         }
@@ -2276,7 +2279,7 @@ class ModelController extends GetxController {
         final sourceStream = picked.readStream ?? file?.openRead();
         if (sourceStream == null) {
           Get.snackbar(
-            'Import Failed',
+            'mc_import_failed'.tr,
             'Unable to read the selected file. Try selecting it from local storage.',
             snackPosition: SnackPosition.BOTTOM,
           );
@@ -2328,7 +2331,8 @@ class ModelController extends GetxController {
         }
       }
       Get.find<AppLogService>().error('Model import failed', details: e);
-      Get.snackbar('Import Failed', '$e', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('mc_import_failed'.tr, '$e',
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isImporting.value = false;
       importFileName.value = '';
@@ -2369,12 +2373,13 @@ class ModelController extends GetxController {
         'Android model import failed',
         details: '${e.code}: ${e.message}',
       );
-      Get.snackbar('Import Failed', e.message ?? e.code,
+      Get.snackbar('mc_import_failed'.tr, e.message ?? e.code,
           snackPosition: SnackPosition.BOTTOM);
     } catch (e) {
       Get.find<AppLogService>()
           .error('Android model import failed', details: e);
-      Get.snackbar('Import Failed', '$e', snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('mc_import_failed'.tr, '$e',
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isImporting.value = false;
       importFileName.value = '';

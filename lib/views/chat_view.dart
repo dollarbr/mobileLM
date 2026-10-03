@@ -893,7 +893,14 @@ class ChatView extends GetView<ChatController> {
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(
-                                'Image gen · $steps ${steps == 1 ? "step" : "steps"} · $sizeLabel · $backendLabel',
+                                preencher('chat_image_gen_line', {
+                                  's': '$steps',
+                                  'u': steps == 1
+                                      ? 'chat_image_gen_step'.tr
+                                      : 'chat_image_gen_steps'.tr,
+                                  'z': sizeLabel,
+                                  'b': backendLabel,
+                                }),
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.inter(
                                   fontSize: 11,

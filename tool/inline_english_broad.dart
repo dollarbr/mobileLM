@@ -80,11 +80,41 @@ List<_Achado> _varre(File f) {
   // escape. O sintoma de ambos é `the expression doesn't evaluate to a
   // function` em `re.allMatches`, **quatro linhas depois da causa**.
   //
-  // Uma string normal resolve, com `\\` na frente de cada aspa e de cada `n`.
-  final re = RegExp("\\'([^\\'\\\\n]{2,90})\\'|\"([^\"\\\\n]{2,90})\"");
+  // **A classe de caracteres estava errada, e era o bug maior de todos.**
+  // `[\'\\n]` num literal não-raw vira `[\'\\n]` no regex, que exclui a
+  // **letra `n`** — não a quebra de linha. Qualquer literal com `n` no meio
+  // nunca casava: `'Warning: values above 8192…'` tem um `n` em *Warning*, e
+  // ficava de fora. Não era um filtro de idioma — era um filtro de letra, e ele
+  // pegava `'Anúncio'` em português e `'Cancel'` em inglês pelo mesmo motivo.
+  //
+  // **A janela era de 90 e é de 240**, e pelo mesmo motivo: literal longo é
+  // exatamente prosa, que é o que fica em inglês numa tela traduzida. Duas
+  // mensagens de aviso de 122 caracteres ficaram de fora o tempo todo.
+  //
+  // Uma string normal resolve, com `\\` na frente de cada aspa e **uma** barra
+  // antes do `n`.
+  final re = RegExp("\\'([^\\'\\n]{2,240})\\'|\"([^\"\\n]{2,240})\"");
+  // `vistos` impede a mesma posição de ser contada duas vezes — uma vez pelo
+  // regex e outra porque o literal tem três segmentos. **É por arquivo**, e é por
+  // isso que vive dentro de `_varre`: com um conjunto único para os 27 arquivos,
+  // um índice de fim de segmento em `model_controller.dart` suprime o literal
+  // que começa na **mesma posição numérica** de `server_view.dart`, porque os
+  // arquivos têm comprimentos diferentes e as posições não significam nada entre
+  // eles. A contagem ficava 12 abaixo sem nenhuma das duas reclamar.
+  final vistos = <int>{};
   for (final m in re.allMatches(src)) {
-    final texto = (m.group(1) ?? m.group(2) ?? '').trim();
-    if (texto.isEmpty) continue;
+    if (!vistos.add(m.start)) continue;
+    // **Junta os segmentos.** O regex casa um segmento por vez, e um literal
+    // adjacente de três linhas vira três achados — metades de frase, que não são
+    // traduzíveis porque a frase não está ali. `juntarSegmentos` devolve o valor
+    // real e **onde parou**.
+    final (joined, fim) = TextLanguage.juntarSegmentos(src, m.start);
+    if (joined.isEmpty) continue;
+    vistos.add(fim);
+    final texto = joined.trim();
+    // O mesmo piso de tamanho que a trava usa. Sem ele as duas contam coisas
+    // diferentes, e a contagem de um que casa o outro é o que pega.
+    if (texto.length < 3) continue;
     if (!TextLanguage.pareceInglesAmplo(texto)) continue;
     // **Já é `.tr`?** O que vem depois da aspa é o que decide, e é o mesmo
     // critério da ferramenta estreita.

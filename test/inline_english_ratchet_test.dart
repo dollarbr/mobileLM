@@ -57,11 +57,35 @@ List<_Achado> broad() {
   // **Não é raw string, e a razão são as duas aspas.** `r'…'` fecha num `'`
   // interior e `r"…\"…"` fecha no `\"`, porque raw string não processa escape.
   // String normal resolve, com `\\` na frente de cada aspa e de cada `n`.
-  final re = RegExp("\\'([^\\'\\\\n]{2,90})\\'|\"([^\"\\\\n]{2,90})\"");
+  // **A classe de caracteres estava errada, e era o bug maior de todos.**
+  // `[\'\\n]` num literal não-raw vira `[\'\\n]` no regex, que exclui a **letra
+  // `n`** — não a quebra de linha. Qualquer literal com `n` no meio nunca casava,
+  // e `'Warning: values above 8192…'` tem um `n` em *Warning*. Não era um filtro
+  // de idioma: era um filtro de letra, e pegava `'Anúncio'` em português e
+  // `'Cancel'` em inglês pelo mesmo motivo.
+  //
+  // **A janela era de 90 e é de 240**, pelo mesmo motivo: literal longo é
+  // exatamente prosa, que é o que fica em inglês numa tela traduzida.
+  final re = RegExp("\\'([^\\'\\n]{2,240})\\'|\"([^\"\\n]{2,240})\"");
   for (final f in telas()) {
     final src = f.readAsStringSync();
+    // `vistos` é **por arquivo**, e esse é o detalhe. Com um conjunto só para
+    // tudo, um índice de fim de segmento em `model_controller.dart` suprime o
+    // literal que começa na **mesma posição numérica** de `server_view.dart`:
+    // os arquivos têm comprimentos diferentes e as posições não significam nada
+    // entre eles. A contagem ficava 12 abaixo, e a ferramenta — que declara o
+    // conjunto dentro de `_varre` — dizia 258. Um número menor não é um número
+    // errado que se vê; é um que parece certo e protege menos do que parece.
+    final vistos = <int>{};
     for (final m in re.allMatches(src)) {
-      final texto = (m.group(1) ?? m.group(2) ?? '').trim();
+      if (!vistos.add(m.start)) continue;
+      // **Os mesmos passos e a mesma função da ferramenta**, porque as duas têm
+      // que contar a mesma coisa: enquanto a ferramenta juntava segmentos e o
+      // teste não, os números divergiam sem nenhum dos dois reclamar.
+      final (joined, fim) = TextLanguage.juntarSegmentos(src, m.start);
+      if (joined.isEmpty) continue;
+      vistos.add(fim);
+      final texto = joined.trim();
       if (texto.length < 3) continue;
       if (!TextLanguage.pareceInglesAmplo(texto)) continue;
       // já é `.tr`? o que vem DEPOIS da aspa é o que decide.
@@ -404,28 +428,89 @@ void main() {
     // em zero com 61 linhas reais seria um teste que passa pelo motivo errado,
     // que é a mesma falha do teto alto. **Zero em views/widgets** está na
     // asserção seguinte, e é lá que ela não pode voltar.
-    const teto = 61;
+    // **257, e este número nasceu de um bug de regex, não de trabalho novo.**
+    //
+    // A varredura ampla reportava **zero** texto de tela com 263 textos em
+    // inglês na tela, porque a classe de caracteres do regex estava errada desde
+    // que a ferramenta foi escrita: ela excluía a **letra `n`** em vez da quebra
+    // de linha, então nenhum literal com `n` no meio casava. `'Warning: values
+    // above 8192…'` tem um `n` em *Warning*. Não era um filtro de idioma: era um
+    // filtro de letra, e pegava `'Anúncio'` em português e `'Cancel'` em inglês
+    // pelo mesmo motivo.
+    //
+    // **Os três sintomas eram o mesmo: a contagem batia.** Zero texto de tela,
+    // zero controller, zero chave faltando, `flutter test` verde. Um detector
+    // que não casa nada reporta a mesma coisa que um detector que não acha nada,
+    // e a única forma de saber qual é o dos é ter **um irmão que prova que ele
+    // ainda vê alguma coisa** — que é este teste.
+    //
+    // Corrigir a classe e subir a janela para 240 levou a 264, dos quais 12 eram
+    // fragmentos de literal adjacente: a varredura ampla não juntava segmentos,
+    // e o Dart concatena vizinhos em tempo de compilação, então
+    // `'know whether a local model is worth'` é a **segunda metade** de uma frase
+    // cuja primeira metade já é `.tr`. `TextLanguage.juntarSegmentos` é agora a
+    // implementação única, e as três ferramentas a chamam.
+    //
+    // **O que sobrou são 221 textos distintos** de `views`, `widgets` e
+    // `controllers` — rótulos, mensagens de `snackbar` e diálogo, e prosa de
+    // explicação. São tela, todos eles, e é o item 3e do `HANDOFF`.
+    const teto = 257;
     final texto = broad();
     expect(texto.length, lessThanOrEqualTo(teto),
-        reason:
-            'literal em inglês que é texto de tela. views e widgets estão em '
-            'zero; o que sobra é `lib/controllers`. A lista de não-texto é '
+        reason: 'literal em inglês que é texto de tela. A lista de não-texto é '
             '`TextLanguage.naoTexto`, com o motivo de cada entrada.\n'
             '${texto.length - teto} a mais que o teto:\n'
             '  ${texto.skip(teto).map((a) => '${a.onde}  ${a.texto}').join('\n  ')}');
-    expect(texto.where((a) => !a.onde.contains('/controllers/')), isEmpty,
-        reason: 'views e widgets estão em ZERO. Se um literal apareceu aí, é '
-            'regressão e não dívida — e a lista de diretórios é o que a trava '
-            'mede, então uma pasta a mais já é um teto que protege menos do que '
-            'parece.');
-    // **O irmão que prova que o filtro de não-texto ainda filtra alguma coisa.**
-    // Sem ele, uma lista de exclusão que passa a casar tudo zera os dois números
-    // e o teste passa pelo motivo errado.
-    expect(TextLanguage.naoTexto.length, greaterThan(15));
-    expect(TextLanguage.naoTexto.values.every((m) => m.length > 20), isTrue,
+    // **A lista de não-texto não pode crescer sem motivo novo.** Onze entradas
+    // têm um motivo porque a tradução as exigiu; uma decima segunda sem motivo é
+    // a exclusão que ninguém confere, e é o modo de falha que a lista existe
+    // para evitar.
+    expect(TextLanguage.naoTexto.length, greaterThan(30));
+    expect(TextLanguage.naoTexto.values.every((m) => m.length > 25), isTrue,
         reason:
             'toda entrada da lista precisa dizer por quê — uma exclusão sem '
             'motivo é uma exclusão que ninguém confere');
+  });
+
+  test('toda exclusão da lista de não-texto ainda existe literal no fonte', () {
+    // **A trava é negativa e a lista de não-texto é um buraco por natureza.**
+    // Um identificador comparado com `==` ou procurado com `contains()` deixa de
+    // ser encontrado quando é traduzido — porque o texto traduzido não tem
+    // palavra de inglês, que é o critério da varredura. Provado: trocar
+    // `lower.contains('out of memory')` por `lower.contains('memória esgotada')`
+    // deixa a trava **verde**, e o efeito é o `out of memory` do engine caindo
+    // na mensagem genérica de erro.
+    //
+    // A lista é o único registro de que aquilo **não** é para traduzir, e um
+    // registro que não é lido não protege nada. Este teste a lê pelo outro lado:
+    // cada entrada tem que **existir** no fonte, que é a afirmação oposta à que a
+    // varredura faz.
+    //
+    // **Frases também, e são as que mais importam.** A primeira versão pulava
+    // tudo com espaço — ou seja, pulava exatamente as quatro entradas que
+    // quebram comportamento quando traduzidas, e a prova de que isso importa foi
+    // feita exatamente nelas.
+    final fonte = telas().map((f) => f.readAsStringSync()).join('\n');
+    final ausentes = <String>[];
+    for (final entrada in TextLanguage.naoTexto.keys) {
+      if (entrada.contains(' ')) {
+        if (!fonte.contains(entrada)) ausentes.add(entrada);
+        continue;
+      }
+      // **Os dois delimitadores.** `"step"`, `"steps"` e `"Load"` estão com aspas
+      // duplas **dentro** de um literal de aspas simples, e a checagem por `'x'`
+      // não os via. A primeira versão passou com as três entradas vivas na lista
+      // e nenhuma aparecendo no fonte — o mesmo resultado de uma lista vazia, por
+      // um motivo diferente.
+      final re = RegExp('([\'"])${RegExp.escape(entrada)}\\1');
+      if (!re.hasMatch(fonte)) ausentes.add(entrada);
+    }
+    expect(ausentes, isEmpty,
+        reason: 'esta entrada da lista de não-texto não existe mais como '
+            'literal no fonte. Ou a comparação que ela protegia foi removida — e '
+            'aí a entrada sai da lista — ou alguém traduziu o valor, que é '
+            'exatamente o que ela existe para impedir:\n'
+            '  ${ausentes.join('\n  ')}');
   });
 
   test('a lista notText não engole telas inteiras', () {

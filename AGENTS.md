@@ -195,7 +195,7 @@ minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é 
 **inglês como padrão**. A frase sai verdadeira — *antes não existia escolha de
 idioma*: era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência
 medida foram 62 fichas de modelo em inglês numa tela que se dizia portuguesa.
-Agora existem **596 chaves nos dois idiomas** e uma ficha por modelo em cada um.
+Agora existem **658 chaves nos dois idiomas** e uma ficha por modelo em cada um.
 Isto está em "O idioma é escolhido, e o padrão é inglês".
 
 Não é minor "traduzir o app para inglês": a 0.5.1 já tinha metade das chaves
@@ -450,7 +450,7 @@ Quatro decisões que não são óbvias:
 1. **O padrão é `en`, não `auto`.** O GetX devolve a própria chave para uma
    tradução que não existe, e foi assim que 38 chaves apareceram como
    `tool_round_trips` e `mobile_lm` sem nada lançar. Um idioma sem mapa inteiro
-   renderiza 596 identificadores. `LanguagePreference.padrao` tem um teste que
+   renderiza 658 identificadores. `LanguagePreference.padrao` tem um teste que
    falha se virar `auto`.
 2. **O `fallbackLocale` é `en_US`, não `pt_BR`.** Com o fallback em português, uma
    chave que faltasse em inglês aparecia *traduzida* e ninguém notava que faltava.
@@ -573,8 +573,11 @@ Os números que saem:
 | varredura | total | de que é |
 |---|---|---|
 | estreita | **0** | nada sobrou reescrevível |
-| ampla, `views` + `widgets` | **195** | **0 de texto de tela**; o resto é identificador, dado, rota, exemplo e comentário |
-| ampla, **+ `lib/controllers`** | **61 de texto** | títulos e corpos de **snackbar e diálogo** — tela, e é o bloco seguinte |
+| ampla | **611** | **257 de texto de tela**, 354 de identificador, dado, rota, exemplo e comentário |
+
+**Os 258 são o item 3e, e só apareceram porque um bug de regex foi corrigido** —
+antes deles a mesma varredura reportava **zero**. A seção "O bug que escondeu 263
+textos" está abaixo e vale mais que o número.
 
 **`lib/controllers` entrou porque o A72 mostrou `DOWNLOADED` numa tela em
 português.** O título da seção do catálogo é texto de tela e vivia no controller,
@@ -594,13 +597,13 @@ pinta `section.label.toUpperCase()`.
 nome do formato e o do repositório de origem, e traduzi-los diria algo diferente
 do que o arquivo é.
 
-**O teto da varredura ampla é 61, não zero, e a escolha é deliberada.** Um teto
-em zero com 61 linhas reais seria um teste que passa pelo motivo errado — a mesma
-falha do teto alto. **Zero em `views`/`widgets` está na asserção seguinte**, com
-a razão escrita: se um literal aparecer aí, é regressão e não dívida.
+**O teto da varredura ampla é 257, não zero, e a escolha é deliberada.** Um teto
+em zero com 257 linhas reais seria um teste que passa pelo motivo errado — a mesma
+falha do teto alto. **A trava estreita continua em zero**, e é a que protege o
+que a máquina reescreve.
 
-**Os 83 da ampla não se traduzem, e a lista diz por quê.** `TextLanguage.naoTexto`
-tem 20 entradas, cada uma com o motivo: `'local'` é identificador de runtime
+**Os 356 da ampla não se traduzem, e a lista diz por quê.** `TextLanguage.naoTexto`
+tem 34 entradas, cada uma com o motivo: `'local'` é identificador de runtime
 comparado com `==`, `json['loaded']` é chave de payload, `frequency.startsWith(
 'every')` é comparação, `'List models'` é chave de exemplo JSON, `'# 202, then
 poll …'` é comentário de shell. **Traduzir qualquer um deles muda comportamento
@@ -621,6 +624,143 @@ dois arquivos divergem em silêncio — foi o que a auditoria de overflow, a de
 overflow de linha e a de descrição de catálogo fizeram neste repo — e aqui a
 divergência foi **contada**: a ferramenta via `Text('READY')` e a trava não; a
 trava via `'No project'` e a ferramenta não.
+
+#### O bug que escondeu 263 textos: a classe de caracteres do regex
+
+A varredura ampla reportava **zero** texto de tela em `views`, `widgets` e
+`controllers`, e havia **263** — número que só apareceu quando o teto da trava foi
+posto em zero **e** a lista de palavras foi alargada.
+
+**A classe de caracteres estava errada desde que a ferramenta foi escrita.**
+`[^\'\\n]` num literal Dart não-raw vira `[\'\\n]` no regex, e essa classe exclui a
+**letra `n`** — não a quebra de linha. Qualquer literal com `n` no meio nunca
+casava. `'Warning: values above 8192…'` tem um `n` em *Warning*; `'Anúncio'` em
+português e `'Cancel'` em inglês ficavam de fora **pelo mesmo motivo, em idiomas
+opostos**. Não era um filtro de idioma — era um filtro de letra.
+
+O mesmo valia para a janela `{2,90}`: literal de mais de 90 caracteres nunca
+casava, e literal longo é exatamente prosa, que é o que fica em inglês numa tela
+traduzida.
+
+**Os três sintomas eram o mesmo: a contagem batia.** Zero texto de tela, zero
+controller, zero chave faltando, `flutter test` verde. Um detector que não casa
+nada reporta a mesma coisa que um detector que não acha nada, e a única forma de
+saber qual é o dos é ter **um irmão que prova que ele ainda vê alguma coisa**.
+
+Isso é a **sétima** vez que a lista do que a trava mede estava incompleta, e a
+sexta vez que o número esteve errado. A tabela:
+
+| omitido | como |
+|---|---|
+| `title:`, `label:` (só casava `Text(`) | o regex ignorava dois-pontos |
+| `Text` como sufixo de `labelText` | contava o mesmo literal 2-3 vezes |
+| ramos de ternário depois de `subtitle:` | só o primeiro argumento era lido |
+| **`subtitle` na lista de call sites** | três legendas em inglês com o teto em zero |
+| **`lib/controllers` na lista de diretórios** | `DOWNLOADED` em português, teto em zero |
+| **a letra `n` na classe do regex** | 263 textos de tela com o teto em zero |
+| a janela de 90 caracteres | as mensagens de aviso mais longas |
+
+**A lição que vale para as sete**: uma lista do que a trava mede é uma
+**afirmação**, e uma afirmação não se prova sozinha. Cada uma delas só apareceu
+por causa externa — o `dump` do aparelho, ou a lista de palavras alargada por um
+motivo completamente diferente. A defesa não é revisar a lista com cuidado, é
+**ter um teste que conte o que está do outro lado**.
+
+#### `juntarSegmentos` passou a ser do módulo compartilhado
+
+`[^\'\\n]` mascarava outro defeito: a varredura ampla casava **um segmento por
+vez**, e o Dart concatena literais vizinhos em tempo de compilação. Então
+`'know whether a local model is worth'` aparecia na lista como pendência — e não
+é traduzível, porque **a frase não está ali**: a primeira metade já é `.tr`.
+
+`TextLanguage.juntarSegmentos(src, ini)` devolve `(texto, ondeParou)`, resolve o
+escape (`\n` virando a letra `n` é o defeito da `"…tasks arenscheduled…"`) e
+entende os dois delimitadores. **As três ferramentas a chamam** — a estreita, a
+ampla e a trava — e uma implementação é o que impede a contagem de divergir.
+
+**Um `Set` de posições vistas é POR ARQUIVO, e essa é a parte que custou um
+ciclo.** Com um conjunto único para os 27 arquivos, um índice de fim de segmento
+em `model_controller.dart` suprime o literal que começa na **mesma posição
+numérica** de `server_view.dart`: os arquivos têm comprimentos diferentes e as
+posições não significam nada entre eles. A contagem ficava 12 abaixo, e a
+ferramenta — que declara o conjunto dentro de `_varre` — dizia 258. Um número
+menor não é um número errado que se vê; é um que parececerto e protege menos do
+que parece.
+
+#### O que a varredura ampla achou que não era texto
+
+Dos achados em `lib/controllers` (item 3d), **onze não eram texto**, e três são
+os que machucam se alguém traduzir:
+
+- `'system'` — **role do contrato OpenAI**. O servidor recusa se vier traduzido.
+- `'light'`, `'dark'` — valor de tema salvo no Hive, comparado num `switch`.
+- `'failed to load gguf split'`, `'failed to load model from buffer'`,
+  `'out of memory'`, `'corrupt'` — **substrings procuradas com
+  `lower.contains()`** dentro da mensagem de erro do engine. Traduzir
+  `'out of memory'` não põe um texto errado na tela: **faz a detecção de falta de
+  memória parar de casar**, e o sintoma é um `out of memory` do engine caindo na
+  frase genérica de erro.
+- `'Custom GGUF Models'` e irmãs — **chave de `expandedSections`, persistida**.
+- `'log.error(...)'` — o log vai para o arquivo que a pessoa abre para
+  diagnosticar; a busca por `Restore failed` é como se acha um erro.
+- `descriptionEn:` — o campo **já é** a tradução em inglês.
+
+**A lista de não-texto não pode crescer sem motivo, e há um teste que a lê pelo
+outro lado.** Cada entrada tem que **existir** como literal no fonte — a
+afirmação oposta à que a varredura faz. Provado: trocar
+`lower.contains('out of memory')` por `lower.contains('memória esgotada')` deixa
+a trava **verde**, e é o teste que pega. O mesmo teste acha **entrada morta**:
+na primeira rodada ele acusou `step`, `steps` e `Load`, que já não existem mais
+porque foram traduzidos — uma lista de exclusão que ninguém audita cresce com
+lixo, e o lixo esconde exclusões reais.
+
+**O teste precisa dos dois delimitadores.** `"step"`, `"steps"` e `"Load"` estão
+com aspas duplas **dentro** de um literal de aspas simples, e a checagem por
+`'x'` não os via — as três entradas estavam vivas na lista e nenhuma aparecendo
+no fonte, que é o mesmo resultado de uma lista vazia por um motivo diferente.
+
+**Duas regras de contexto que só `lib/controllers` exigiu:**
+
+- **`log.error(` / `.warning(` / `.info(` / `.debug(`** — o primeiro argumento é
+  mensagem de log. A marca é o **nome do método**, não o do receiver, porque
+  `Get.snackbar` é justamente o par que a regra precisa separar: as duas frases
+  são idênticas e aparecem na mesma tela.
+- **`descriptionEn:` / `descriptionPt:`** — o campo **é** a tradução. O nome
+  pode estar **uma linha acima**, porque o `dart format` quebra a atribuição entre
+  a condição e o literal; ler só a linha do literal dá `false` e o texto entra na
+  contagem. Subir só quando a linha de cima é a condição de um ternário, senão um
+  `label:` uma linha acima seria pego.
+
+#### Dois helpers com o mesmo nome e contratos diferentes
+
+`settings_view.dart` e `server_view.dart` têm **os dois** um
+`_sectionLabel`, e nenhum dos dois é visível do outro porque é `private` de
+biblioteca. O de settings fazia `Text(chave.tr.toUpperCase())` — recebia **chave**
+e traduzia dentro. O do servidor fazia `Text(title)` — recebia **texto pronto**, e
+quem chamasse passava a chave sem `.tr` por acidente.
+
+**A tela do servidor showed `sc_section_security` onde deveria mostrar
+`SEGURANÇA`.** Nada reclamou: `l10n_keys_test` afirma que a chave **existe** no
+mapa, e existia; o `GetX` devolve a própria chave para uma tradução que ele não
+encontra, que é o modo de falha mais silencioso que há. Só o `dump` do A72 disse.
+
+O conserto é o contrato, não o `.tr` da chamada: **receber a chave**, como o outro
+faz. Quem escreve `_sectionLabel(context, …)` não tem como passar texto sem
+`.tr` por acidente, porque a tradução está dentro do helper. Três call sites
+passavam literal — `'ENDPOINTS'`, `'USAGE EXAMPLES'` e a chave solta.
+
+**É a mesma família do `.tr.tr`**: um valor que é identificador num lugar e texto
+no outro, e a leitura é idêntica nas duas situações. Por isso a regra do repo
+continua sendo: **`.tr` é método de runtime e nunca fica em `const` nem é
+esquecido dentro de um helper** — o helper recebe a chave.
+
+#### Um mojibake que a varredura achou
+
+`Get.snackbar('âš ï¸ Warning', warning, ...)` — o emoji de aviso gravado como
+UTF-8 lido como latin-1: três bytes viraram três caracteres, e um deles é um
+espaço não separável. **O título do aviso aparecia como lixo na tela**, e nenhuma
+das três varreduras via, porque `'âš ï¸ Warning'` não tem palavra de inglês que a
+lista conhecesse. Agora é `set_warning_title`.
 
 #### A reescrita casa por TEXTO, e a linha é a coisa errada
 
@@ -1987,7 +2127,7 @@ Os dois mudaram: o app agora fala **inglês por padrão** e o idioma é uma
 **preferência salva** com três opções. Ver "O idioma é escolhido, e o padrão é
 inglês" mais acima, que tem as quatro decisões que não são óbvias.
 
-- **Cobertura auditada, não estimada:** **596 chaves**, **as mesmas nos dois
+- **Cobertura auditada, não estimada:** **658 chaves**, **as mesmas nos dois
   idiomas**, e `test/l10n_keys_test.dart` (10 testes) falha se uma faltar em
   **qualquer** dos dois. Antes desta auditoria o mapa tinha 277 e **38 das chaves
   usadas não estavam nele** — `tool_round_trips` à vista num item de Configurações,

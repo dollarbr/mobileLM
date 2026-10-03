@@ -344,7 +344,7 @@ class SettingsView extends GetView<SettingsController> {
                         Icons.speed_rounded),
                     title: 'CPU benchmark',
                     subtitle: st.running.value
-                        ? 'Running…'
+                        ? 'set_benchmark_running'.tr
                         : st.summary.value.isEmpty
                             ? 'set_benchmark_detail'.tr
                             : st.summary.value,
@@ -989,7 +989,7 @@ class SettingsView extends GetView<SettingsController> {
         lastRunAt: task.lastRunAt,
       );
       await service.update(updated);
-      Get.snackbar('scheduled_tasks'.tr, 'Task updated.',
+      Get.snackbar('scheduled_tasks'.tr, 'set_task_updated'.tr,
           snackPosition: SnackPosition.BOTTOM);
       return true;
     } catch (e) {
@@ -1317,7 +1317,7 @@ class SettingsView extends GetView<SettingsController> {
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(
-          'Optional. Empty means Brave → Startpage → DuckDuckGo.',
+          'set_search_endpoint_hint'.tr,
           style: GoogleFonts.inter(
               fontSize: 12, color: Theme.of(context).hintColor),
         ),
@@ -1469,7 +1469,7 @@ class SettingsView extends GetView<SettingsController> {
             title: 'Vision encoder on CPU',
             subtitle: controller.mmprojForceCpu.value
                 ? 'set_projector_cpu_detail'.tr
-                : 'Auto — benchmarked once, faster backend kept',
+                : 'set_projector_auto_detail'.tr,
             trailing: controller.mmprojForceCpu.value
                 ? Icon(Icons.check, size: 18, color: accent)
                 : null,
@@ -2541,7 +2541,7 @@ class SettingsView extends GetView<SettingsController> {
             onChanged: (v) {
               if (v > safeMax && value <= safeMax) {
                 HapticFeedback.heavyImpact();
-                Get.snackbar('âš ï¸ Warning', warning,
+                Get.snackbar('set_warning_title'.tr, warning,
                     snackPosition: SnackPosition.BOTTOM,
                     backgroundColor: AppColors.error.withValues(alpha: 0.9),
                     colorText: Colors.white,

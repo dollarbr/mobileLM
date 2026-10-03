@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../core/constants.dart';
 import '../services/app_log_service.dart';
+import '../services/text_interpolation.dart';
 import '../services/hive_service.dart';
 import 'settings_controller.dart';
 
@@ -231,14 +232,18 @@ class CloudModelController extends GetxController {
     final fetchedAt = fetchedAtByProvider[provider];
     if (fetchedAt == null &&
         (modelsByProvider[provider] ?? const <String>[]).isNotEmpty) {
-      return 'Built-in list';
+      return 'cm_built_in_list'.tr;
     }
-    if (fetchedAt == null) return 'Not fetched yet';
+    if (fetchedAt == null) return 'cm_not_fetched'.tr;
     final diff = DateTime.now().difference(fetchedAt);
-    if (diff.inMinutes < 1) return 'Updated just now';
-    if (diff.inHours < 1) return 'Updated ${diff.inMinutes}m ago';
-    if (diff.inDays < 1) return 'Updated ${diff.inHours}h ago';
-    return 'Updated ${diff.inDays}d ago';
+    if (diff.inMinutes < 1) return 'cm_updated_now'.tr;
+    if (diff.inHours < 1) {
+      return preencher('cm_updated_min', {'n': '${diff.inMinutes}'});
+    }
+    if (diff.inDays < 1) {
+      return preencher('cm_updated_hour', {'n': '${diff.inHours}'});
+    }
+    return preencher('cm_updated_day', {'n': '${diff.inDays}'});
   }
 
   List<String> modelTagsFor(String provider, String modelId) {
@@ -331,7 +336,7 @@ class CloudModelController extends GetxController {
     await _settings.setCloudModel(provider, normalized);
     await _settings.setInferenceMode('cloud');
     if (!showSnackbar) return;
-    Get.snackbar('Cloud Model Active', '$provider · $normalized',
+    Get.snackbar('cm_cloud_active'.tr, '$provider · $normalized',
         snackPosition: SnackPosition.BOTTOM);
   }
 
@@ -390,8 +395,8 @@ class CloudModelController extends GetxController {
         uri.host.isEmpty) {
       return 'Enter a valid OpenAI-compatible base URL.';
     }
-    if (apiKey.isEmpty) return 'API key is required.';
-    if (model.isEmpty) return 'Model ID is required.';
+    if (apiKey.isEmpty) return 'cm_api_key_required'.tr;
+    if (model.isEmpty) return 'cm_model_id_required'.tr;
     return null;
   }
 

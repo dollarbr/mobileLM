@@ -522,12 +522,14 @@ void main() {
     // do resultado ser lido, e apagava a edição. Desde então a provocação é
     // feita e conferida na mesma volta.
     test('a contagem de chaves é a que o catálogo tem hoje', () {
-      // 535 = 361 do que já existia + 139 literais de tela em telas
+      // 656 = 361 do que já existia + 139 literais de tela em telas
       // secundárias (`tool/inline_english_scan.dart`) + 35 interpolados
-      // (`lib/services/text_interpolation.dart`). Este número já esteve errado
-      // cinco vezes neste repo (45, 62, 10 encoders, 484, 522), então o teste
-      // afirma em vez de descrever.
-      expect(en.length, 596);
+      // (`lib/services/text_interpolation.dart`) + 24 da varredura ampla em
+      // `views`/`widgets` + 53 do item 3d (`lib/controllers`) + 6 da tela do
+      // servidor e o aviso de limite de contexto. Este número já esteve errado
+      // seis vezes neste repo (45, 62, 10 encoders, 484, 522, 535), então o
+      // teste afirma em vez de descrever.
+      expect(en.length, 658);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

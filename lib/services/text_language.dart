@@ -22,123 +22,28 @@ class TextLanguage {
 
   /// Palavras que marcam um literal de tela em inglês.
   static const englishWords = <String>{
-    'the',
-    'and',
-    'with',
-    'for',
-    'from',
-    'your',
-    'this',
-    'that',
-    'these',
-    'those',
-    'there',
-    'here',
-    'they',
-    'their',
-    'when',
-    'where',
-    'which',
-    'while',
-    'would',
-    'should',
-    'could',
-    'must',
-    'only',
-    'also',
-    'very',
-    'most',
-    'more',
-    'less',
-    'than',
-    'then',
-    'into',
-    'about',
-    'after',
-    'before',
-    'without',
-    'within',
-    'across',
-    'every',
-    'each',
-    'never',
-    'always',
-    'nothing',
-    'everything',
-    'someone',
-    'anywhere',
-    'ready',
-    'settings',
-    'model',
-    'models',
-    'download',
-    'delete',
-    'cancel',
-    'save',
-    'saved',
-    'load',
-    'loaded',
-    'search',
-    'choose',
-    'pick',
-    'enable',
-    'disable',
-    'failed',
-    'waiting',
-    'warning',
-    'success',
-    'error',
-    'screen',
-    'button',
-    'tap',
-    'device',
-    'folder',
-    'file',
-    'files',
-    'server',
-    'network',
-    'port',
-    'default',
-    'appearance',
-    'inference',
-    'storage',
-    'agent',
-    'diagnostics',
-    'light',
-    'dark',
-    'system',
-    'local',
-    'cloud',
-    'steps',
-    'step',
-    'plan',
-    'template',
-    'backup',
-    'inspect',
-    'test',
-    'key',
-    'size',
-    'speed',
-    'time',
-    'memory',
-    'quality',
-    'created',
-    'applied',
-    'keeps',
-    'turns',
-    'carries',
-    'declared',
-    'scaled',
-    'produces',
-    'fit',
-    'fits',
-    'reads',
-    'writing',
-    'reasons',
-    'rules',
-    'no',
-    'not',
+    // ── função gramatical ──
+    'the', 'and', 'with', 'for', 'from', 'your', 'this', 'that', 'these',
+    'those', 'there', 'here', 'they', 'their', 'when', 'where', 'which',
+    'while', 'would', 'should', 'could', 'must', 'only', 'also', 'very',
+    'most', 'more', 'less', 'than', 'then', 'into', 'about', 'after',
+    'before', 'without', 'within', 'across', 'every', 'each', 'never',
+    'always', 'nothing', 'everything', 'already', 'instead', 'itself',
+    'just', 'now', 'soon', 'ago', 'once', 'twice', 'half', 'whole',
+    // ── substantivos e verbos que aparecem em texto de tela ──
+    'model', 'models', 'download', 'downloaded', 'delete', 'cancel',
+    'save', 'saved', 'load', 'loaded', 'search', 'choose', 'enable',
+    'disable', 'failed', 'failure', 'warning', 'success', 'error',
+    'screen', 'device', 'folder', 'file', 'files', 'server', 'port',
+    'default', 'local', 'online', 'cloud', 'steps', 'step', 'plan',
+    'template', 'backup', 'restore', 'config', 'configs', 'inspect',
+    'test', 'quality', 'created', 'applied', 'uploaded', 'ready',
+    'size', 'speed', 'memory', 'stopped', 'starting', 'running',
+    'served', 'serves', 'occupied', 'optimized', 'helper', 'corrupt',
+    'valid', 'built', 'updated', 'unknown', 'empty', 'full', 'busy',
+    'done', 'stop', 'start', 'restart',
   };
+
 
   /// Nomes próprios, formatos e exemplos de API: não são idioma.
   ///
@@ -175,6 +80,77 @@ class TextLanguage {
     'embeddings',
     'device_local',
   };
+
+  /// Junta os segmentos de um literal adjacente a partir de [ini], e devolve
+  /// **onde parou**.
+  ///
+  /// **O Dart concatena literais vizinhos em tempo de compilação**, então o
+  /// texto de tela ocupa de uma a cinco linhas e o valor real é a concatenação.
+  /// Casar só o primeiro segmento produz metades de frase — `'know whether a
+  /// local model is worth'`, `')}.\nThat is the intent, stated'` — e a lista de
+  /// pendências enche de texto que **não é traduzível**, porque a frase não está
+  /// ali. Foi o que aconteceu com a varredura ampla: ela casava cada segmento e
+  /// reportava 263, dos quais boa parte eram fragmentos.
+  ///
+  /// O segundo valor é o que permite a guarda de `.tr`: sem ele, a única forma de
+  /// saber onde a aspa de fechamento está é `ini + texto.length + 2`, e o `+2` é o
+  /// tamanho das aspas — que muda quando o delimitador é duplo. Uma conta que só
+  /// funciona em metade dos casos é a que some em silêncio na outra.
+  ///
+  /// **O escape é resolvido, não preservado.** `\n` gravado cru vira a letra `n`
+  /// e o texto saía `"…tasks arenscheduled…"` — uma frase sem separador que passa
+  /// em revisão de código e só aparece na tela.
+  ///
+  /// O delimitador pode mudar entre segmentos (`'a' "b"` é um valor só), e o
+  /// escape é obrigatório: `'…da Microsoft's…'` fecha num `'` que não é o fim.
+  static (String, int) juntarSegmentos(String src, int ini) {
+    final n = src.length;
+    var abre = ini;
+    final partes = <String>[];
+    while (true) {
+      while (abre < n && ' \n\t'.contains(src[abre])) {
+        abre++;
+      }
+      if (abre >= n || (src[abre] != "'" && src[abre] != '"')) return ('', ini);
+      final delim = src[abre];
+      var k = abre + 1;
+      final sb = StringBuffer();
+      var fechado = false;
+      while (k < n) {
+        final c = src[k];
+        if (c == r'\' && k + 1 < n) {
+          sb.write(_unescape(src[k + 1]));
+          k += 2;
+          continue;
+        }
+        if (c == delim) {
+          k++;
+          fechado = true;
+          break;
+        }
+        sb.write(c);
+        k++;
+      }
+      if (!fechado) return ('', ini);
+      partes.add(sb.toString());
+      var m = k;
+      while (m < n && ' \n\t'.contains(src[m])) {
+        m++;
+      }
+      if (m < n && (src[m] == "'" || src[m] == '"')) {
+        abre = m;
+        continue;
+      }
+      return (partes.join(), m);
+    }
+  }
+
+  /// Interpreta o caractere depois da barra.
+  ///
+  /// O nome é o mesmo da ferramenta de reescrita de propósito: são a mesma
+  /// regra, e mudar um dos dois deixa as contagens divergindo sem ninguém avisar.
+  static String _unescape(String c) =>
+      c == 'n' ? '\n' : (c == 't' ? '\t' : c);
 
   /// O texto que sobra depois de tirar as interpolações: `${…}` e `$ident`.
   ///
@@ -220,14 +196,42 @@ class TextLanguage {
     'default': 'rótulo de papel, dentro de texto de instrução',
     'every': 'comparado com startsWith() numa frequência salva',
     'model': 'nome de campo dentro de exemplo curl/Python',
-    'step': 'plural interpolado, tratado por chave',
-    'steps': 'plural interpolado, tratado por chave',
     'loaded': 'estado de API, dentro de exemplo de shell',
     'Load': 'verbo de um exemplo de shell, não o botão da tela',
     'List models': 'chave de um exemplo JSON, não o rótulo da tela',
     'how much storage does the map cache use':
         'consulta de um exemplo JSON; é o que o modelo recebe',
     'with the model': 'cauda de um exemplo de download, não rótulo',
+    // ── os 11 achados em `lib/controllers` que NÃO são texto de tela ──
+    //
+    // Os quatro primeiros são **os que machucam se alguém traduzir**, porque
+    // traduzir não põe um texto errado na tela: quebra a comparação que os
+    // impedia de aparecer errado.
+    'system': 'role do contrato OpenAI; o servidor recusa se vier traduzido',
+    'light': 'valor de tema salvo no Hive, comparado num switch',
+    'dark': 'valor de tema salvo no Hive, comparado num switch',
+    'model.gguf': 'nome de arquivo padrão quando a URI não tem segmento',
+    'Backup: folder picker threw': 'texto de log.error(), vai para o arquivo',
+    'failed to load gguf split': 'substring procurada com lower.contains() '
+        'dentro da mensagem de erro do engine',
+    'failed to load model from buffer': 'substring procurada com '
+        'lower.contains() dentro da mensagem de erro do engine',
+    'out of memory': 'substring procurada com lower.contains() dentro da '
+        'mensagem de erro do engine',
+    'corrupt': 'substring procurada com lower.contains() dentro da mensagem '
+        'de erro do arquivo; o que a pessoa lê é a frase traduzida acima dela',
+    'Custom GGUF Models': 'chave de expandedSections, persistida no Hive; o '
+        'rótulo vem de labelKey e é traduzido',
+    'Custom LiteRT Models': 'chave de expandedSections, persistida no Hive; o '
+        'rótulo vem de labelKey e é traduzido',
+    'Custom TFLite Models': 'chave de expandedSections, persistida no Hive; o '
+        'rótulo vem de labelKey e é traduzido',
+    // ── os que a varredura achou depois que a regex parou de casar `n` ──
+    'done': 'estado de tarefa, comparado com == num switch e numa condição',
+    'download': 'procurado com contains() no id do modelo; é o verbo do campo, '
+        'não o botão',
+    'mobilelm-config.json': 'nome do arquivo de configuração gravado em SAF',
+    'mobilelm-config': 'nome do arquivo de configuração, sem a extensão',
   };
 
   /// `texto` tem palavra de inglês **sem** a regra do `$`, para a varredura ampla.
@@ -267,6 +271,12 @@ class TextLanguage {
   /// de nada.
   static bool eTextoDeTela(String texto, String src, int ini) {
     if (naoTexto.containsKey(texto.trim())) return false;
+    if (eCampoDeIdioma(src, ini)) return false;
+    if (dentroDeLog(src, ini)) return false;
+    // **Caminho de import.** `../models/task_model.dart` é o que o compilador
+    // lê, e traduzi-lo não muda a tela: muda o que o Dart resolve. A marca é o
+    // `../` inicial, que nenhum literal de tela começa.
+    if (RegExp(r'^\.\.?/').hasMatch(texto.trim())) return false;
     // **Uma quebra de linha seguida de espaço é código, não literal.** O
     // regex casa `[^'\n]` então nunca atravessa uma quebra de verdade — o `\n`
     // que aparece no texto é o **escape**, e um literal real deste repo só o
@@ -286,6 +296,81 @@ class TextLanguage {
     if (_casoDeTeste(src, ini)) return false;
     if (_linhaDeExemplo(texto)) return false;
     return true;
+  }
+
+  /// O literal é o valor de um **campo que já é uma tradução**?
+  ///
+  /// `AiModel` tem `descriptionEn` e `descriptionPt`, e o literal em
+  /// `descriptionEn` **é o valor em inglês por projeto** — é o campo que o app
+  /// mostra quando o idioma é inglês. Traduzi-lo não deixa um texto errado na
+  /// tela: deixa os dois idiomas com a mesma frase, e a guarda que pega valor
+  /// português no mapa inglês passa a acusar o ficheiro de catálogo.
+  ///
+  /// A marca é o nome do campo, e **pode estar uma linha acima**: o
+  /// `dart format` quebra a atribuição entre a condição e o literal, e a forma
+  /// que sobra no catálogo é
+  ///
+  /// ```dart
+  /// descriptionEn: description == null || description.trim().isEmpty
+  ///     ? 'Added from custom URL'
+  ///     : description.trim(),
+  /// ```
+  ///
+  /// Ler só a linha do literal dá `false` e o texto entra na contagem — que é o
+  /// que aconteceu na primeira passada: 38 em vez de 37, com `'Added from custom
+  /// URL'` do lado de `'Imported from local storage'`, que está na mesma linha do
+  /// campo e era pegado. **Dois lugares, a mesma frase, regras diferentes**,
+  /// porque o formatador quebrou um e não o outro.
+  ///
+  /// A versão com aritmética de índice (`lastIndexOf` e `substring`) não
+  /// funcionava e foi trocada por linhas: `lastIndexOf` **inclui o próprio
+  /// índice**, então `ini2 - 1` é a quebra que *termina* a linha anterior e o
+  /// trecho saía **vazio** — a condição nunca era satisfeita e o caso do ternário
+  /// continuava entrando. Com índice negativo, `lastIndexOf` devolve `-1`
+  /// deslocado e o `substring` lançava `RangeError`.
+  static bool eCampoDeIdioma(String src, int ini) {
+    final campo = RegExp(r'^\s*(descriptionEn|descriptionPt)\s*:');
+    final linhas = src.substring(0, ini).split('\n');
+    // `linhas.last` é o pedaço da linha do literal **até a aspa**, que é
+    // suficiente: o nome do campo vem antes dela.
+    if (campo.hasMatch(linhas.last)) return true;
+    // **Só sobe se a linha acima for a condição de um ternário.** Subir sempre
+    // pegaria o campo de outro literal — `label:` uma linha acima é comum e não
+    // é campo de idioma.
+    if (linhas.length < 2) return false;
+    final acima = linhas[linhas.length - 2];
+    if (campo.hasMatch(acima)) return true;
+    return RegExp(r'^\s*\?\s').hasMatch(acima);
+  }
+
+  /// O literal é a **mensagem de um log**, e não texto de tela?
+  ///
+  /// `log.error('Restore failed', details: e)` e
+  /// `Get.snackbar('Restore failed', e)` aparecem **na mesma tela, com a mesma
+  /// frase**, e a diferença é só quem recebe. O log vai para o arquivo que a
+  /// pessoa abre e lê para diagnosticar; traduzi-lo deixaria o arquivo em
+  /// português enquanto o resto do log está em inglês, e a busca por
+  /// `Restore failed` no arquivo — que é como se acha um erro — deixaria de
+  /// achar.
+  ///
+  /// A marca é o **nome do método** logo antes do parêntese, e não o do receiver:
+  /// `log.error`, `log.info`, `log.warning`, `log.debug` e
+  /// `AppLogService().error/warning/info`. `Get.snackbar` não é log, e é
+  /// justamente o par que a regra precisa separar.
+  static bool dentroDeLog(String src, int ini) {
+    final antes = src.substring(0, ini);
+    final abre = antes.lastIndexOf('(');
+    if (abre < 0) return false;
+    // O primeiro argumento é o que o método recebe logo depois do parêntese.
+    final entreParentes = antes.substring(abre + 1);
+    if (entreParentes.trimLeft().length != entreParentes.length) {
+      // Há um argumento antes deste, então não é o primeiro.
+      final virgula = entreParentes.indexOf(',');
+      final fechaAntes = entreParentes.lastIndexOf(')');
+      if (virgula >= 0 && (fechaAntes < 0 || virgula < fechaAntes)) return false;
+    }
+    final antesDoParen = antes.substring(0, abre);
+    return RegExp(r'\.(error|warning|info|debug)\s*$').hasMatch(antesDoParen);
   }
 
   static bool _dentroDeDoc(String src, int ini) {
