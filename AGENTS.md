@@ -573,15 +573,16 @@ Os números que saem:
 | varredura | total | de que é |
 |---|---|---|
 | estreita | **0** | nada sobrou reescrevível |
-| ampla | **526** | **205 de texto de tela**, 321 de identificador, dado, rota, exemplo e comentário |
+| ampla | **526** | **216 de texto de tela**, 310 de identificador, dado, rota, exemplo e comentário |
 
-**Os 205 são o item 3e, e só apareceram porque um bug de regex foi corrigido** —
+**Os 216 são o item 3e, e só apareceram porque um bug de regex foi corrigido** —
 antes deles a mesma varredura reportava **zero**. A seção "O bug que escondeu 263
 textos" está abaixo e vale mais que o número. E eles já foram **257**: a seção
 "O `vuntarSegmentos` resolveu o primeiro segmento e não os do meio" diz por que
 45 deles nunca foram dívida. Subiram para **252** quando a lista de palavras foi
-alargada por uma sonda, e desceram para 205 depois das duas correções que a seção
-"O `@ramGB` que pintava uma tela vermelha" descreve.
+alargada por uma sonda, caíram para 205 depois das duas correções que a seção
+"O `@ramGB` que pintava uma tela vermelha" descreve, e voltaram para 216 quando a
+décima primeira omissão parou de engolir o ramo `:` dos ternários.
 
 **`lib/controllers` entrou porque o A72 mostrou `DOWNLOADED` numa tela em
 português.** O título da seção do catálogo é texto de tela e vivia no controller,
@@ -601,12 +602,12 @@ pinta `section.label.toUpperCase()`.
 nome do formato e o do repositório de origem, e traduzi-los diria algo diferente
 do que o arquivo é.
 
-**O teto da varredura ampla é 205, não zero, e a escolha é deliberada.** Um teto
-em zero com 205 linhas reais seria um teste que passa pelo motivo errado — a mesma
+**O teto da varredura ampla é 216, não zero, e a escolha é deliberada.** Um teto
+em zero com 216 linhas reais seria um teste que passa pelo motivo errado — a mesma
 falha do teto alto. **A trava estreita continua em zero**, e é a que protege o
 que a máquina reescreve.
 
-**Os 321 da ampla não se traduzem, e a lista diz por quê.**
+**Os 310 da ampla não se traduzem, e a lista diz por quê.**
 `TextLanguage.naoTexto` tem 50 entradas, cada uma com o motivo: `'local'` é
 identificador de runtime comparado com `==`, `json['loaded']` é chave de payload,
 `frequency.startsWith('every')` é comparação, `'List models'` é chave de exemplo
@@ -666,8 +667,9 @@ sexta vez que o número esteve errado. A tabela:
 | **os inicios do meio de um literal adjacente** | **45 fragmentos no teto, que era 257 e é 212** |
 | **`${…}` julgado como idioma** | **36 falsos positivos: `DateTime.now()` é `now`** |
 | **palavras medidas fora da lista** | **10 textos que nenhuma das duas varreduras contava** |
+| **o ramo `:` de qualquer ternário** | **11 textos engolidos como campo de idioma** |
 
-**A lição que vale para as dez**: uma lista do que a trava mede é uma
+**A lição que vale para as onze**: uma lista do que a trava mede é uma
 **afirmação**, e uma afirmação não se prova sozinha. Cada uma delas só apareceu
 por causa externa — o `dump` do aparelho, ou a lista de palavras alargada por um
 motivo completamente diferente. A defesa não é revisar a lista com cuidado, é
@@ -700,6 +702,33 @@ literal interpolado `Available: …GB · Context: …` de Configurações. **Um 
 que não conhece a palavra não denuncia o texto**, e nenhuma das três travas pode
 acusar o que elas não veem. A defesa é a sonda: `tool/word_list_probe.dart` julga
 a lista pelo lado que falha — texto de tela que ela **deveria** ver e não vê.
+
+⚠️ **A décima primeira é a única que ESCONDE, e por isso é a pior das onze.**
+`eCampoDeIdioma` existe porque o `dart format` quebra a atribuição entre o nome do
+campo e o literal, e subia uma linha quando a de cima começava com `? `. Isso
+tratava o **ramo `: '…'` de qualquer ternário** como campo de idioma:
+
+```dart
+showDetails
+    ? 'Hide Technical Details'
+    : 'Show Technical Details',      // ← não era texto de tela
+```
+
+**O sintoma é assimetria dentro do próprio ternário**, e é por isso que só
+apareceu quando a tradução começou: `Hide` na lista como TEXTO e `Show` como
+DADO, no mesmo `cond ? a : b`. **11 textos** estavam escondidos — um botão, duas
+mensagens de estado, um rótulo de campo, dois parágrafos.
+
+**Teto baixo e teto alto são o mesmo defeito: os dois números estão errados, e o
+baixo parece prudente.** Um detector que esconde não é menos perigoso que um que
+exagera — é mais, porque exagerar é visível no número.
+
+A correção é olhar **duas linhas acima**: a linha do `?` só é ramo de um
+`descriptionEn` se o campo estiver antes dela. E a defesa é **a assimetria como
+asserção**, não o caso do catálogo: um `descriptionEn` legítimo é raro e está num
+arquivo só, um ternário com dois ramos de tela é comum e está em todos — então o
+teste afirma que os **dois** ramos do mesmo ternário recebem a mesma classificação,
+o que pega a regra larga sem depender de nenhum arquivo em particular.
 
 **A defesa da oitava também é diferente, e é uma pergunta que nenhuma das outras
 sete exigiu: quantas vezes a mesma posição é medida?** Detalhar o que a trava mede

@@ -424,7 +424,28 @@ class TextLanguage {
     if (linhas.length < 2) return false;
     final acima = linhas[linhas.length - 2];
     if (campo.hasMatch(acima)) return true;
-    return RegExp(r'^\s*\?\s').hasMatch(acima);
+    // **A linha do `?` não basta: ela tem que ser o ramo de um `descriptionEn`.**
+    //
+    // Era `^\s*\?\s` sozinho, e isso tratava o **ramo `: '…'` de qualquer
+    // ternário** como campo de idioma:
+    //
+    // ```dart
+    // showDetails
+    //     ? 'Hide Technical Details'
+    //     : 'Show Technical Details',      // ← deixava de ser texto de tela
+    // ```
+    //
+    // O sintoma é o mais silencioso dos dez: **o texto some da contagem** sem
+    // nenhum aviso, e a lista de pendências deixa de listar um botão que a tela
+    // mostra em inglês. Só apareceu porque a traducao de `model_controller`
+    // começou e o botão estava na lista de um lado só — `Hide Technical Details`
+    // como TEXTO e `Show Technical Details` como DADO, **no mesmo ternário**.
+    //
+    // A distinção que fecha é a **duas linhas acima**: a linha do `?` só é o
+    // ramo de um campo de idioma se o que vem antes dela for esse campo.
+    if (!RegExp(r'^\s*\?\s').hasMatch(acima)) return false;
+    if (linhas.length < 3) return false;
+    return campo.hasMatch(linhas[linhas.length - 3]);
   }
 
   /// O literal é a **mensagem de um log**, e não texto de tela?

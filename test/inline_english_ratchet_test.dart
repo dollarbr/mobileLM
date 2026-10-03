@@ -367,6 +367,63 @@ void main() {
     expect(TextLanguage.looksEnglish('Could not read: \$_loadError'), isFalse);
   });
 
+  test('o ramo : de um ternário é texto de tela, e o campo de idioma não o engole',
+      () {
+    // **A décima primeira omissão, e ela esconde em vez de exagerar.**
+    //
+    // `eCampoDeIdioma` existe porque o `dart format` quebra a atribuição entre o
+    // nome do campo e o literal:
+    //
+    // ```dart
+    // descriptionEn: description == null || description.trim().isEmpty
+    //     ? 'Added from custom URL'
+    //     : description.trim(),
+    // ```
+    //
+    // A versão que existia subia uma linha quando a de cima começava com `? ` —
+    // e isso tratava o **ramo `: '…'` de qualquer ternário** como campo de idioma.
+    // O sintoma é **assimetria dentro do próprio ternário**, e é por isso que só
+    // apareceu quando a tradução começou: `Hide` na lista como TEXTO e `Show`
+    // como DADO, no mesmo `cond ? a : b`. Onze textos estavam escondidos.
+    //
+    // **Um detector que esconde é pior do que um que exagerar**, porque teto
+    // baixo não protege e teto alto não engana ninguém: os dois números estão
+    // errados, e o baixo parece prudente. Onze textos de tela — um botão, duas
+    // mensagens de estado, um rótulo de campo — estavam em inglês e nenhuma das
+    // três travas podia acusar o que elas não viam.
+    //
+    // **A defesa é a assimetria como asserção**, e não o caso do catálogo: um
+    // `descriptionEn` legítimo é raro e está num arquivo só; um ternário com dois
+    // ramos de tela é comum e está em todos. Verificar que os **dois** ramos do
+    // mesmo ternário recebem a mesma classificação pega a regra larga sem
+    // depender de nenhum arquivo em particular.
+    const fonte = '''
+void f(BuildContext context, bool showDetails) {
+  Text(
+    showDetails
+        ? 'Hide Technical Details'
+        : 'Show Technical Details',
+  );
+}
+''';
+    final iniRamoHide = fonte.indexOf("'Hide");
+    final iniRamoShow = fonte.indexOf("'Show");
+    expect(TextLanguage.eCampoDeIdioma(fonte, iniRamoHide), isFalse,
+        reason: 'o ramo ? de um ternário que não é campo de idioma');
+    expect(TextLanguage.eCampoDeIdioma(fonte, iniRamoShow), isFalse,
+        reason: 'o ramo : de um ternário NÃO é campo de idioma, e dizer que é '
+            'tira o texto da lista de pendências sem nenhum aviso');
+    // **E o caso que a regra existe para continua sendo campo de idioma**, com o
+    // nome do campo DUAS linhas acima do literal.
+    const catalogo = '''
+      descriptionEn: description == null || description.trim().isEmpty
+          ? 'Added from custom URL'
+          : description.trim(),
+''';
+    expect(
+        TextLanguage.eCampoDeIdioma(catalogo, catalogo.indexOf("'Added")), isTrue);
+  });
+
   test(
       'nenhum literal interpolado com inglês, que é a classe que o filtro recusa',
       () {
@@ -485,7 +542,7 @@ void main() {
     // perguntando **quantas vezes ela mede a mesma coisa** — e essa pergunta não
     // tinha sido feita em nenhum dos itens anteriores.
     //
-    // **O que sobrou são 205 literais** de `views`, `widgets` e `controllers` —
+    // **O que sobrou são 216 literais** de `views`, `widgets` e `controllers` —
     // rótulos, mensagens de `snackbar` e diálogo, e prosa de explicação. São
     // tela, todos eles, e é o item 3e do `HANDOFF`.
     //
@@ -508,7 +565,28 @@ void main() {
     // literal interpolado `Available: …GB · Context: …` de Configurações. Um
     // detector que não conhece a palavra não denuncia o texto, e o teto em zero
     // da varredura estreita era verdadeiro **e** a tela estava em inglês.
-    const teto = 205;
+    //
+    // **A décima primeira é a mais cruel das onze, porque ela esconde em vez de
+    // exagerar.** `eCampoDeIdioma` subia uma linha quando a linha de cima
+    // começava com `? `, e isso tratava o **ramo `: '…'` de qualquer ternário**
+    // como campo de idioma:
+    //
+    // ```dart
+    // showDetails
+    //     ? 'Hide Technical Details'
+    //     : 'Show Technical Details',      // ← não era texto de tela
+    // ```
+    //
+    // **O sintoma é assimetria dentro do próprio ternário**, e é por isso que só
+    // apareceu na tradução: `Hide` estava na lista como TEXTO e `Show` como DADO,
+    // no mesmo `cond ? a : b`. Onze textos voltaram a ser contados — `Show
+    // Technical Details`, `Local model`, `server not running — tap to retry`,
+    // `Rerankers score a query against each document.`, `Clear form`,
+    // `Benchmark usability`, `Attached file:`, `Generated with mobileLM`,
+    // `Thinking for @s` e mais dois. A correção é a **duas linhas acima**: a
+    // linha do `?` só é ramo de um `descriptionEn` se o campo estiver antes
+    // dela.
+    const teto = 216;
     final texto = broad();
     expect(texto.length, lessThanOrEqualTo(teto),
         reason: 'literal em inglês que é texto de tela. A lista de não-texto é '
