@@ -623,29 +623,36 @@ class _FiltersSheetState extends State<_FiltersSheet> {
   /// GGUF repos actually come in.
   static const _paramSteps = <double>[0.5, 1, 2, 3, 4, 7, 8, 13, 20, 30, 70];
 
-  // **`final`, e não `const`.** `.tr` é método de runtime sobre o locale atual,
-  // e um `static const` congelaria a língua do boot — que não é a que a pessoa
-  // escolheu no seletor. Foi a mesma razão que tirou os chips de resposta de
-  // `static const`.
-  static final _pipelines = <String, String>{
-    '': 'Any',
-    'text-generation': 'hf_task_text_generation'.tr,
-    'image-text-to-text': 'Vision',
-    'audio-text-to-text': 'Audio',
-    'any-to-any': 'Omni',
+  /// Facetas do hub: **a chave é a tag que vai para a API e o valor é a chave
+  /// de tradução do rótulo.**
+  ///
+  /// **Nem `const` traduzido nem `final` traduzido.** As duas já ocorreram aqui:
+  /// `static const` não compila com `.tr` (`const_eval_extension_method`), e a
+  /// correção — `static final` com `.tr` dentro — **trocou um defeito por outro
+  /// pior**: `final` de campo é inicializado **uma vez**, preguiçosamente, e
+  /// essa primeira leitura congela a língua do boot. Trocar o idioma no seletor
+  /// reconstruía a tela inteira e os chips continuavam no idioma antigo, sem
+  /// erro nenhum. A regra é a mesma dos chips de resposta: **o mapa guarda a
+  /// chave, e quem pinta traduz.**
+  static const _pipelines = <String, String>{
+    '': 'hf_any',
+    'text-generation': 'hf_task_text_generation',
+    'image-text-to-text': 'hf_task_vision',
+    'audio-text-to-text': 'hf_task_audio',
+    'any-to-any': 'hf_task_omni',
   };
 
   /// The hub's "Misc" facets, limited to the ones a GGUF repo actually carries.
-  static final _misc = <String, String>{
-    'moe': 'Mixture of Experts',
-    '4-bit': '4-bit precision',
-    '8-bit': '8-bit precision',
-    '16-bit': '16-bit precision',
-    'imatrix': 'Importance matrix',
-    'merge': 'Merge',
-    'mergekit': 'hf_mergekit'.tr,
-    'custom_code': 'Custom code',
-    'conversational': 'Conversational',
+  static const _misc = <String, String>{
+    'moe': 'hf_facet_moe',
+    '4-bit': 'hf_facet_4bit',
+    '8-bit': 'hf_facet_8bit',
+    '16-bit': 'hf_facet_16bit',
+    'imatrix': 'hf_facet_imatrix',
+    'merge': 'hf_facet_merge',
+    'mergekit': 'hf_mergekit',
+    'custom_code': 'hf_facet_custom_code',
+    'conversational': 'hf_facet_conversational',
   };
 
   /// Quantisers whose repos make up most of the index.
@@ -719,25 +726,25 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       ),
                   ],
                 ),
-                _label(theme, 'MODALITY'),
+                _label(theme, 'hf_group_modality'.tr),
                 Wrap(
                   spacing: 8,
                   children: [
                     for (final e in _pipelines.entries)
                       ChoiceChip(
-                        label: Text(e.value),
+                        label: Text(e.value.tr),
                         selected: _f.pipelineTag == e.key,
                         onSelected: (_) => setState(
                             () => _f = _f.copyWith(pipelineTag: e.key)),
                       ),
                   ],
                 ),
-                _label(theme, 'hf_facet_parameters'.tr.toUpperCase()),
+                _label(theme, 'hf_facet_parameters'.tr),
                 Row(
                   children: [
                     Expanded(
                       child: _paramDropdown(
-                        hint: 'Min',
+                        hint: 'hf_param_min'.tr,
                         value: _f.minParamsB,
                         onChanged: (v) => setState(() => _f = v == null
                             ? _f.copyWith(clearMin: true)
@@ -747,7 +754,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _paramDropdown(
-                        hint: 'Max',
+                        hint: 'hf_param_max'.tr,
                         value: _f.maxParamsB,
                         onChanged: (v) => setState(() => _f = v == null
                             ? _f.copyWith(clearMax: true)
@@ -756,12 +763,12 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                     ),
                   ],
                 ),
-                _label(theme, 'PROVIDER'),
+                _label(theme, 'hf_group_provider'.tr),
                 TextField(
                   controller: _author,
-                  decoration: const InputDecoration(
-                    hintText: 'Any — or an owner, e.g. bartowski',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    hintText: 'hf_owner_hint'.tr,
+                    border: const OutlineInputBorder(),
                     isDense: true,
                   ),
                   onChanged: (v) =>
@@ -784,14 +791,14 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       ),
                   ],
                 ),
-                _label(theme, 'MISC'),
+                _label(theme, 'hf_group_misc'.tr),
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
                   children: [
                     for (final e in _misc.entries)
                       FilterChip(
-                        label: Text(e.value),
+                        label: Text(e.value.tr),
                         selected: _f.tags.contains(e.key),
                         onSelected: (on) => setState(() {
                           final tags = {..._f.tags};
@@ -805,7 +812,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       ),
                   ],
                 ),
-                _label(theme, 'QUANTISATION'),
+                _label(theme, 'hf_group_quantisation'.tr),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -867,10 +874,14 @@ class _FiltersSheetState extends State<_FiltersSheet> {
     );
   }
 
+  /// O cabeçalho de grupo. **A caixa alta é aplicada aqui e não no mapa**, e
+  /// é por isso que os valores do mapa são `Modality` e não `MODALITY`:
+  /// PT-BR e EN diferem nas letras acentuadas, e a regra de exibição pertence
+  /// ao estilo do grupo, não à tradução.
   Widget _label(ThemeData theme, String text) => Padding(
         padding: const EdgeInsets.only(top: 18, bottom: 8),
         child: Text(
-          text,
+          text.toUpperCase(),
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.hintColor,
             letterSpacing: 1.2,

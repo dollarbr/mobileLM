@@ -1094,9 +1094,34 @@ class AppTranslation extends Translations {
       'set_tools_enabled_count': '@n enabled',
       'set_thinking_off': 'Thinking: Off',
       'set_off': 'Off',
-      'hf_facet_parameters': 'PARAMETERS',
+      'hf_facet_parameters': 'Parameters',
       'hf_task_text_generation': 'Text',
       'set_quant_recommended_suffix': ' (recommended)',
+      // ── Rótulos de faceta do hub (item 3e, parte 3) ──────────────────
+      // São os rótulos que o app dá às facetas — o valor é o texto, a
+      // chave do mapa é a tag que vai para a API e é dado.
+      // Caixa alta NÃO mora aqui: é `.tr.toUpperCase()` no ponto de
+      // pintura, porque PT-BR e EN diferem nas letras acentuadas.
+
+      'hf_any': 'Any',
+      'hf_task_vision': 'Vision',
+      'hf_task_audio': 'Audio',
+      'hf_task_omni': 'Omni',
+      'hf_facet_moe': 'Mixture of Experts',
+      'hf_facet_4bit': '4-bit precision',
+      'hf_facet_8bit': '8-bit precision',
+      'hf_facet_16bit': '16-bit precision',
+      'hf_facet_imatrix': 'Importance matrix',
+      'hf_facet_merge': 'Merge',
+      'hf_facet_custom_code': 'Custom code',
+      'hf_facet_conversational': 'Conversational',
+      'hf_group_modality': 'Modality',
+      'hf_group_provider': 'Provider',
+      'hf_group_misc': 'Misc',
+      'hf_group_quantisation': 'Quantisation',
+      'hf_owner_hint': 'Any — or an owner, e.g. bartowski',
+      'hf_param_min': 'Min',
+      'hf_param_max': 'Max',
     },
     'pt_BR': {
       'sc_section_endpoints': 'ENDPOINTS',
@@ -2248,9 +2273,34 @@ class AppTranslation extends Translations {
       'set_tools_enabled_count': '@n ativas',
       'set_thinking_off': 'Pensamento: desligado',
       'set_off': 'Desligado',
-      'hf_facet_parameters': 'PARÂMETROS',
+      'hf_facet_parameters': 'Parâmetros',
       'hf_task_text_generation': 'Texto',
       'set_quant_recommended_suffix': ' (recomendado)',
+      // ── Rótulos de faceta do hub (item 3e, parte 3) ──────────────────
+      // São os rótulos que o app dá às facetas — o valor é o texto, a
+      // chave do mapa é a tag que vai para a API e é dado.
+      // Caixa alta NÃO mora aqui: é `.tr.toUpperCase()` no ponto de
+      // pintura, porque PT-BR e EN diferem nas letras acentuadas.
+
+      'hf_any': 'Qualquer',
+      'hf_task_vision': 'Visão',
+      'hf_task_audio': 'Áudio',
+      'hf_task_omni': 'Omni',
+      'hf_facet_moe': 'Mistura de especialistas',
+      'hf_facet_4bit': 'Precisão de 4 bits',
+      'hf_facet_8bit': 'Precisão de 8 bits',
+      'hf_facet_16bit': 'Precisão de 16 bits',
+      'hf_facet_imatrix': 'Matriz de importância',
+      'hf_facet_merge': 'Mesclagem',
+      'hf_facet_custom_code': 'Código próprio',
+      'hf_facet_conversational': 'Conversacional',
+      'hf_group_modality': 'Modalidade',
+      'hf_group_provider': 'Provedor',
+      'hf_group_misc': 'Diversos',
+      'hf_group_quantisation': 'Quantização',
+      'hf_owner_hint': 'Qualquer — ou um dono, p. ex. bartowski',
+      'hf_param_min': 'Mín',
+      'hf_param_max': 'Máx',
     }
   };
 }

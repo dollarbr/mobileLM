@@ -102,6 +102,53 @@ void main() {
   }
 
   Map<String, String> readPtBr() => readMap('pt_BR');
+
+  /// As chaves que a auditoria de `'literal'.tr` **não alcança**, porque a
+  /// tradução acontece sobre uma **variável**.
+  ///
+  /// `Text(e.value.tr)` e `f.label` (de `HfFormat`) são `.tr` em runtime: o
+  /// regex de [literal] só casa `'chave'.tr` com a chave escrita no fonte, e
+  /// nenhuma delas está. A consequência é a mais silenciosa do GetX — chave
+  /// faltando **renderiza o próprio identificador**, e o `l10n_keys_test`
+  /// continua verde porque nunca viu a chave.
+  ///
+  /// A defesa é ler o fonte desses mapas e conferir cada valor contra os dois
+  /// idiomas, que é a **afirmação oposta** à que `scanUsages` faz.
+  List<String> chavesIndiretas() {
+    final hf = File('lib/views/hf_search_sheet.dart').readAsStringSync();
+    final svc = File('lib/services/hf_search_service.dart').readAsStringSync();
+    final out = <String>[];
+    for (final mapa in const ['_pipelines', '_misc']) {
+      final bloco = RegExp('static const $mapa = <String, String>\\{(.*?)\\n  \\};',
+              dotAll: true)
+          .firstMatch(hf);
+      if (bloco == null) {
+        throw StateError('o mapa $mapa sumiu de hf_search_sheet.dart — este '
+            'teste audita a lista por nome, e uma lista sumida é zero chaves '
+            'com o teste verde');
+      }
+      for (final m
+          in RegExp(r":\s*'([a-z0-9_]+)'\s*,").allMatches(bloco.group(1)!)) {
+        out.add(m.group(1)!);
+      }
+    }
+    // **O enum é lido token a token, e não por regex.** A primeira versão usou
+    // `any\('([a-z0-9_]+)',` e casava **zero** vezes num fonte onde o token
+    // estava plainly escrito — `any('hf_any', '')` —, então a auditoria do enum
+    // não via nada e o teste passava com uma chave que não existe. Um detector
+    // que não casa é indistinguível de um detector que não há, e é por isso que
+    // [vistas] é conferido contra duas âncoras que o fonte usa por nome.
+    final linha = svc.split('\n').firstWhere(
+      (l) => l.trimLeft().startsWith('any('),
+      orElse: () => throw StateError(
+          'a entrada `any(` do enum HfFormat sumiu de hf_search_service.dart — '
+          'e sem ela o enum não é auditado, com o teste verde'),
+    );
+    final abreAspa = linha.indexOf("'");
+    final fechaAspa = linha.indexOf("'", abreAspa + 1);
+    out.add(linha.substring(abreAspa + 1, fechaAspa));
+    return out;
+  }
   List<File> dartFiles() => libDir
       .listSync(recursive: true)
       .whereType<File>()
@@ -339,5 +386,29 @@ void main() {
         reason: 'a auditoria acima só vê chaves literais, e estas '
             '${dinamicas.length} são montadas em runtime — cada uma precisa de '
             'olho humano:\n${dinamicas.join('\n')}');
+  });
+
+  test('toda chave de mapa de faceta e do enum existe nos DOIS idiomas', () {
+    // **Irmão que prova que ele ainda vê alguma coisa.** Se `chavesIndiretas()`
+    // devolvesse vazio por um erro de regex, `expect(faltando, isEmpty)` passaria
+    // e nada anunciaria. Duas chaves que o fonte usa **por nome** são a âncora:
+    // uma já estava escrita na auditoria ('text-generation') e a outra entrou
+    // agora ('mergekit'), e as duas precisam continuar lá.
+    final vistas = chavesIndiretas();
+    expect(vistas, contains('hf_task_text_generation'));
+    expect(vistas, contains('hf_mergekit'));
+    expect(vistas.length, greaterThanOrEqualTo(10),
+        reason: 'os dois mapas de faceta somam 10 entradas');
+
+    final faltando = <String>[];
+    for (final chave in vistas) {
+      for (final lang in const ['en_US', 'pt_BR']) {
+        if (!readMap(lang).containsKey(chave)) faltando.add('$chave ($lang)');
+      }
+    }
+    expect(faltando, isEmpty,
+        reason: 'chave que o fonte usa por variável e que não existe no mapa. '
+            'O GetX devolve a própria chave e a tela mostra o identificador:\n'
+            '  ${faltando.join('\n  ')}');
   });
 }

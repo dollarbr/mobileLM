@@ -152,13 +152,20 @@ String _formatBytes(int bytes) {
 /// Two formats rather than one because mobileLM ships both llama.cpp and
 /// LiteRT-LM, and a GGUF-only browser hid half of what it can actually load.
 enum HfFormat {
-  any('Any', ''),
+  any('hf_any', ''),
   gguf('GGUF', 'gguf'),
   liteRtLm('LiteRT-LM', 'litert-lm');
 
-  const HfFormat(this.label, this.tag);
+  const HfFormat(this.labelKey, this.tag);
 
-  final String label;
+  /// **A chave de tradução do rótulo, e não o rótulo.** `'Any'` é o único dos
+  /// três que é palavra em inglês — `GGUF` e `LiteRT-LM` são nome de formato e
+  /// não se traduzem — e um `label` cru aqui é texto de tela que nenhuma das
+  /// três varreduras alcança, porque o enum mora em `lib/services`.
+  final String labelKey;
+
+  /// O rótulo já traduzido, e é o que a view pinta.
+  String get label => labelKey.tr;
 
   /// The hub tag that selects it. `litert-lm` and not `litert`: the latter also
   /// catches TTS, detection and image models built for the runtime.

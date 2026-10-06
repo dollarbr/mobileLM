@@ -195,7 +195,7 @@ minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é 
 **inglês como padrão**. A frase sai verdadeira — *antes não existia escolha de
 idioma*: era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência
 medida foram 62 fichas de modelo em inglês numa tela que se dizia portuguesa.
-Agora existem **886 chaves nos dois idiomas** e uma ficha por modelo em cada um.
+Agora existem **905 chaves nos dois idiomas** e uma ficha por modelo em cada um.
 Isto está em "O idioma é escolhido, e o padrão é inglês".
 
 Não é minor "traduzir o app para inglês": a 0.5.1 já tinha metade das chaves
@@ -450,7 +450,7 @@ Quatro decisões que não são óbvias:
 1. **O padrão é `en`, não `auto`.** O GetX devolve a própria chave para uma
    tradução que não existe, e foi assim que 38 chaves apareceram como
    `tool_round_trips` e `mobile_lm` sem nada lançar. Um idioma sem mapa inteiro
-   renderiza 886 identificadores. `LanguagePreference.padrao` tem um teste que
+   renderiza 905 identificadores. `LanguagePreference.padrao` tem um teste que
    falha se virar `auto`.
 2. **O `fallbackLocale` é `en_US`, não `pt_BR`.** Com o fallback em português, uma
    chave que faltasse em inglês aparecia *traduzida* e ninguém notava que faltava.
@@ -657,10 +657,52 @@ string tiraria a ordenação. `ModelBlock` ganhou `labelKey` ao lado de `label`,
 quem pinta é `block.labelKey.tr.toUpperCase()` — caixa alta e `.tr` **nessa
 ordem**, porque PT-BR e EN diferem nas letras acentuadas.
 
-**`static const` com valor traduzido congela a língua do boot.** O mapa
-`pipelineTag` do HF era `static const`, e `.tr` num `const` não compila —
-`const_eval_extension_method`. Virou `static final`, que é a mesma razão que tirou
-os chips de resposta de `const`.
+**`static const` com valor traduzido congela a língua do boot — e `static final`
+congela do mesmo jeito, só mais tarde.** O mapa `pipelineTag` do HF era
+`static const` e o conserto natural foi `static final` com `.tr` dentro, porque
+`.tr` num `const` não compila (`const_eval_extension_method`). **Essa correção
+trocou um defeito por um pior e ninguém notou no aparelho**: `final` de campo é
+inicializado **uma vez**, preguiçosamente, na primeira leitura — e essa primeira
+leitura congela a língua do boot. Trocar o idioma no seletor reconstrói a tela
+inteira e os chips de faceta continuavam no idioma antigo, **sem erro nenhum**.
+
+A regra que fecha os dois é a dos chips de resposta: **o mapa guarda a chave, e
+quem pinta traduz.** `Text(e.value.tr)`. Aí o mapa volta a ser `const`, o valor
+consultado é a chave, e a tradução acontece no `build` — que é o único lugar que
+vê o locale atual.
+
+**E um `.tr` sobre variável não é auditado, que é o lado invisível da mesma
+decisão.** `l10n_keys_test` casa `'chave'.tr` **literal**; `e.value.tr` e
+`f.label` não são literais, então a chave não existe para o detector. Chave
+faltando renderiza o próprio identificador, que é o modo de falha mais silencioso
+que existe, e o teste de auditoria continua verde porque nunca viu a chave.
+`test/l10n_keys_test.dart` ganhou `chavesIndiretas()`, que faz a **afirmação
+oposta** — lê esses mapas no fonte e confere cada valor contra os dois idiomas.
+
+**A defesa tem que poder falhar, e a primeira versão não podia.** O teste passou
+com `any('hf_any_X', '')` no enum e `hf_mergekit` fora do mapa. A causa foi um
+regex: `any\('([a-z0-9_]+)',` casa **zero** vezes num fonte onde o token está
+plainly escrito, e `[^']+` no mesmo lugar casa uma. O enum passou a ser lido
+**token a token** (`indexOf("'")`), e a auditoria tem **três provas** de que
+falha: chave do mapa sumida, chave do enum sumida, e o mapa inteiro renomeado
+(que dá `StateError` com a mensagem, não zero chaves com o teste verde).
+
+**`HfFormat.any.label` era `'Any'` e é agora `labelKey`.** `GGUF` e `LiteRT-LM`
+são nome de formato e não se traduzem — e `Any` é o único dos três que é palavra,
+num enum que mora em `lib/services`, fora do alcance das três varreduras. A mesma
+forma do `ModelBlock.labelKey`: o nome do dado fica, a tradução vem em getter.
+
+**O `hint` de um campo e o cabeçalho de um grupo são texto de tela, e nenhum dos
+dois é catálogo.** `Min`/`Max` (dois campos), `Any — or an owner, e.g.
+bartowski` (o hint) e os quatro cabeçalhos de grupo (`Modality`, `Provider`,
+`Misc`, `Quantisation`) estavam em literal. **E a caixa alta é do estilo, não da
+tradução**: os valores do mapa são `Quantização` em forma natural e quem aplica
+é `_label` com `.toUpperCase()` — PT-BR e EN diferem nas letras acentuadas, e
+`QUANTIZAÇÃO` é o caso que prova.
+
+São **19** rótulos de faceta, não os ~30 que o `HANDOFF` dizia — o número estava
+estimado por leitura de nome de mapa em vez de medido, que é o mesmo defeito que
+este arquivo descreve em outros lugares.
 
 **`text-generation` é a tag que vai para a API do hub**, e é comparada com a
 resposta da busca; traduzir esvazia a lista de resultados sem erro. O que a pessoa
@@ -2403,7 +2445,7 @@ Os dois mudaram: o app agora fala **inglês por padrão** e o idioma é uma
 **preferência salva** com três opções. Ver "O idioma é escolhido, e o padrão é
 inglês" mais acima, que tem as quatro decisões que não são óbvias.
 
-- **Cobertura auditada, não estimada:** **886 chaves**, **as mesmas nos dois
+- **Cobertura auditada, não estimada:** **905 chaves**, **as mesmas nos dois
   idiomas**, e `test/l10n_keys_test.dart` (10 testes) falha se uma faltar em
   **qualquer** dos dois. Antes desta auditoria o mapa tinha 277 e **38 das chaves
   usadas não estavam nele** — `tool_round_trips` à vista num item de Configurações,
