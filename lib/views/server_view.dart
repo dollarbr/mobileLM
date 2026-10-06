@@ -10,6 +10,7 @@ import '../core/colors.dart';
 import '../core/constants.dart';
 import '../utils/server_auth.dart';
 import 'system_one_console.dart';
+import '../services/text_interpolation.dart';
 
 class ServerView extends GetView<ServerController> {
   const ServerView({super.key});
@@ -142,9 +143,7 @@ class ServerView extends GetView<ServerController> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                            'Port the server listens on. Default is '
-                            '${AppConstants.defaultServerPort}; if occupied the app '
-                            'will fall back to the next free port and notify you.',
+                            preencher('sc_port_hint', {'p': AppConstants.defaultServerPort.toString()}),
                             style: GoogleFonts.inter(
                                 fontSize: 13,
                                 color: isDark
@@ -400,10 +399,7 @@ class ServerView extends GetView<ServerController> {
             context,
             isDark,
             'Limit',
-            'A query and document together must fit in $maxTokens tokens. An encoder\n'
-                'pools the whole sequence in one pass and cannot be split into smaller\n'
-                'batches, so a pair that does not fit comes back 400 with the count —\n'
-                'it does not crash the app, but it also is not truncated for you.'));
+            preencher('sc_encoder_limit_example', {'n': maxTokens.toString()})));
       }
       blocks.add(_codeBlock(
           context,

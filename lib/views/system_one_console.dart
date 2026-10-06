@@ -322,8 +322,9 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           resolveSystemOneHeadFilename(device, fromCard: widget.filename);
       _error = failures.isEmpty
           ? null
-          : 'could not read '
-              '${failures.map((f) => f.split(':').first).join(', ')}';
+          : preencher(
+              'soc_could_not_read',
+              {'f': failures.map((f) => f.split(':').first).join(', ')});
     });
   }
 
@@ -365,7 +366,10 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         );
         contract = HeadContract.fromScreen(screen);
       } on Object catch (e) {
-        if (mounted) setState(() => _error = 'screen $name: $e');
+        if (mounted) {
+          setState(() => _error =
+              preencher('soc_screen_failed', {'n': name, 'e': e.toString()}));
+        }
         return;
       }
     }
@@ -555,8 +559,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           failure: null,
         );
         _notice = unloaded
-            ? 'Freed $name. The server is still up and a GGUF, if one is '
-                'loaded, is untouched.'
+            ? preencher('soc_free_unloaded', {'n': name})
             : 'soc_nothing_freed'.tr;
       });
     } on Object catch (e) {
@@ -1043,8 +1046,11 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     return _card(
       card,
       field,
-      'the labels — yours, one per class, in order'
-      '${_head?.classCount == null ? '' : ' (this head has ${_head!.classCount})'}',
+      'soc_labels_hint'.tr +
+          (_head?.classCount == null
+              ? ''
+              : preencher(
+                  'soc_head_class_count', {'c': _head!.classCount.toString()})),
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1111,9 +1117,8 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   String? get _classMismatch {
     final classes = _head?.classCount;
     if (classes == null || _labels.length == classes) return null;
-    return 'The head has $classes classes and there are ${_labels.length} '
-        'labels. It will still run: the ones you did not name are shown as '
-        '"class N" and the top index is reported either way.';
+    return preencher('soc_head_label_mismatch',
+        {'c': classes.toString(), 'l': _labels.length.toString()});
   }
 
   void _setOption(int index, String label) {

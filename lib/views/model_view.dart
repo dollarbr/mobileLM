@@ -636,9 +636,9 @@ class ModelView extends GetView<ModelController> {
         ),
       CpuVerdict.slow => (
           tps == null
-              ? 'mv_bench_cpu_nothing'.tr: 'Under ${kCpuUsableTokensPerSecond.toStringAsFixed(0)} tok/s. '
-                  'Cloud models will feel better; a local 230M still works if '
-                  'you would rather keep it on the device.',
+              ? 'mv_bench_cpu_nothing'.tr
+              : preencher('mv_bench_under',
+                  {'n': kCpuUsableTokensPerSecond.toStringAsFixed(0)}),
           AppColors.warning
         ),
       CpuVerdict.fail => (
@@ -2859,9 +2859,8 @@ class ModelView extends GetView<ModelController> {
           children: [
             Text(
               model.needsMmproj
-                  ? 'You are about to download ${model.name} and its '
-                      'projector for use in the app.'
-                  : 'You are about to download ${model.name} for use in the app.',
+                  ? preencher('mv_download_confirm_proj', {'n': model.name})
+                  : preencher('mv_download_confirm', {'n': model.name}),
               style:
                   GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600),
             ),
@@ -2879,9 +2878,10 @@ class ModelView extends GetView<ModelController> {
                   const SizedBox(width: 8),
                   Text(
                     model.needsMmproj
-                        ? 'Weights: ${controller.modelSizeLabel(model)} '
-                            '+ projector'
-                        : 'Size: ${controller.modelSizeLabel(model)}',
+                        ? preencher('mv_weights_line',
+                                {'s': controller.modelSizeLabel(model)})
+                        : preencher('mv_size_line',
+                            {'s': controller.modelSizeLabel(model)}),
                     style: GoogleFonts.inter(
                         fontSize: 13, fontWeight: FontWeight.w600),
                   ),
@@ -3729,7 +3729,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
           widget.sizeController.text = sizeLabel;
         }
       } catch (e) {
-        _urlWarning.value = 'Could not resolve file size: $e';
+        _urlWarning.value = preencher('mv_size_unresolved_detail', {'e': e.toString()});
         widget.sizeController.text = '';
       } finally {
         widget.isDetecting.value = false;
@@ -3752,7 +3752,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
         widget.sizeController.text = sizeLabel;
       }
     } catch (e) {
-      _urlWarning.value = 'Could not resolve file size: $e';
+      _urlWarning.value = preencher('mv_size_unresolved_detail', {'e': e.toString()});
       widget.sizeController.text = '';
     } finally {
       widget.isDetecting.value = false;

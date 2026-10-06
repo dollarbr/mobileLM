@@ -587,9 +587,8 @@ class SettingsView extends GetView<SettingsController> {
             // number is interpolated from the constant so the two cannot drift.
             Text(
               current == 0
-                  ? 'No cap of your own — the app stops at '
-                      '${AppConstants.agentHopBackstop} if the model keeps '
-                      'asking for tools'
+                  ? preencher('set_hops_backstop',
+                      {'n': AppConstants.agentHopBackstop.toString()})
                   : 'set_hops_label'.tr,
               style: GoogleFonts.inter(fontSize: 13),
             ),
@@ -1436,7 +1435,8 @@ class SettingsView extends GetView<SettingsController> {
         final status = snapshot.data;
         final subtitle = switch ((snapshot.connectionState, status)) {
           (ConnectionState.done, final s?) => s.toString(),
-          (ConnectionState.done, null) => 'Probe failed: ${snapshot.error}',
+          (ConnectionState.done, null) =>
+              preencher('set_probe_failed', {'e': '${snapshot.error}'}),
           _ => 'Checking…',
         };
         return _appleGroupedCard(context, isDark, children: [

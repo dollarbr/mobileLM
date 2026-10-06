@@ -180,7 +180,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Could not list files: $e';
+        _error = preencher('hf_files_list_failed', {'e': e.toString()});
       });
     }
   }
@@ -253,9 +253,11 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
       name: '${_openRepo?.name ?? file.repoId} ${file.quant}'.trim(),
       url: file.url,
       filename: file.filename,
-      description: 'From Hugging Face: ${file.repoId}'
-          '${projector != null ? ' — needs a ${projector.sizeLabel} '
-              'projector (${projector.filename})' : ''}',
+      description: preencher('hf_from_repo', {'r': file.repoId}) +
+          (projector == null
+              ? ''
+              : preencher('hf_needs_projector',
+                  {'s': projector.sizeLabel, 'f': projector.filename})),
       template: _templateFor(file.filename),
       // Weights only, not weights+projector: the catalogue convention is that
       // `size` describes the one file `filename` names, and the completeness

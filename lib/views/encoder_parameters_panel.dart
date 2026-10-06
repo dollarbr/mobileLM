@@ -184,10 +184,8 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
         ]),
         const SizedBox(height: 6),
         Text(
-          'A query and a document together must fit in this. An encoder pools '
-          'the whole sequence in one pass and cannot split it, so the limit is '
-          'a hard ceiling, not a hint. The native side caps it at '
-          '${EncoderSettingsService.nativeMaxInputTokens}.',
+          preencher('enc_max_input_help',
+              {'n': EncoderSettingsService.nativeMaxInputTokens.toString()}),
           style: GoogleFonts.inter(
               fontSize: 11, color: Theme.of(context).hintColor),
         ),

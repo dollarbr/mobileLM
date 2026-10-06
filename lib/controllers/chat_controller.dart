@@ -658,7 +658,7 @@ class ChatController extends GetxController {
                      
     if (!isVision) {
       Get.snackbar('warning_text_only_model'.tr,
-        'The selected model ($modelName) might not support images. If you get an error, switch to a vision model (like Gemini, GPT-4o, or equivalent.).',
+        preencher('chat_vision_warning', {'n': modelName}),
         snackPosition: SnackPosition.TOP,
         duration: const Duration(seconds: 6),
         backgroundColor: const Color(0xFFFF9500).withValues(alpha: 0.95), // Warning Orange
@@ -1224,7 +1224,8 @@ class ChatController extends GetxController {
           final call = ToolCallParser.parseFirst(rawResponse);
           if (call == null) break;
           hop++;
-          streamingResponse.value = 'Running ${call.name}…';
+          streamingResponse.value =
+              preencher('chat_running_tool', {'t': call.name});
           var toolResult = await _tools.execute(call.name, call.arguments);
 
           // Write-class tools come back once asking for a human tap before
@@ -1288,7 +1289,8 @@ class ChatController extends GetxController {
             if (!allowed) {
               toolResult = 'The user declined this call.';
             } else {
-              streamingResponse.value = 'Running ${call.name}…';
+              streamingResponse.value =
+                  preencher('chat_running_tool', {'t': call.name});
               toolResult = await _tools.execute(
                 call.name,
                 call.arguments,

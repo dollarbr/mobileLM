@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../services/workspace_service.dart';
 import '../services/workspace_native.dart'
     if (dart.library.html) '../services/workspace_stub.dart' as ws;
+import '../services/text_interpolation.dart';
 
 class WorkspaceView extends GetView<WorkspaceService> {
   const WorkspaceView({super.key});
@@ -237,7 +238,7 @@ class _DirList extends StatelessWidget {
       ws.WorkspaceEntry entry, String relPath) async {
     final content = await service.readFile(relPath);
     if (content == null) {
-      Get.snackbar('Workspace', 'Could not read ${entry.name}',
+      Get.snackbar('Workspace', preencher('ws_read_failed', {'n': entry.name}),
           snackPosition: SnackPosition.BOTTOM);
       return;
     }

@@ -460,8 +460,14 @@ void main() {
         }
         // Marca de português: acentos, cedilha, ou uma palavra da lista de
         // termos técnicos que o produto mantém (embedder, reranker, projector).
+        //
+        // **`screen` entrou na lista de técnicos pela mesma razão de
+        // `projector`**: é o nome da rota (`POST /v1/litert/screen`), e a
+        // mensagem `screen @n: @e` diz **qual chamada** falhou. Traduzir o nome
+        // da rota faria a pessoa procurar `/v1/litert/tela` no log.
         final marcaPt = RegExp('[áàâãéêíóôõúç]').hasMatch(texto) ||
-            RegExp(r'\b(embedder|reranker|projector|pooler)\b').hasMatch(texto);
+            RegExp(r'\b(embedder|reranker|projector|pooler|screen)\b')
+                .hasMatch(texto);
         if (marcaPt) continue;
         suspitas.add('${e.key} = "${e.value}"');
       }
@@ -555,12 +561,12 @@ void main() {
       // Este número já esteve errado seis vezes neste repo (45, 62, 10 encoders,
       // 484, 522, 535), então o teste afirma em vez de descrever.
       //
-      // **828 = 674 + 154 do item 3e**, a rodada que traduziu os 205 textos de
+      // **860 = 674 + 186 do item 3e**, a rodada que traduziu os 205 textos de
       // tela que a varredura ampla tinha encontrado e nenhuma das outras três
       // contava. Mais `soc_run_now`, que não vem do TSV: `'running'` é status
       // gravado no Hive e o botão que o mostrava precisou de chave própria,
       // porque traduzir o status quebraria a comparação.
-      expect(en.length, 828);
+      expect(en.length, 860);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

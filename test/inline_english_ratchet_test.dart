@@ -586,7 +586,21 @@ void f(BuildContext context, bool showDetails) {
     // `Thinking for @s` e mais dois. A correção é a **duas linhas acima**: a
     // linha do `?` só é ramo de um `descriptionEn` se o campo estiver antes
     // dela.
-    const teto = 216;
+    //
+    // **O teto desta varredura vai a zero, e a escolha é o contrário do que ela
+    // parece.** Com 216 linhas reais, zero seria um teste que passa pelo motivo
+    // errado — a mesma falha de um teto alto, pelo motivo oposto. Zero só é
+    // honesto **depois** de o número medido chegar a zero, e é o que a parte 2
+    // do item 3e fez: 148 literais diretos por reescrita e 33 interpolados por
+    // `preencher`, mais três entradas na lista de não-texto para o texto que vai
+    // para o modelo e para o log. O que a varredura mede agora são 326 literais
+    // que são identificador, dado, rota, exemplo ou comentário — cada um deles
+    // com o motivo escrito.
+    //
+    // **O número anterior era 216, e ele estava certo na data.** Um teto é uma
+    // afirmação sobre hoje; a afirmação de hoje é zero, e escrevê-lo é o que
+    // torna a próxima omissão visível em vez de silently tolerada.
+    const teto = 0;
     final texto = broad();
     expect(texto.length, lessThanOrEqualTo(teto),
         reason: 'literal em inglês que é texto de tela. A lista de não-texto é '

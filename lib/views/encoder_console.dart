@@ -423,8 +423,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
             'only for ordering, and ordering needs the head.',
         extra: [
           if (tags.isNotEmpty)
-            'The file calls itself: ${tags.join(', ')}.\nThat is the intent, stated '
-                'correctly, by a conversion that did not deliver it.',
+            preencher('enc_self_declared_tags', {'t': tags.join(', ')}),
           'enc_works_reranker'.tr,
           'enc_works_embed'.tr,
         ],
@@ -567,9 +566,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
         if ((_info.value?.maxInputTokens ?? 0) > 0) ...[
           const SizedBox(height: 8),
           Text(
-            'A query and document together must fit in '
-            '${_info.value!.maxInputTokens} tokens — an encoder pools the whole '
-            'sequence in one pass and cannot split it.',
+            preencher('enc_tokens_hint', {'n': _info.value!.maxInputTokens.toString()}),
             style: GoogleFonts.inter(
                 fontSize: 11, color: isDark ? Colors.white38 : Colors.black45),
           ),

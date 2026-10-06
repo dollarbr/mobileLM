@@ -1015,6 +1015,62 @@ class AppTranslation extends Translations {
       'set_unknown_gpu': 'Unknown GPU',
       'enc_doc_example': 'The map cache holds about 340 MB per city.\nThe cache is cleared '
           'from Settings.\nOlive oil is pressed cold.',
+      // ── Texto interpolado da varredura ampla (item 3e, parte 2) ──
+      // São textos com `${…}`: trocar o literal inteiro apagaria a parte que
+      // muda, então o fonte usa `preencher('chave', {...})`. O `@nome` vem da
+      // tradução, e é conferido ANTES da troca — sobra `@nome` é erro.
+      // Unidade, sufixo e pontuação ficam FORA do placeholder.
+
+      'chat_vision_warning': 'The selected model (@n) might not support images. If you get an '
+          'error, switch to a vision model (like Gemini, GPT-4o, or '
+          'equivalent.).',
+      'chat_running_tool': 'Running @t…',
+      'mc_import_done_detail': 'Model @f imported.',
+      'mc_projector_paired': 'Projector paired: @n',
+      'task_plan_failed': 'Failed to generate plan. Raw output: @r',
+      'task_step_n': 'Step @i',
+      'enc_self_declared_tags': 'The file calls itself: @t.\nThat is the intent, stated correctly, '
+          'by a conversion that did not deliver it.',
+      'enc_tokens_hint': 'A query and document together must fit in @n tokens — an encoder '
+          'pools the whole sequence in one pass and cannot split it.',
+      'enc_max_input_help': 'A query and a document together must fit in this. An encoder '
+          'pools the whole sequence in one pass and cannot split it, so the '
+          'limit is a hard ceiling, not a hint. The native side caps it at '
+          '@n.',
+      'hf_files_list_failed': 'Could not list files: @e',
+      'hf_from_repo': 'From Hugging Face: @r',
+      'hf_needs_projector': ' — needs a @s projector (@f)',
+      'lit_features_line': 'features — @n floats for "@f"',
+      'mv_size_unresolved_detail': 'Could not resolve file size: @e',
+      'mv_size_line': 'Size: @s',
+      'mv_weights_line': 'Weights: @s + projector',
+      'mv_bench_under': 'Under @n tok/s. Cloud models will feel better; a local 230M '
+          'still works if you would rather keep it on the device.',
+      'mv_download_confirm': 'You are about to download @n for use in the app.',
+      'mv_download_confirm_proj': 'You are about to download @n and its projector for use in the '
+          'app.',
+      'sc_encoder_limit_example': 'A query and document together must fit in @n tokens. An '
+          'encoder\npools the whole sequence in one pass and cannot be split '
+          'into smaller\nbatches, so a pair that does not fit comes back 400 '
+          'with the count —\nit does not crash the app, but it also is not '
+          'truncated for you.',
+      'sc_port_hint': 'Port the server listens on. Default is @p; if occupied the app '
+          'will fall back to the next free port and notify you.',
+      'set_hops_backstop': 'No cap of your own — the app stops at @n if the model keeps '
+          'asking for tools',
+      'set_probe_failed': 'Probe failed: @e',
+      'soc_free_unloaded': 'Freed @n. The server is still up and a GGUF, if one is loaded, '
+          'is untouched.',
+      'soc_screen_failed': 'screen @n: @e',
+      'soc_head_label_mismatch': 'The head has @c classes and there are @l labels. It will still '
+          'run: the ones you did not name are shown as "class N" and the '
+          'top index is reported either way.',
+      'soc_labels_hint': 'the labels — yours, one per class, in order',
+      'soc_head_class_count': ' (this head has @c)',
+      'soc_could_not_read': 'could not read @f',
+      'ws_read_failed': 'Could not read @n',
+      'td_thinking_for': 'Thinking for @n s…',
+      'td_thought_for': 'Thought for @n s',
     },
     'pt_BR': {
       'sc_section_endpoints': 'ENDPOINTS',
@@ -2086,6 +2142,63 @@ class AppTranslation extends Translations {
       'set_unknown_gpu': 'GPU desconhecida',
       'enc_doc_example': 'O cache de mapas guarda cerca de 340 MB por cidade.\nO cache é '
           'limpo em Configurações.\nAzeite de oliva é prensado a frio.',
+      // ── Texto interpolado da varredura ampla (item 3e, parte 2) ──
+      // São textos com `${…}`: trocar o literal inteiro apagaria a parte que
+      // muda, então o fonte usa `preencher('chave', {...})`. O `@nome` vem da
+      // tradução, e é conferido ANTES da troca — sobra `@nome` é erro.
+      // Unidade, sufixo e pontuação ficam FORA do placeholder.
+
+      'chat_vision_warning': 'O modelo selecionado (@n) pode não suportar imagens. Se der '
+          'erro, troque para um modelo com visão (como Gemini, GPT-4o ou '
+          'equivalente).',
+      'chat_running_tool': 'Executando @t…',
+      'mc_import_done_detail': 'Modelo @f importado.',
+      'mc_projector_paired': 'Projetor pareado: @n',
+      'task_plan_failed': 'Falha ao gerar o plano. Saída bruta: @r',
+      'task_step_n': 'Passo @i',
+      'enc_self_declared_tags': 'O arquivo se chama: @t.\nEssa é a intenção, declarada '
+          'corretamente, por uma conversão que não a entregou.',
+      'enc_tokens_hint': 'Uma consulta e um documento juntos precisam caber em @n tokens — '
+          'um encoder reúne a sequência inteira numa passada e não pode '
+          'dividi-la.',
+      'enc_max_input_help': 'Uma consulta e um documento juntos precisam caber neste limite. '
+          'Um encoder reúne a sequência inteira numa passada e não pode '
+          'dividi-la, então o limite é um teto rígido e não uma sugestão. O '
+          'lado nativo limita em @n.',
+      'hf_files_list_failed': 'Não foi possível listar os arquivos: @e',
+      'hf_from_repo': 'Do Hugging Face: @r',
+      'hf_needs_projector': ' — precisa de um projetor de @s (@f)',
+      'lit_features_line': 'features — @n floats para "@f"',
+      'mv_size_unresolved_detail': 'Não foi possível resolver o tamanho do arquivo: @e',
+      'mv_size_line': 'Tamanho: @s',
+      'mv_weights_line': 'Pesos: @s + projetor',
+      'mv_bench_under': 'Abaixo de @n tok/s. Modelos na nuvem vão parecer melhores; um '
+          '230M local ainda funciona se você preferir tê-lo no aparelho.',
+      'mv_download_confirm': 'Você está prestes a baixar @n para usar no app.',
+      'mv_download_confirm_proj': 'Você está prestes a baixar @n e o projetor dele para usar no '
+          'app.',
+      'sc_encoder_limit_example': 'Uma consulta e um documento juntos precisam caber em @n tokens. '
+          'Um encoder\nreúne a sequência inteira numa passada e não pode '
+          'dividi-la em lotes\nmenores, então um par que não cabe volta com '
+          '400 e a contagem —\nisso não trava o app, mas também não corta o '
+          'texto por você.',
+      'sc_port_hint': 'Porta em que o servidor escuta. O padrão é @p; se estiver '
+          'ocupada, o app cai para a próxima porta livre e avisa.',
+      'set_hops_backstop': 'Sem teto seu — o app para em @n se o modelo continuar pedindo '
+          'ferramentas',
+      'set_probe_failed': 'Sondagem falhou: @e',
+      'soc_free_unloaded': '@n foi liberado. O servidor continua no ar e um GGUF, se houver, '
+          'não foi tocado.',
+      'soc_screen_failed': 'screen @n: @e',
+      'soc_head_label_mismatch': 'A cabeça tem @c classes e há @l rótulos. Ela vai rodar assim '
+          'mesmo: as que você não nomeou aparecem como "classe N" e o '
+          'índice do topo é reportado de qualquer jeito.',
+      'soc_labels_hint': 'os rótulos — seus, um por classe, em ordem',
+      'soc_head_class_count': ' (esta cabeça tem @c)',
+      'soc_could_not_read': 'não foi possível ler @f',
+      'ws_read_failed': 'Não foi possível ler @n',
+      'td_thinking_for': 'Pensando por @n s…',
+      'td_thought_for': 'Pensou por @n s',
     }
   };
 }

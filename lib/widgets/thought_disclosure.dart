@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/text_interpolation.dart';
 
 class ThoughtDisclosure extends StatefulWidget {
   final String thought;
@@ -187,8 +188,10 @@ class _ThoughtDisclosureState extends State<ThoughtDisclosure>
   String get _label {
     final seconds = widget.durationSeconds ?? _liveSeconds;
     if (widget.isThinking) {
-      return seconds > 0 ? 'Thinking for ${seconds}s…' : 'Thinking…';
+      return seconds > 0
+          ? preencher('td_thinking_for', {'n': seconds.toString()})
+          : 'Thinking…';
     }
-    return seconds > 0 ? 'Thought for ${seconds}s' : 'Thought';
+    return seconds > 0 ? preencher('td_thought_for', {'n': seconds.toString()}) : 'Thought';
   }
 }

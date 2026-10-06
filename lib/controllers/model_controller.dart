@@ -876,7 +876,7 @@ class ModelController extends GetxController {
     final dest = '${await _download.modelsDir}/${picked.name}';
     await File(picked.path!).copy(dest);
     await setMmprojOverride(modelFilename, picked.name);
-    Get.snackbar('Vision', 'Projector paired: ${picked.name}',
+    Get.snackbar('Vision', preencher('mc_projector_paired', {'n': picked.name}),
         snackPosition: SnackPosition.BOTTOM);
   }
 
@@ -2323,7 +2323,8 @@ class ModelController extends GetxController {
 
         await refreshDownloaded();
         importStatus.value = 'Import complete';
-        Get.snackbar('Import Successful', 'Model $filename imported.',
+        Get.snackbar('Import Successful',
+            preencher('mc_import_done_detail', {'f': filename}),
             snackPosition: SnackPosition.BOTTOM);
       }
     } catch (e) {
@@ -2368,7 +2369,8 @@ class ModelController extends GetxController {
         fileSizes[filename] = (result?['bytes'] as num?)?.toInt() ??
             await _download.getModelSize(filename);
         await refreshDownloaded();
-        Get.snackbar('Import Successful', 'Model $filename imported.',
+        Get.snackbar('Import Successful',
+            preencher('mc_import_done_detail', {'f': filename}),
             snackPosition: SnackPosition.BOTTOM);
       }
     } on PlatformException catch (e) {

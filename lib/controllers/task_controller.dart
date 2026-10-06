@@ -5,6 +5,7 @@ import '../models/task_model.dart';
 import '../services/hive_service.dart';
 import '../services/inference_service.dart';
 import '../services/cloud_service.dart';
+import '../services/text_interpolation.dart';
 
 class TaskController extends GetxController {
   final HiveService _hive = Get.find<HiveService>();
@@ -81,7 +82,7 @@ Steps:''';
           steps: [
             TaskStep(
               index: 0,
-              description: 'Failed to generate plan. Raw output: $response',
+              description: preencher('task_plan_failed', {'r': response}),
               status: 'failed',
             ),
           ],
@@ -167,7 +168,8 @@ Steps:''';
         final cmd = trimmed.substring(4).trim();
         steps.add(TaskStep(
           index: stepIndex++,
-          description: currentDesc ?? 'Step ${stepIndex}',
+          description:
+              currentDesc ?? preencher('task_step_n', {'i': stepIndex.toString()}),
           command: cmd,
         ));
         currentDesc = null;

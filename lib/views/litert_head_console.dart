@@ -836,7 +836,8 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
       children: [
         _field(
           field,
-          'features — ${head.featureCount} floats for "${head.features.name}"',
+          preencher('lit_features_line',
+              {'n': head.featureCount.toString(), 'f': head.features.name}),
           _features,
           maxLines: 3,
           onFirstBuild: () => _features.text = _sampleVector(head.featureCount),

@@ -293,16 +293,28 @@ class TextLanguage {
     // sobrou — a comparação — vira dado. Ver `system_one_console.dart` e
     // `task_view.dart`.
     'running': 'status de passo de tarefa, gravado no Hive e comparado com ==',
+    //
+    // **Vão para o modelo ou para o arquivo de log, não para a tela.**
+    // `selectedFileContent` e o `role: 'user'` da mensagem de tool são o que vai
+    // para o prompt, e o `log.error` é o que a pessoa abre para diagnosticar.
+    // Traduzir os três não põe português onde havia inglês: faz o modelo receber
+    // uma frase que ele não reconhece como erro, e tira do log a string que a
+    // busca por ela acha.
+    //
+    // **Raw string, e não por estilo.** Uma string normal com `${…}` deixa o
+    // Dart fazer a interpolação no **fonte do próprio filtro**: a chave vira
+    // `[Could not extract text from com.sun.folder: …]` e o arquivo não compila,
+    // com `Undefined name 'e'`. A lista de não-texto é código, e quem escreve
+    // chave nela está escrevendo código.
     'The user declined this call.':
-        'vai para o modelo como resultado de tool, não para a pessoa ler',
-    // **O `\n` da chave abaixo é uma quebra de verdade, não o par de caracteres.**
-    // A chave é comparada contra o literal **já desserializado** pelo scanner
-    // (`\n` virando caractere), então escrever `\\n` no mapa faz a entrada não
-    // casar com nada — e a dívida continua na lista sem erro, que é o modo de
-    // falha padrão desta lista inteira. Custa 2 textos (205 → 203).
-    ')}.\nThat is the intent, stated correctly, by a conversion that did not '
-        'deliver it.':
-        'cauda de um literal adjacente; a frase começa no segmento de cima',
+        'vai para o modelo como resultado de tool; o mesmo texto na tela tem '
+        'chave própria (user_declined) e são dois lugares diferentes',
+    r'[Could not extract text from ${selectedFileName.value}: $e]':
+        'vai para o modelo como conteúdo do anexo, não para a tela',
+    r'Tool result for ${call.name}: $toolResult':
+        'vai para o modelo como role=user, não para a tela',
+    r'[ModelController] TAESD download failed (will use standard VAE): $e':
+        'primeiro argumento de log.error, e é o que a busca no log acha',
     '} hidden — larger than this phone can load. Turn off "hf_fits_device".tr '
         'in Filters to see them.':
         'fragmento de expressão: abre no fim de uma interpolação e a frase é o conjunto',
