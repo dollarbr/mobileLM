@@ -555,12 +555,12 @@ void main() {
       // Este número já esteve errado seis vezes neste repo (45, 62, 10 encoders,
       // 484, 522, 535), então o teste afirma em vez de descrever.
       //
-      // **827 = 674 + 153 do item 3e**, a rodada que traduziu os 205 textos de
+      // **828 = 674 + 154 do item 3e**, a rodada que traduziu os 205 textos de
       // tela que a varredura ampla tinha encontrado e nenhuma das outras três
       // contava. Mais `soc_run_now`, que não vem do TSV: `'running'` é status
       // gravado no Hive e o botão que o mostrava precisou de chave própria,
       // porque traduzir o status quebraria a comparação.
-      expect(en.length, 827);
+      expect(en.length, 828);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

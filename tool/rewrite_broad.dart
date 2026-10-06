@@ -231,6 +231,8 @@ class _Arquivo {
 
   final List<_Achado> _pendentes = [];
 
+
+
   /// Acha os literais de tela em inglês deste arquivo que têm chave.
   ///
   /// **A chave vem do casamento por TEXTO, lido do arquivo de traduções** — e o

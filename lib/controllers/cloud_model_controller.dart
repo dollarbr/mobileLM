@@ -77,25 +77,25 @@ class CloudModelController extends GetxController {
     CloudProviderInfo(
       id: 'openrouter',
       name: 'OpenRouter',
-      description: 'Free model list · OpenAI compatible',
+      description: 'cloud_free_list'.tr,
       icon: Icons.hub_outlined,
     ),
     CloudProviderInfo(
       id: 'openai',
       name: 'OpenAI',
-      description: 'Native OpenAI chat models',
+      description: 'cloud_native_openai'.tr,
       icon: Icons.auto_awesome,
     ),
     CloudProviderInfo(
       id: 'deepseek',
       name: 'DeepSeek',
-      description: 'OpenAI compatible V4 models',
+      description: 'cloud_v4'.tr,
       icon: Icons.psychology_alt_outlined,
     ),
     CloudProviderInfo(
       id: 'google',
       name: 'Google Gemini',
-      description: 'Gemini native API models',
+      description: 'cloud_gemini'.tr,
       icon: Icons.diamond_outlined,
     ),
     CloudProviderInfo(
@@ -107,7 +107,7 @@ class CloudModelController extends GetxController {
     CloudProviderInfo(
       id: 'custom',
       name: 'Custom API',
-      description: 'Manual OpenAI-compatible endpoint',
+      description: 'cloud_custom'.tr,
       icon: Icons.tune,
       supportsFetch: false,
     ),

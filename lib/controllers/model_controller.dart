@@ -2549,7 +2549,7 @@ class ModelController extends GetxController {
         lower.contains('allocate') ||
         lower.contains('oom') ||
         lower.contains('cannot allocate')) {
-      return 'Your device ran out of memory (RAM) trying to load this model. Mobile devices have strict memory limits; try using a smaller or more highly quantized model (e.g., 1B or 3B parameters, q4_k_m quantized).';
+      return 'mc_out_of_memory'.tr;
     }
     if (lower.contains('opencl') ||
         lower.contains('vulkan') ||
