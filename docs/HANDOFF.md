@@ -16,16 +16,30 @@ Galaxy A72** — o aparelho de teste, onde um número é um piso e não uma méd
 
 | | |
 |---|---|
-| versão no `pubspec.yaml` | **0.5.1+2008** (tag `0.5.1` publicada) |
-| commits do topo | `75f82cd9a` · `5551761fb` |
-| `flutter test` | **356 passando, 0 falhas** |
-| `flutter analyze` | **127 issues, 0 erros** (pré-existentes; só erros gateiam CI) |
-| árvore | limpa, `main` tracks `origin/main` |
+| versão no `pubspec.yaml` | **0.6.0+2009** — tag `0.6.0` **publicada** |
+| `versionCode` publicado (arm64) | **`4009`**, medido com `aapt2 dump badging` no asset — `2 * 1000 + 2009` |
+| commit do topo | `4e4a1aa6c` · `b91addba8` · `863ab0219` |
+| `flutter test` | **583 passando, 0 falhas** |
+| `flutter analyze` | **206 issues, 0 erros** (pré-existentes; só erros gateiam CI) |
+| varredura estreita / ampla | **0** / **343**, dos quais **0 de texto de tela** |
+| mapa de tradução | **905 chaves**, as mesmas nos dois idiomas |
+| árvore | limpa, `main` tracks `origin/main`, exceto os **dois arquivos untracked de propósito** abaixo |
 |_branch extra_ | `pdf-markdown-*` (locais), `core/rust-hybrid` (no remoto, **não apagar**) |
 
-**A 0.6.0 não foi preparada.** Tudo das últimas sessões está em
-`[Unreleased]` do `CHANGELOG.md`. Antes de subir um minor, a frase "isto faz X,
-que antes não existia" tem que sair verdadeira.
+⚠️ **`lib/services/sd_weight_estimate.dart` e `test/sd_weight_estimate_test.dart`
+estão untracked de propósito, e é o item 0b da fila.** São o plano que **não foi
+aceito** — oferecer a lista de quantização com esses números seria dizer uma
+coisa verificavelmente falsa (erra +74% a +126%). **`git add lib/` e
+`git add test/` puxam os dois**, e já aconteceu duas vezes; use
+`git add <arquivo>` ou `git reset -q HEAD <arquivo>` depois.
+
+**A 0.6.0 está publicada**, e é a **seletor de idioma**: Auto / English /
+Português (Brasil), **inglês como padrão**, com 905 chaves nos dois idiomas. Minor
+porque a frase sai verdadeira — *antes não existia escolha de idioma*. O item 3e
+entrou junto e fechou: **224** textos de tela traduzidos e a varredura ampla em
+zero. **O próximo minor ainda não foi escolhido** — as três candidatas que passam
+no critério do repo estão em `AGENTS.md`, no fim de "Sugestões de próximas
+features".
 
 ### O catálogo, contado e não estimado
 
@@ -309,8 +323,14 @@ que resta é olhar arch e `n_layer`.
    e §4.1 diz por quê ele não é um problema de memória.
 3. **Fechar a fila antiga de UI** (overflows restantes, nomes e comentários dos
    modelos, quantização por swipe no card).
-4. **A 0.6.0**, com o critério deste repo: minor = feature, e a frase tem que sair
-   verdadeira.
+4. **O próximo minor**, com o critério deste repo: minor = feature, e a frase tem
+   que sair verdadeira. **Os três acima são `patch`, todos** — (1) corrige advice
+   errado, (2) e (3) ampliam medição e catálogo, e catálogo maior não é feature
+   por regra do próprio repo. As três que passam no critério estão nomeadas em
+   `AGENTS.md`: **a régua de memória por RSS medido** (a que mais dói, e
+   bloqueia numa decisão antes de bloquear em esforço), o **host da Laya**, e o
+   **`POST /v1/litert/unload`**. A 0.6.0 saiu em 2026-10-06 com o seletor de
+   idioma.
 
 ---
 
@@ -382,7 +402,7 @@ o app**, então vai primeiro apesar de não ser o menor.
 | 6 | **O `.arb` está morto** | pequeno, limpeza | `app_pt_BR.arb` tem 112 chaves, **91 usadas** com `.tr` e 106 já no mapa — então é um **subconjunto**, não a "fonte divergente" que eu escrevi aqui e no CHANGELOG. As 6 que só existem nele são traduções de rótulos que o app **já mostra em português** como literais inline nos chips de ação rápida, então **não há bug visível**: quase consertei uma não-bug. O que sobra é uma fonte morta que alguém pode editar achando que muda algo. Decidir: apaga ou passa a ser gerado. |
 | 7 | **A hipótese da quantização** | alto, **medição** | `Q4_K_M` contra `Q4_0` do **mesmo** modelo. Único item que muda advice para 36 das 46 entradas, e o advice atual está comprovadamente errado (o menor modelo é o mais lento). O catálogo não tem nenhuma família em duas quantizações, então o par vem de fora. |
 | 8 | **Os 4 `litertlm` restantes** | alto, **medição** | "GPU é o melhor LiteRT neste aparelho" veio de **um** modelo, o 0.6B, e nenhum dos outros é um 0.6B. |
-| 9 | **A `0.6.0`** | — | Minor = feature, e "isto faz X, que antes não existia" tem que sair verdadeiro. Depende de escolher o que entra. |
+| 9 | ~~**A `0.6.0`**~~ | **feito** | Minor = feature, e a frase saiu verdadeira: **o idioma é escolhido** (Auto / English / Português (Brasil), **padrão inglês**) — antes não existia escolha, era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência medida foram 62 fichas de modelo em inglês numa tela que se dizia portuguesa. **905 chaves** nos dois idiomas. Publicada em 2026-10-06, arm64 com `versionCode=4009` **medido**. **O minor seguinte ainda não foi escolhido**; as candidatas que passam no critério estão no fim de "Sugestões" do `AGENTS.md`. |
 
 ### Não está na fila, e por quê
 

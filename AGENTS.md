@@ -6,7 +6,8 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.6.0+2009** (ainda não publicada).
+<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.6.0+2009** (tag `0.6.0` publicada; arm64 medido em
+`versionCode=4009`).
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + **encoders (embeddings/rerank/classify, BERT e
@@ -241,6 +242,32 @@ diferente do resto do workspace, onde commit só ocorre se pedido.
 Três workflows ativos: `ci.yml`, `debug-apk.yml` (APK debug arm64 por push, ~22 min) e
 `release.yml` (dispara na tag).
 
+**Um build pode falhar por um download corrompido do NDK, e a falha não é do
+código.** `ndkVersion = flutter.ndkVersion` em `android/app/build.gradle.kts` — ou
+seja, o NDK **não está fixado neste repo**: ele vem do SDK do Flutter que o
+`subosito/flutter-action@v2` instala, e o Gradle o **baixa da CDN do Google na
+hora de configurar o projeto**. Em 2026-10-06 o `debug-apk.yml` da `main` morreu
+em `Build debug APK` com isto:
+
+```
+com.android.builder.sdk.InstallFailedException:
+  ndk;27.0.12077973 NDK (Side by side) 27.0.12077973
+Caused by: java.util.zip.ZipException: Archive is not a ZIP archive
+```
+
+**O que prova que não é o código, e é a checagem de 10 segundos:** no mesmo run,
+`flutter analyze` e `flutter test` passaram, e o `Debug APK` **da tag, no commit
+idêntico, disparado 13 segundos depois**, passou. `gh run rerun <id> --failed`
+resolve quando é isso.
+
+**A mensagem aponta para o SDK e para o `INSTALL_FAILED` do Gradle, e nenhum dos
+dois tem a ver com o repositório.** A leitura de quem procura defeito vai direto
+para "o build quebrou" e para a versão do plugin — e a versão do plugin é a mesma
+do commit que passou ao lado. O conserto real (instalar o NDK com `sdkmanager` e
+versão fixada, como passo próprio, para o download ser retentável e a versão não
+mudar quando o Flutter muda) **não está feito**; se aparecer de novo e o
+`rerun` não resolver, é este passo que falta.
+
 O `ci.yml` tem **um** job, `analyze` (analyze + test, ~2 min). Havia outros dois —
 `rust-core` (fmt, clippy e testes do crate Rust) e `rust-core-android` (cross-compile
 arm64 + `readelf -d`) — e saíram junto com o núcleo, em 0.3.5. Tinham de ser jobs
@@ -254,12 +281,14 @@ barato de notar uma exclusão de `packagingOptions` ou um filtro de ABI — foi 
 que os 37,2 MB do `liblitert-lm.so` ficaram visíveis por semanas.
 
 Release é por tag, e a tag tem que bater com a versão do `pubspec` **sem** o
-`+build`: `0.5.1+2008` → tag `0.5.1`. O workflow falha de propósito se divergirem.
+`+build`: `0.6.0+2009` → tag `0.6.0`. O workflow falha de propósito se divergirem.
 Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupadas por
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.5.1` (a escada de aceleração passou a ver o tamanho do modelo), `0.5.0` (pinning automático nos núcleos grandes + benchmark de CPU corrigido), `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.4.0` (encoders: `/v1/embeddings`, `/v1/rerank` e `/v1/classify`; 10 encoders no catálogo; console de encoder; parâmetros por papel; `config.json` como pre-flight no HF).
+Release tags publicadas: `0.6.0` (o idioma é escolhido — seletor Auto /
+English / Português (Brasil), **inglês como padrão**, e 905 chaves nos dois
+idiomas; fecha o item 3e com a varredura ampla em zero), `0.5.1` (a escada de aceleração passou a ver o tamanho do modelo), `0.5.0` (pinning automático nos núcleos grandes + benchmark de CPU corrigido), `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.4.0` (encoders: `/v1/embeddings`, `/v1/rerank` e `/v1/classify`; 10 encoders no catálogo; console de encoder; parâmetros por papel; `config.json` como pre-flight no HF).
 
 **A `0.3.5` foi preparada e nunca publicada.** O commit existe
 (`ffd30471b`), o pubspec chegou a `0.3.5+2005` e este guia dizia que ela estava
@@ -295,24 +324,58 @@ sobrescreve o versionCode por ABI (`FlutterPlugin.kt`,
 APKs de ABIs diferentes possam coexistir. Os índices estão em
 `FlutterPluginConstants.ABI_VERSION`:
 
-| ABI | índice | `0.5.1+2008` sai como |
+| ABI | índice | `0.6.0+2009` sai como |
 |---|---|---|
-| `armeabi-v7a` | 1 | 3008 |
-| `arm64-v8a` | **2** | **5008** |
-| `x86_64` | 4 (o 3 foi reservado e removido) | 6008 |
+| `armeabi-v7a` | 1 | 3009 |
+| `arm64-v8a` | **2** | **4009** |
+| `x86_64` | 4 (o 3 foi reservado e removido) | 6009 |
 
-O APK arm64 da 0.3.5 tem `versionCode='4005'`, medido com `aapt2 dump badging` —
-`2 * 1000 + 2005`. Sem `--split-per-abi` o override não se aplica e o versionCode é
-o número cru; é por isso que as releases antigas (2001, 2002, 2003) batem com o
-build number e a 0.3.4 não bate. **Não compare pubspec com `dumpsys` sem essa conta.**
+**⚠️ A linha do arm64 esteve errada por duas releases, em 1000, e foi a única linha
+errada.** A tabela dizia `5008` para `0.5.1+2008`, e as outras duas conferem com
+a fórmula — `1 * 1000 + 2008 = 3008` e `4 * 1000 + 2008 = 6008`. O arm64 é
+`2 * 1000 + 2008` = **4008**, e o pior não é o número: é que **a linha errada é a
+do único ABI que este app publica**, porque todo build passa
+`--target-platform android-arm64`.
 
-Regra prática: o que precisa crescer é o **publicado**. Os publicados até 0.3.3
-foram 2002, 2003, 2001, 2001, 2001, 2001, 2001 — ad-hoc, e 0.2.1 (2001) é *menor*
-que 0.2.0 (2003), uma regressão. O maior publicado é **5007** (0.5.0, medido), e
-a 0.5.1 usa `+2008` e publica 5008. Daqui
-em diante: bump de release ⇒ build number tal que `build + 2000` fique acima do
-publicado anterior, senão o update falha com
-`INSTALL_FAILED_VERSION_DOWNGRADE`.
+**E ninguém pode notar uma tabela errada conferindo o build, porque o build não a
+consulta.** Os índices são lidos de `ABI_VERSION` por `filterIdentifier`, em
+`FlutterPlugin.kt:671`, no SDK — a tabela do guia é documentação, não entrada de
+build. Por isso o erro sobreviveu duas releases inteiro: **um número que não
+participa de nada também não denuncia nada**, e o único jeito de pegá-lo é medir o
+APK.
+
+Conferido contra a fonte e contra os dois assets, **não calculado**:
+
+| release | `pubspec` | `2 * 1000 + build` | `aapt2 dump badging` |
+|---|---|---|---|
+| `0.5.1` | `0.5.1+2008` | 4008 | **`4008`** |
+| `0.6.0` | `0.6.0+2009` | 4009 | **`4009`** |
+
+A prosa tinha o mesmo defeito pelo mesmo motivo: *"O maior publicado é **5007**
+(0.5.0, medido)"*. O maior publicado era **4007** — o `5007` é o mesmo salto de
+milhar, quase com certeza a transcrição de `4007` que produziu `5007` e que a
+tabela depois herdou em vez de conferir contra a fórmula.
+
+**O que a conta errada teria custado.** A regra escrita mandava `build + 2000`
+ficar acima do publicado, e o publicado estava errado em 1000: quem a seguisse
+precisaria de `+3008` ou mais, quando `+2009` bastava — e o `+3008` seria aceito,
+porque **build number folgado não quebra install**. O que quebra é o número ficar
+errado para sempre, porque o próximo mede o maior publicado a partir do mesmo
+erro e aplica o mesmo deslocamento.
+
+**E eu calculei errado na hora de marcar a tag.** O aviso que fiz para mim mesmo
+na shell dizia `2 * 1000 + 2009 = 6009`, e a decisão de subir a minor estava
+certo por outro motivo: `4009 > 4008`, que é o que importa. Ou seja, o critério
+estava certo e a aritmética que o justificava não estava — **é a forma mais
+silenciosa de um número errado**: não muda a decisão, então nada denuncia.
+
+Regra prática: o que precisa crescer é o **publicado**, e o publicado do arm64 é
+`build + 2000`. O maior publicado é **4009** (0.6.0, medido no asset com
+`aapt2 dump badging`). Daqui em diante: bump de release ⇒ `build` tal que
+`build + 2000` fique acima do publicado anterior, senão o update falha com
+`INSTALL_FAILED_VERSION_DOWNGRADE`. **Meça o asset depois de cada release** — a
+fórmula é de uma linha e a medição leva trinta segundos:
+`gh release download <tag> -p '*-arm64-v8a.apk' && aapt2 dump badging <apk> | grep ^package`.
 
 **O núcleo híbrido Rust saiu do APK em 0.3.5.** O código continua na branch
 `core/rust-hybrid` (não a apague); a decisão, as medições e a rota para retomar
@@ -2680,5 +2743,38 @@ havia trabalho.
    sem auxiliares.
 4. **Fechar a fila antiga de UI**: overflows restantes, nomes e comentários dos
    modelos, quantização por swipe no card.
-5. **A 0.6.0**, com o critério do repo: minor = feature, e "isto faz X, que antes
-   não existia" tem que sair verdadeiro.
+
+**Os quatro acima são `patch`, todos, e a lista não dizia isso.** O critério do
+repo é "isto faz X, que antes não existia", e nenhum deles cria: (1) corrige
+advice comprovadamente errado, (2) e (3) ampliam medição e catálogo — e catálogo
+maior não é feature por regra própria deste arquivo, (4) são overflows e um
+gesto. **Uma fila ordenada por esforço que não diz o que cada item é às sombras
+do minor induz quem a lê a preparar um minor que não tem minor dentro.**
+
+**O que passa no critério, e em ordem de quanto dói deixar de fora:**
+
+1. **A régua de memória por RSS medido.** `sd_weight_estimate.dart` acerta a
+   ordem e acerta o FP16, e erra de **74% a 126%** no que a pessoa pergunta, que
+   é se cabe — e os 5 cards de imagem somem no A72 porque `maxModelBytes` é
+   1,19 GB contra 1,99 GB de pesos. *"Isto faz X, que antes não existia"* → **o
+   app responde se o modelo cabe, com número medido, em vez de prever só os
+   pesos.** Não é correção de número: a pergunta não tem resposta certa hoje.
+   **Bloqueia numa decisão antes de bloqueia em esforço** — as duas saídas estão
+   na seção "A previsão de memória erra para baixo", e a segunda é a que
+   responde. ⚠️ `lib/services/sd_weight_estimate.dart` e
+   `test/sd_weight_estimate_test.dart` estão **untracked de propósito**: não
+   entrem num `git add lib/ test/` por accidento, já aconteceu duas vezes.
+2. **O host da Laya.** O interpretador e o console existem e estão medidos; o que
+   falta é o encoder ModernBERT de 705 MB que produz as features, e ele é
+   *orquestração*, não aparelho. *"Isto faz X, que antes não existia"* → **o app
+   classifica texto de ponta a ponta**, e não por um `.tflite` empurrado à mão.
+3. **`POST /v1/litert/unload`.** As rotas são `screen`, `load`, `status`, `run`:
+   uma cabeça só é trocada carregando outra, e o estado "nada carregado" da
+   janela System One fica inalcançável depois da primeira carga. *"Isto faz X, que
+   antes não existia"* → **uma rota que dá para desfazer a carga.**
+
+**O item 5 desta lista era "A 0.6.0", e ele existia porque nenhuma das três
+candidatas acima estava escrita como minor em lugar nenhum.** Uma fila de
+trabalho que termina em "e então subir a versão" deixa a pergunta "o que é uma
+feature?" sem resposta até o dia de subir — e a resposta fica sendo o que já
+foi entregue, que é como este arquivo já esteve errado duas vezes.

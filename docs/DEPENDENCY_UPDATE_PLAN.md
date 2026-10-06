@@ -135,7 +135,7 @@ device_info_plus: ^12.4.0 → ^13.0.0   (12.4.0 → 13.2.0) ⏸ bloqueado por wi
 
 ## Fase 4 — llama.cpp (risco alto — pendente)
 
-**Situação:** O llama.cpp está **embeddado flat** no repo (não é submódulo). Commit vendorizado: `6574303` (tag local `v0.2.2`). Upstream `ggerganov/llama.cpp` main está no mesmo SHA — o vendor já está sincronizado com o上游 no momento do commit de vendorização. Para atualizar, é necessário re-vendear o source completo e reaplicar as mods customizadas.
+**Situação:** O llama.cpp está **embeddado flat** no repo (não é submódulo). Commit vendorizado: `6574303` (tag local `v0.2.2`). Upstream `ggerganov/llama.cpp` main está no mesmo SHA — o vendor já está sincronizado com o upstream no momento do commit de vendorização. Para atualizar, é necessário re-vendear o source completo e reaplicar as mods customizadas.
 
 ### 4A. Mods customizadas que precisam ser reaplicadas
 

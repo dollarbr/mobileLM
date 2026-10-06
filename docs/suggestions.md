@@ -136,6 +136,55 @@ o Tev1 é um `qwen35` comum que emite uma letra como token seguinte.
 
 ---
 
+## ✅ Features completadas na versão 0.5.0 e 0.5.1
+
+⚠️ **Estas duas não tinham seção aqui, e a lacuna é do mesmo tipo da que este
+arquivo já cometia**: um documento de "features completadas por versão" que pula
+duas versões produz uma lista de sugestões que parece mais do que está pronto. As
+duas estão registradas agora, e o detalhe está em `AGENTS.md`.
+
+| Release | Feature | Status | Arquivo principal |
+|---|---|---|---|
+| `0.5.0` | Pinning automático dos threads de cálculo nos núcleos grandes | ✅ Feito | `lib/utils/cpu_topology.dart` + `jni_wrapper.cpp` (`buildCpuSet`, `ggml_threadpool_new`, `llama_attach_threadpool`). Medido no A72: **6,5 → 18,0 tok/s**, e o ganho é de *utilização*, não de clock — `time_in_state` mostra o cluster quase sempre no piso nos dois casos |
+| `0.5.0` | Benchmark de CPU corrigido | ✅ Feito | `measureGeneration` é melhor-de-N. A primeira run depois de abrir o processo deu **0,2 tok/s** e a segunda **17,4** — 87×, e a causa é o governor. `ttftMillis` usava o tempo total e `tokens` contava palavras: os dois bugs |
+| `0.5.1` | A escada de aceleração passou a ver o tamanho do modelo | ✅ Feito | `acceleration.dart` — `auto_fast` mantém GGUF abaixo de 1280 MB na CPU. Medido: 1B Q4_0 na CPU 21,2 tok/s contra 3,4 na GPU. `n_gpu_layers==0` zera a lista de dispositivos, senão o ggml sched offloada para o Vulkan |
+
+---
+
+## ✅ Features completadas na versão 0.6.0 — *o idioma é escolhido, e o padrão é inglês*
+
+**Minor porque a frase sai verdadeira: *antes não existia escolha de idioma*.**
+Era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência **medida**
+foram **62 fichas de modelo em inglês numa tela que se dizia portuguesa**. Não é
+minor "traduzir o app para inglês" — a 0.5.1 já tinha metade das chaves em
+português, e traduzir não cria nada. O que cria é **a escolha**.
+
+| Feature | Status | Arquivo principal |
+|---|---|---|
+| Seletor de idioma (Auto / English / Português (Brasil)) | ✅ Feito | `lib/services/language_preference.dart` (puro) + painel em Configurações → Aparência. **O padrão é `en`, não `auto`**: o GetX devolve a própria chave para uma tradução que não existe, e um idioma sem mapa inteiro renderiza 905 identificadores |
+| Strings do Material nos dois idiomas | ✅ Feito | `flutter_localizations` + três delegates + `supportedLocales`. Sem a lista de locales o conserto **não pega** — foi o segundo `dump` do A72 que disse: `Settings` trocava, o botão `Back` não |
+| Descrição do catálogo nos dois idiomas | ✅ Feito | `AiModel.descriptionEn`/`descriptionPt` — dois campos, **não** um que "significa português": com EN como padrão, um campo só publica português num app inglês **sem nenhum aviso** |
+| `relevance_score` sem bug de detecção | ✅ Feito | Traduzir `'out of memory'` **fazia a detecção de falta de memória parar de casar**. `TextLanguage.naoTexto` (59 entradas, cada uma com motivo) + o teste que afirma o contrário da varredura |
+| **Item 3e: 224 textos de tela traduzidos** | ✅ Feito | 148 literais diretos (`tool/rewrite_broad.dart`), 33 interpolados (`preencher`), 19 rótulos de faceta do hub. Mapa de **674 para 905 chaves**. **Fechado pelo aparelho**, não pelo contador |
+| As duas varreduras de inglês em zero | ✅ Feito | `test/inline_english_ratchet_test.dart` com teto **0** em ambas — e o teto da ampla só pode ser zero **depois** do número medido chegar a zero, senão é um teste que passa pelo motivo errado |
+
+**O que a 0.6.0 ensina, e é o que vale para a próxima:** a dívida de texto de tela
+era de **duas ordens de grandeza** maior do que o `AGENTS.md` dizia, e a contagem
+esteve errada **cinco vezes** — sempre porque a trava media **menos** do que
+declarava (uma pasta faltando, um parâmetro faltando, uma letra faltando na
+classe de regex). **Um detector que não casa é indistinguível de um detector que
+não há**, e a defesa é sempre um teste irmão que prova que ainda vê alguma coisa.
+O detalhe completo está em `AGENTS.md`, seção "Os literais de tela".
+
+**Medido no A72, nos dois idiomas:** o seletor troca a tela na hora, sem
+reiniciar; `Configurações`/`Settings` e `Aparência`/`Appearance` trocam juntas; e
+o filtro do hub mostra `MODALITY`/`MODALIDADE` com `Any`/`Qualquer`,
+`Vision`/`Visão`, `Mixture of Experts`/`Mistura de especialistas`,
+`Quantisation`/`Quantização` — **e `Omni` é a mesma palavra nos dois idiomas**, o
+que é o tipo de coisa que só se descobre conferindo o aparelho.
+
+---
+
 ## Onde a fila está hoje
 
 Os itens 1 a 5 desta lista **foram entregues** — 1, 3 e 5 na **0.3.1**, e está
