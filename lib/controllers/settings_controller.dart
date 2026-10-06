@@ -867,7 +867,7 @@ class SettingsController extends GetxController {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            warningMessage ?? 'Value above recommended safe limit may cause issues.',
+                            warningMessage ?? 'set_value_above_safe'.tr,
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.warning,

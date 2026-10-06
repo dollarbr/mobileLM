@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'device_info_native.dart' if (dart.library.html) 'device_info_web.dart'
     as platform_info;
 import 'memory_readout.dart';
+import 'text_interpolation.dart';
 
 /// Device capability detection — reads RAM to set safe inference limits.
 /// Cross-platform: works on Android/iOS natively, defaults on web.
@@ -170,18 +171,22 @@ class DeviceInfoService extends GetxService {
     socHardware.value = (info['socHardware'] as String?) ?? '';
   }
 
+  /// A frase do card de memória, **traduzida**.
+  ///
+  /// Era um literal interpolado por ramo de `deviceTier`, e nenhuma das três
+  /// varreduras o via: `Low RAM`, `Mid-range`, `High-end` e `Ultra` são
+  /// **construções compostas** — `Low`, `Mid` e `High` isolados não são palavra
+  /// de inglês nesta lista, e `RAM` entrou como palavra só quando a sonda do
+  /// `dump` pediu. O `deviceTier` em si é dado e continua sem traduzir; o que é
+  /// texto é a frase, e é a frase que tem chave.
   String get tierDescription {
-    switch (deviceTier.value) {
-      case 'low':
-        return '⚠️ Low RAM (${totalRamGB.value.toStringAsFixed(1)}GB) — Use small models only';
-      case 'mid':
-        return '📱 Mid-range (${totalRamGB.value.toStringAsFixed(1)}GB) — Good for 1-3B models';
-      case 'high':
-        return '💪 High-end (${totalRamGB.value.toStringAsFixed(1)}GB) — Can run 3-7B models';
-      case 'ultra':
-        return '🚀 Ultra (${totalRamGB.value.toStringAsFixed(1)}GB) — Full performance mode';
-      default:
-        return '📱 ${totalRamGB.value.toStringAsFixed(1)}GB RAM detected';
-    }
+    final gb = totalRamGB.value.toStringAsFixed(1);
+    return switch (deviceTier.value) {
+      'low' => preencher('set_tier_low', {'n': gb}),
+      'mid' => preencher('set_tier_mid', {'n': gb}),
+      'high' => preencher('set_tier_high', {'n': gb}),
+      'ultra' => preencher('set_tier_ultra', {'n': gb}),
+      _ => preencher('set_tier_plain', {'n': gb}),
+    };
   }
 }

@@ -67,6 +67,29 @@ class TextLanguage {
     'read', 'write', 'send', 'format', 'keep', 'turn', 'next', 'back',
     'loading', 'available', 'verifying', 'benchmark', 'usability', 'anyway',
     'progress', 'projector', 'name', 'url',
+    //
+    // **Estas oito são da décima terceira sondagem, e a origem delas é o A72.**
+    // `Recommended: @q` era um literal interpolado **na tela** que nenhuma das
+    // três varreduras contava, porque `recommended`, `ram`, `end`, `ultra`,
+    // `only`, `models` e `mid` não estavam na lista — e **`recommended` é uma
+    // palavra comum de interface**, a que qualquer substring de cuantização
+    // traz junto. Um detector que não conhece a palavra não denuncia o texto:
+    // o `dump` do aparelho mostrou `Recommended: Q4_K_M (recommended)` numa
+    // tela em português, com o teto em **zero**.
+    //
+    // `low`, `high` e `mid` são os **valores do `deviceTier`**, e aí a
+    // complicação é outra: `high` é lido como palavra de inglês, e `low`/`mid`
+    // não estão. A lista de não-texto é quem resolve, e não a de palavras.
+    'recommended', 'ram', 'ultra', 'tier',
+    //
+    // **Terceira leva da mesma sondagem, e ela confirma a regra:** cada palavra
+    // nova expõe texto que estava em inglês na tela desde sempre. `Text
+    // parameters` e o subtítulo `@n enabled` saíram do mesmo `dump` do A72, e
+    // nenhum dos dois é visível para o detector sem `parameters` e `enabled` na
+    // lista. **Um detector que não conhece a palavra não denuncia o texto** —
+    // e a lista só cresce por sonda, nunca por leitura do código, porque ler o
+    // código é o que dá a lista que já existe.
+    'parameters', 'enabled', 'off', 'generation', 'detected',
   };
 
   /// Nomes próprios, formatos e exemplos de API: não são idioma.
@@ -293,6 +316,38 @@ class TextLanguage {
     // sobrou — a comparação — vira dado. Ver `system_one_console.dart` e
     // `task_view.dart`.
     'running': 'status de passo de tarefa, gravado no Hive e comparado com ==',
+    //
+    // **As duas entradas que a décima terceira sondagem expôs.** `ultra` é o
+    // `deviceTier` — um `case` do `switch` que escolhe cor e ícone, e o valor
+    // vem do serviço de dispositivo; traduzi-lo troca a cor do card e deixa o
+    // `switch` sem ramo. `ram` é o **nome do placeholder** dentro de
+    // `preencher('set_device_budget', {'ram': …})`, e é o que faz `@ram` existir:
+    // o nome do `@` é o que casa, e nenhum dos dois é idioma.
+    'ultra': 'deviceTier comparado no switch que escolhe cor e ícone do card',
+    //
+    // **`text-generation` é a tag de pipeline que vai para a API do hub.** É a
+    // chave do mapa `pipelineTag`, e é comparada com o que a busca devolve —
+    // traduzi-la faz o filtro não casar com nada e a lista de resultados
+    // esvaziar sem erro. O rótulo que a pessoa lê é o **valor** do mapa, que
+    // tem chave própria (`hf_task_text_generation`).
+    'text-generation': 'tag de pipeline enviada ao hub e comparada com a resposta',
+    //
+    // **`off` é o modo desligado em quatro lugares, e nenhum deles é texto.**
+    // `value: 'off'` do botão de tela, a linha `'off' => 'off'` do mapa de
+    // tema, a chave `'off' => '$base\n\n/no_think'` do prompt e o ramo do
+    // painel de parâmetros. O que é pintado é `'Thinking: Off'` e `'Off'`, e
+    // são outras duas strings com chave própria.
+    'off': 'modo desligado: valor de botão, chave de mapa de tema e chave de prompt',
+    //
+    // **O rótulo de bloco é chave de ordenação E texto pintado.** `_byModality`
+    // agrupa por `'Text'`/`'Vision'`/`'Multimodal'`/`'Image generation'` e
+    // ordena com `order.indexOf(a)` — o mesmo formato do `section.title`, que é
+    // chave persistida. Traduzir a string tiraria a ordenação; traduzir no
+    // ponto de pintura (`mv_block_*`) é o que o AGENTS já exige do `labelKey`.
+    'Image generation':
+        'rótulo de bloco do catálogo: chave de ordenação em _byModality, '
+        'traduzido no ponto de pintura por mv_block_image_generation',
+    'ram': 'nome do placeholder @ram dentro de preencher(), e é o que casa',
     //
     // **Vão para o modelo ou para o arquivo de log, não para a tela.**
     // `selectedFileContent` e o `role: 'user'` da mensagem de tool são o que vai

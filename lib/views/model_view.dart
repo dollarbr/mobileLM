@@ -1078,11 +1078,14 @@ class ModelView extends GetView<ModelController> {
         ),
         if (open)
           for (final block in section.blocks) ...[
-            if (block.label.isNotEmpty)
+            if (block.labelKey.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8, top: 2),
                 child: Text(
-                  block.label,
+                  // **A chave vai traduzida e em caixa alta, e nessa ordem:**
+                  // PT-BR e EN diferem na caixa de letras acentuadas, e a regra
+                  // de exibição pertence ao estilo do bloco, não à tradução.
+                  block.labelKey.tr.toUpperCase(),
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,

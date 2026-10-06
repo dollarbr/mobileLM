@@ -56,9 +56,24 @@ String? modelSectionKey({
 /// A run of models under one sub-heading. [label] is empty when the section
 /// does not split, and the block renders without a heading of its own.
 class ModelBlock {
+  /// A **chave** do bloco, em inglês de propósito.
+  ///
+  /// `_byModality` agrupa por este texto e ordena com `order.indexOf(a)`, e a
+  /// ordem é `Text → Vision → Multimodal → Image generation`. Traduzir a string
+  /// aqui quebraria a ordenação — é a mesma razão de `ModelSection.title` ser
+  /// chave persistida. Quem pinta é [labelKey].
   final String label;
+
+  /// A tradução de [label], e é o que a view mostra.
+  final String labelKey;
   final List<AiModel> models;
-  const ModelBlock(this.label, this.models);
+  const ModelBlock(this.label, this.labelKey, this.models);
+
+  /// Bloco sem rótulo, para quando a lista toda é de uma modalidade só.
+  const ModelBlock.unlabeled(List<AiModel> models)
+      : label = '',
+        labelKey = '',
+        models = models;
 }
 
 /// One heading in the Models tab.
@@ -292,12 +307,12 @@ class ModelController extends GetxController {
       blocks.putIfAbsent(label, () => []).add(m);
     }
     if (blocks.length == 1) {
-      return [ModelBlock('', blocks.values.first)];
+      return [ModelBlock.unlabeled(blocks.values.first)];
     }
     const order = ['Text', 'Vision', 'Multimodal', 'Image generation'];
     final sorted = blocks.keys.toList()
       ..sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
-    return [for (final k in sorted) ModelBlock(k, blocks[k]!)];
+    return [for (final k in sorted) ModelBlock(k, _rotuloDoBloco(k), blocks[k]!)];
   }
 
   double get importProgress => importTotalBytes.value <= 0
@@ -453,6 +468,19 @@ class ModelController extends GetxController {
   /// carry an audio encoder in the same file and take speech as readily as
   /// images. The internal flag stays named `vision` because it is what gates
   /// the encoder in the LiteRT config — this is the user-facing word only.
+  /// A chave de tradução de um rótulo de bloco, e não a string.
+  ///
+  /// O `switch` é exaustivo de propósito: um rótulo novo sem chave aqui
+  /// compila, e o que aparece na tela é a própria chave — a falha silenciosa
+  /// que o `l10n_keys_test` não pega porque a chave **existe** no mapa.
+  static String _rotuloDoBloco(String label) => switch (label) {
+        'Text' => 'mv_block_text',
+        'Vision' => 'mv_block_vision',
+        'Multimodal' => 'mv_block_multimodal',
+        'Image generation' => 'mv_block_image_generation',
+        _ => label,
+      };
+
   String modalityLabel(AiModel model) =>
       isLiteRtModel(model) || model.needsMmproj ? 'MULTIMODAL' : 'VISION';
 

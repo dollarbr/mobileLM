@@ -623,9 +623,13 @@ class _FiltersSheetState extends State<_FiltersSheet> {
   /// GGUF repos actually come in.
   static const _paramSteps = <double>[0.5, 1, 2, 3, 4, 7, 8, 13, 20, 30, 70];
 
-  static const _pipelines = <String, String>{
+  // **`final`, e não `const`.** `.tr` é método de runtime sobre o locale atual,
+  // e um `static const` congelaria a língua do boot — que não é a que a pessoa
+  // escolheu no seletor. Foi a mesma razão que tirou os chips de resposta de
+  // `static const`.
+  static final _pipelines = <String, String>{
     '': 'Any',
-    'text-generation': 'Text',
+    'text-generation': 'hf_task_text_generation'.tr,
     'image-text-to-text': 'Vision',
     'audio-text-to-text': 'Audio',
     'any-to-any': 'Omni',
@@ -728,7 +732,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                       ),
                   ],
                 ),
-                _label(theme, 'PARAMETERS'),
+                _label(theme, 'hf_facet_parameters'.tr.toUpperCase()),
                 Row(
                   children: [
                     Expanded(

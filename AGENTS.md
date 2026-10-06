@@ -195,7 +195,7 @@ minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é 
 **inglês como padrão**. A frase sai verdadeira — *antes não existia escolha de
 idioma*: era `locale: Get.deviceLocale` com fallback `pt_BR`, e a consequência
 medida foram 62 fichas de modelo em inglês numa tela que se dizia portuguesa.
-Agora existem **674 chaves nos dois idiomas** e uma ficha por modelo em cada um.
+Agora existem **886 chaves nos dois idiomas** e uma ficha por modelo em cada um.
 Isto está em "O idioma é escolhido, e o padrão é inglês".
 
 Não é minor "traduzir o app para inglês": a 0.5.1 já tinha metade das chaves
@@ -450,7 +450,7 @@ Quatro decisões que não são óbvias:
 1. **O padrão é `en`, não `auto`.** O GetX devolve a própria chave para uma
    tradução que não existe, e foi assim que 38 chaves apareceram como
    `tool_round_trips` e `mobile_lm` sem nada lançar. Um idioma sem mapa inteiro
-   renderiza 674 identificadores. `LanguagePreference.padrao` tem um teste que
+   renderiza 886 identificadores. `LanguagePreference.padrao` tem um teste que
    falha se virar `auto`.
 2. **O `fallbackLocale` é `en_US`, não `pt_BR`.** Com o fallback em português, uma
    chave que faltasse em inglês aparecia *traduzida* e ninguém notava que faltava.
@@ -573,16 +573,26 @@ Os números que saem:
 | varredura | total | de que é |
 |---|---|---|
 | estreita | **0** | nada sobrou reescrevível |
-| ampla | **526** | **216 de texto de tela**, 310 de identificador, dado, rota, exemplo e comentário |
+| ampla | **343** | **0 de texto de tela**, 343 de identificador, dado, rota, exemplo e comentário |
 
-**Os 216 são o item 3e, e só apareceram porque um bug de regex foi corrigido** —
-antes deles a mesma varredura reportava **zero**. A seção "O bug que escondeu 263
-textos" está abaixo e vale mais que o número. E eles já foram **257**: a seção
-"O `vuntarSegmentos` resolveu o primeiro segmento e não os do meio" diz por que
-45 deles nunca foram dívida. Subiram para **252** quando a lista de palavras foi
-alargada por uma sonda, caíram para 205 depois das duas correções que a seção
-"O `@ramGB` que pintava uma tela vermelha" descreve, e voltaram para 216 quando a
-décima primeira omissão parou de engolir o ramo `:` dos ternários.
+**Os 343 são o que sobrou do item 3e, e o número de texto de tela é zero.**
+Antes de traduzir eles foram **216**, e só apareceram porque um bug de regex foi
+corrigido — a mesma varredura reportava **zero** com 263 atrás. A seção "O bug
+que escondeu 263 textos" está abaixo e vale mais que o número. E eles já foram
+**257**: a seção "O `juntarSegmentos` resolveu o primeiro segmento e não os do
+meio" diz por que 45 deles nunca foram dívida. Subiram para **252** quando a lista
+de palavras foi alargada por uma sonda, caíram para 205 depois das duas correções
+que a seção "O `@ramGB` que pintava uma tela vermelha" descreve, voltaram para 216
+quando a décima primeira omissão parou de engolir o ramo `:` dos ternários, e
+desceram a **zero** com o item 3e — 148 literais diretos e 33 interpolados.
+
+**O total subiu de 526 para 343 sem que nenhum texto novo aparecesse**, e a
+explicação é a sonda: `recommended`, `parameters`, `enabled`, `off`, `ram`,
+`ultra`, `mid`, `tier`, `detected`, `generation` entraram na lista de palavras e
+passaram a classificar **18 literais** que eram dados como texto de tela. **Um
+número de total que cai quando a lista de palavras cresce é o detector ficando
+mais honesto, e não a tela ficando mais limpa** — é por isso que a contagem de
+total nunca foi a métrica.
 
 **`lib/controllers` entrou porque o A72 mostrou `DOWNLOADED` numa tela em
 português.** O título da seção do catálogo é texto de tela e vivia no controller,
@@ -602,13 +612,62 @@ pinta `section.label.toUpperCase()`.
 nome do formato e o do repositório de origem, e traduzi-los diria algo diferente
 do que o arquivo é.
 
-**O teto da varredura ampla é 216, não zero, e a escolha é deliberada.** Um teto
-em zero com 216 linhas reais seria um teste que passa pelo motivo errado — a mesma
-falha do teto alto. **A trava estreita continua em zero**, e é a que protege o
-que a máquina reescreve.
+**O teto da varredura ampla é ZERO, e a escolha é deliberada nos dois
+sentidos.** Com 216 linhas reais, zero seria um teste que passa pelo motivo
+errado — a mesma falha do teto alto pelo lado oposto. Zero só é honesto
+**depois** de o número medido chegar a zero, e é o que o item 3e fez: **205
+textos de tela**, entre 148 literais diretos e 33 interpolados, mais as exclusões
+que a lista de não-texto absorveu. O que a varredura mede agora são **343
+literais** que são identificador, dado, rota, exemplo ou comentário — cada um com
+o motivo escrito. **A trava estreita continua em zero**, e é a que protege o que
+a máquina reescreve.
 
-**Os 310 da ampla não se traduzem, e a lista diz por quê.**
-`TextLanguage.naoTexto` tem 50 entradas, cada uma com o motivo: `'local'` é
+**O item 3e foi fechado pelo aparelho, não pelo contador.** As duas últimas
+levas de texto em inglês apareceram no `uiautomator dump` do A72 com o teto em
+**zero** — `📱 Mid-range (4.8GB) — Good for 1-3B models` no card de memória e
+`NPU unavailable on SM7125 — no vendor driver reachable` no card do NPU. As duas
+estão fora do alcance das três varreduras, e por motivos **estruturais**, não de
+acerto do detector:
+
+- **`device_info_service.dart` monta a frase do card de memória**, e serviço está
+  fora da lista de diretórios. **641** literais de tela estão em `lib/services`,
+  e **135 deles são a lista de palavras do próprio detector** — ampliar a trava
+  para a pasta agora publicaria um teto de 641 que não protege nada, que é a
+  mesma falha de um teto alto. A pasta está **medida e anotada**, não publicada.
+- **`NpuStatus.toString()` vive num plugin local**
+  (`local_plugins/flutter_litert_lm/`) e é pintado por `s.toString()` na view. Um
+  `toString()` que é tela é um literal que nenhum detector de view alcança por
+  construção. O conserto é o serviço reportar **fatos** — `available`, `soc`,
+  `libraries`, `systemDriver` — e a tela falar; foi o que virou
+  `settings_view._npuFrase`.
+
+**E `Recommended: @q` era um literal interpolado na tela que a varredura não
+contava**, porque `recommended` não estava na lista de palavras — e é uma palavra
+comum de interface, a que qualquer substring de quantização traz junto. **Um
+detector que não conhece a palavra não denuncia o texto**, e o teto estava em
+zero. A sonda (`tool/word_list_probe.dart`) expôs **6** textos de uma vez, e a
+segunda leva de palavras expôs **12** — a mesma regra da décima omissão, agora
+com o mecanismo escrito: **a lista só cresce por sonda, nunca por leitura do
+código**, porque ler o código é o que dá a lista que já existe.
+
+**O rótulo de bloco do catálogo é chave de ordenação E texto pintado**, que é o
+formato do `section.title` de novo. `_byModality` agrupa por `'Text'`/`'Vision'`/
+`'Multimodal'`/`'Image generation'` e ordena com `order.indexOf(a)`; traduzir a
+string tiraria a ordenação. `ModelBlock` ganhou `labelKey` ao lado de `label`, e
+quem pinta é `block.labelKey.tr.toUpperCase()` — caixa alta e `.tr` **nessa
+ordem**, porque PT-BR e EN diferem nas letras acentuadas.
+
+**`static const` com valor traduzido congela a língua do boot.** O mapa
+`pipelineTag` do HF era `static const`, e `.tr` num `const` não compila —
+`const_eval_extension_method`. Virou `static final`, que é a mesma razão que tirou
+os chips de resposta de `const`.
+
+**`text-generation` é a tag que vai para a API do hub**, e é comparada com a
+resposta da busca; traduzir esvazia a lista de resultados sem erro. O que a pessoa
+lê é o **valor** do mapa, com chave própria.
+
+**Os 343 da ampla não se traduzem, e a lista diz por quê.**
+`TextLanguage.naoTexto` tem 59 entradas, cada uma com o motivo: `'local'` é
 identificador de runtime comparado com `==`, `json['loaded']` é chave de payload,
 `frequency.startsWith('every')` é comparação, `'List models'` é chave de exemplo
 JSON, `'# 202, then poll …'` é comentário de shell. **Traduzir qualquer um deles
@@ -669,7 +728,17 @@ sexta vez que o número esteve errado. A tabela:
 | **palavras medidas fora da lista** | **10 textos que nenhuma das duas varreduras contava** |
 | **o ramo `:` de qualquer ternário** | **11 textos engolidos como campo de idioma** |
 
-**A lição que vale para as onze**: uma lista do que a trava mede é uma
+**A décima segunda e a décima terceira vieram do aparelho com o teto em zero**,
+e as duas são a mesma forma da quinta: uma **pasta ou palavra faltando** na lista
+do que a trava mede. A quinta foi `lib/controllers` com `DOWNLOADED`; a décima
+segunda foi `lib/services` com o card de memória (`📱 Mid-range (4.8GB) — Good
+for 1-3B models`); a décima terceira é a lista de palavras sem `recommended`,
+`parameters` e `enabled`, que expôs 18 textos de uma vez. **Um serviço pinta texto
+e o nome do arquivo não diz que não** — a regra "serviço é lógica, view é tela"
+nunca foi escrita em lugar nenhum deste repo, e é a ausência dela que a quinta e a
+décima segunda exploraram.
+
+**A lição que vale para as treze**: uma lista do que a trava mede é uma
 **afirmação**, e uma afirmação não se prova sozinha. Cada uma delas só apareceu
 por causa externa — o `dump` do aparelho, ou a lista de palavras alargada por um
 motivo completamente diferente. A defesa não é revisar a lista com cuidado, é
@@ -2334,7 +2403,7 @@ Os dois mudaram: o app agora fala **inglês por padrão** e o idioma é uma
 **preferência salva** com três opções. Ver "O idioma é escolhido, e o padrão é
 inglês" mais acima, que tem as quatro decisões que não são óbvias.
 
-- **Cobertura auditada, não estimada:** **674 chaves**, **as mesmas nos dois
+- **Cobertura auditada, não estimada:** **886 chaves**, **as mesmas nos dois
   idiomas**, e `test/l10n_keys_test.dart` (10 testes) falha se uma faltar em
   **qualquer** dos dois. Antes desta auditoria o mapa tinha 277 e **38 das chaves
   usadas não estavam nele** — `tool_round_trips` à vista num item de Configurações,

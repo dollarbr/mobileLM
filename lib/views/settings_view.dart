@@ -181,7 +181,7 @@ class SettingsView extends GetView<SettingsController> {
               _CollapsibleGroup(
                 isDark: isDark,
                 icon: Icons.tune_rounded,
-                title: 'Text parameters',
+                title: 'set_text_parameters'.tr,
                 subtitle: _textParametersSubtitle(),
                 children: [
                   Padding(
@@ -232,8 +232,9 @@ class SettingsView extends GetView<SettingsController> {
                 icon: Icons.handyman_rounded,
                 title: 'tools'.tr,
                 subtitle: controller.toolsEnabled.value
-                    ? '${controller.enabledTools.length} enabled'
-                    : 'Off',
+                    ? preencher('set_tools_enabled_count',
+                        {'n': '${controller.enabledTools.length}'})
+                    : 'set_off'.tr,
                 children: [_buildToolsCard(context, isDark)],
               ),
               const SizedBox(height: 10),
@@ -1135,7 +1136,13 @@ class SettingsView extends GetView<SettingsController> {
                         style: GoogleFonts.inter(
                             fontSize: 14, fontWeight: FontWeight.w500)),
                     const SizedBox(height: 3),
-                    Text('Recommended: ${soc.recommendedQuant}',
+                    Text(preencher('set_recommended_quant', {'q':
+                        // **O `(recommended)` é palavra, e o nome da quantização é
+                        // dado.** A concatenação mora aqui porque é a view que
+                        // fala; `recommendedQuant` devolve `Q4_K_M` e o aparelho
+                        // continua vendo o mesmo nome de arquivo.
+                        '${soc.recommendedQuant.replaceFirst(' (recommended)', '')}' +
+                            'set_quant_recommended_suffix'.tr}),
                         style: GoogleFonts.inter(
                             fontSize: 12,
                             color: quantWarning != null
@@ -1395,7 +1402,7 @@ class SettingsView extends GetView<SettingsController> {
       ),
       (
         value: 'off',
-        title: 'Thinking: Off',
+        title: 'set_thinking_off'.tr,
         subtitle: 'set_no_think_label'.tr,
         icon: Icons.bolt_rounded
       ),
@@ -1421,6 +1428,30 @@ class SettingsView extends GetView<SettingsController> {
     ]);
   }
 
+  /// A frase do NPU, montada a partir dos fatos que o serviço reportou.
+  String _npuFrase(NpuStatus s) {
+    final soc = s.soc.isEmpty
+        ? 'set_npu_this_soc'.tr
+        : s.soc;
+    if (s.available) {
+      final extra = s.systemDriver.isEmpty
+          ? ''
+          : preencher('set_npu_system_driver', {'lib': s.systemDriver});
+      return preencher('set_npu_ok', {
+        'soc': soc,
+        'libs': s.libraries.join(', '),
+        'extra': extra,
+      });
+    }
+    return preencher('set_npu_no_driver', {
+      'soc': soc,
+      'why': (s.libraries.isEmpty
+              ? 'set_npu_no_dispatch'.tr
+              : 'set_npu_no_vendor'.tr)
+          .toString(),
+    });
+  }
+
   /// Read-only report on the NPU rung.
   ///
   /// Both halves have to be there — the dispatch library we ship and the
@@ -1434,7 +1465,14 @@ class SettingsView extends GetView<SettingsController> {
       builder: (context, snapshot) {
         final status = snapshot.data;
         final subtitle = switch ((snapshot.connectionState, status)) {
-          (ConnectionState.done, final s?) => s.toString(),
+          // **A frase sai daqui, e não de `status.toString()`.** O `toString()`
+          // do `NpuStatus` vive no **plugin local**, que nenhuma das três
+          // varreduras abre, e ele devolvia `NPU unavailable on SM7125 — no
+          // vendor driver reachable` numa tela em português. O objeto já traz
+          // os fatos separados — `available`, `soc`, `libraries`,
+          // `systemDriver` — então quem fala é a tela. Um `toString()` que é
+          // tela é um literal que o detector não alcança por construção.
+          (ConnectionState.done, final s?) => _npuFrase(s),
           (ConnectionState.done, null) =>
               preencher('set_probe_failed', {'e': '${snapshot.error}'}),
           _ => 'Checking…',
@@ -1747,7 +1785,7 @@ class SettingsView extends GetView<SettingsController> {
                   borderRadius: BorderRadius.circular(6)),
               child: Text(
                   controller.imageGenGpuGuardMb.value <= 0
-                      ? 'Off'
+                      ? 'set_off'.tr
                       : '${controller.imageGenGpuGuardMb.value} MB',
                   style: GoogleFonts.inter(
                       fontSize: 13,
@@ -1970,7 +2008,7 @@ class SettingsView extends GetView<SettingsController> {
     String scaleLabel(double v) {
       if (v <= 0.85) return 'XS';
       if (v <= 0.95) return 'small'.tr;
-      if (v <= 1.05) return 'Recommended';
+      if (v <= 1.05) return 'set_gpu_recommended_label'.tr;
       if (v <= 1.15) return 'large'.tr;
       if (v <= 1.25) return 'XL';
       return 'XXL';
@@ -2535,7 +2573,11 @@ class SettingsView extends GetView<SettingsController> {
           Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                  'Recommended max: ${safeMax.toInt() > 0 ? safeMax.toInt().toString() : safeMax.toStringAsFixed(1)}',
+                  preencher('set_recommended_max', {
+                    'n': safeMax.toInt() > 0
+                        ? safeMax.toInt().toString()
+                        : safeMax.toStringAsFixed(1)
+                  }),
                   style: GoogleFonts.inter(
                       fontSize: 12, color: Theme.of(context).hintColor))),
         Slider(
