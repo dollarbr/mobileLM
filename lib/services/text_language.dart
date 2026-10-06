@@ -283,6 +283,29 @@ class TextLanguage {
     // botão ficaria em inglês para sempre sem nada reclamar. A ordem importa:
     // traduzir o rótulo primeiro, e só depois declarar a comparação como dado.
     'name': 'chave de mapa no perfil de cloud salvo em Hive',
+    // **Dois papéis que a lista de não-texto resolve, mas a lista de tradução
+    // não.** `'running'` é `TaskStep.status`, gravado no Hive e comparado com
+    // `==` em quatro pontos — traduzir quebra a comparação. E é **também** o
+    // rótulo do botão dos dois consoles enquanto o pedido está em curso. Uma
+    // entrada aqui apagaria os dois usos de uma vez, sem distinguir, e o botão
+    // ficaria em inglês para sempre sem nada reclamar. Por isso o rótulo ganhou
+    // chave própria (`soc_run_now`), o literal sumiu do fonte, e só então o que
+    // sobrou — a comparação — vira dado. Ver `system_one_console.dart` e
+    // `task_view.dart`.
+    'running': 'status de passo de tarefa, gravado no Hive e comparado com ==',
+    'The user declined this call.':
+        'vai para o modelo como resultado de tool, não para a pessoa ler',
+    // **O `\n` da chave abaixo é uma quebra de verdade, não o par de caracteres.**
+    // A chave é comparada contra o literal **já desserializado** pelo scanner
+    // (`\n` virando caractere), então escrever `\\n` no mapa faz a entrada não
+    // casar com nada — e a dívida continua na lista sem erro, que é o modo de
+    // falha padrão desta lista inteira. Custa 2 textos (205 → 203).
+    ')}.\nThat is the intent, stated correctly, by a conversion that did not '
+        'deliver it.':
+        'cauda de um literal adjacente; a frase começa no segmento de cima',
+    '} hidden — larger than this phone can load. Turn off "hf_fits_device".tr '
+        'in Filters to see them.':
+        'fragmento de expressão: abre no fim de uma interpolação e a frase é o conjunto',
     'url': 'chave do payload passado ao plugin de download',
     'unknown': 'sentinela de imageGpuVendor, comparada com == num ternário',
     'once': 'valor de frequência salvo em Hive e comparado com == no subtítulo',

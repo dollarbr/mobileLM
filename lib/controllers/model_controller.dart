@@ -738,22 +738,22 @@ class ModelController extends GetxController {
       await refreshDownloaded();
     } catch (e) {
       Get.find<AppLogService>().error('Model download failed', details: e);
-      Get.snackbar('Download Failed', '$e',
+      Get.snackbar('mc_download_failed'.tr, '$e',
           snackPosition: SnackPosition.BOTTOM);
     }
   }
 
   Future<void> downloadModelToDownloads(AiModel model) async {
     if (model.url.trim().isEmpty) {
-      Get.snackbar('Download Unavailable', 'This model has no download URL.',
+      Get.snackbar('mc_download_unavailable'.tr, 'mc_no_download_url'.tr,
           snackPosition: SnackPosition.BOTTOM);
       return;
     }
 
     if (!Platform.isAndroid) {
       Get.snackbar(
-        'Android Only',
-        'Use the app download button or import a local model on this platform.',
+        'mc_android_only'.tr,
+        'mc_android_only_detail'.tr,
         snackPosition: SnackPosition.BOTTOM,
       );
       return;
@@ -762,7 +762,7 @@ class ModelController extends GetxController {
     try {
       isImporting.value = true;
       importFileName.value = model.filename;
-      importStatus.value = 'Starting download...';
+      importStatus.value = 'mc_download_starting'.tr;
       importCopiedBytes.value = 0;
       importTotalBytes.value = 0;
       importBytesPerSecond.value = 0;
@@ -775,7 +775,7 @@ class ModelController extends GetxController {
       externalDownloadId.value = result?['downloadId'] as int?;
       final filename = result?['filename'] as String? ?? model.filename;
       Get.snackbar(
-        'Download Started',
+        'mc_download_started'.tr,
         '$filename is downloading to your Downloads folder.',
         snackPosition: SnackPosition.BOTTOM,
       );
@@ -786,14 +786,14 @@ class ModelController extends GetxController {
         'Download to Downloads failed',
         details: '${e.code}: ${e.message}',
       );
-      Get.snackbar('Download Failed', e.message ?? e.code,
+      Get.snackbar('mc_download_failed'.tr, e.message ?? e.code,
           snackPosition: SnackPosition.BOTTOM);
     } catch (e) {
       isImporting.value = false;
       externalDownloadId.value = null;
       Get.find<AppLogService>()
           .error('Download to Downloads failed', details: e);
-      Get.snackbar('Download Failed', '$e',
+      Get.snackbar('mc_download_failed'.tr, '$e',
           snackPosition: SnackPosition.BOTTOM);
     }
   }
@@ -1035,7 +1035,7 @@ class ModelController extends GetxController {
       settingsDoc = await _download
           .ensureBackupPath(treeUri: treeUri, segments: const ['settings']);
       if (settingsDoc == null) {
-        throw Exception('Could not create the settings folder');
+        throw Exception('mc_settings_folder_failed'.tr);
       }
 
       // Configs first: small, and the part that makes the copy meaningful.
@@ -1055,7 +1055,7 @@ class ModelController extends GetxController {
       );
       await tmp.delete();
       if (cfgOutcome == 0) {
-        throw Exception('Could not write mobilelm-config.json');
+        throw Exception('mc_config_write_failed'.tr);
       }
       backupDoneFiles.value = 1;
 
@@ -1196,7 +1196,7 @@ class ModelController extends GetxController {
     final config =
         jsonDecode(await file.readAsString()) as Map<String, dynamic>;
     if (config['type'] != 'mobilelm-config') {
-      throw Exception('Not a mobileLM config backup.');
+      throw Exception('mc_not_a_backup'.tr);
     }
     final settingsCount = (config['settings'] as Map?)?.length ?? 0;
     final confirmed = await _confirmRestore(settingsCount);
@@ -1399,7 +1399,7 @@ class ModelController extends GetxController {
   /// Those are why the dialog exists; the dialog is just how a human is asked.
   Future<void> loadModel(String filename, {bool acceptWarnings = false}) async {
     if (_inference.isLoadingModel.value) {
-      Get.snackbar('Model Loading', 'Another model is already loading.',
+      Get.snackbar('mc_model_loading'.tr, 'mc_already_loading'.tr,
           snackPosition: SnackPosition.BOTTOM);
       return;
     }
@@ -1433,7 +1433,7 @@ class ModelController extends GetxController {
         details: '$filename is $actual, expected about ${model.size}',
       );
       Get.snackbar(
-        'Incomplete Model File',
+        'mc_incomplete_file'.tr,
         '$filename is only $actual. Delete it and download again.',
         snackPosition: SnackPosition.BOTTOM,
         duration: const Duration(seconds: 6),
@@ -1568,7 +1568,7 @@ class ModelController extends GetxController {
             // this the load would hand mtmd a path to a file that does not
             // exist yet and come up text-only.
             if (!await _download.awaitDownload(model.mmprojFilename)) {
-              throw Exception('Projector download did not complete');
+              throw Exception('mv_projector_incomplete'.tr);
             }
           }
           mmprojPath = await _download.modelPath(model.mmprojFilename);
@@ -1683,9 +1683,9 @@ class ModelController extends GetxController {
                       ),
                       const SizedBox(height: 10),
                       _buildTipRow(context, Icons.delete_outline_rounded,
-                          'Delete the model and try redownloading it completely.'),
+                          'mc_incomplete_tip_delete'.tr),
                       _buildTipRow(context, Icons.memory_rounded,
-                          'Ensure your device has at least 2-3 GB of free RAM.'),
+                          'mc_incomplete_tip_ram'.tr),
                       if (result.toLowerCase().contains('litert') ||
                           filename.toLowerCase().endsWith('.litertlm'))
                         _buildTipRow(context, Icons.settings_suggest_rounded,
@@ -1704,8 +1704,7 @@ class ModelController extends GetxController {
                             children: [
                               Text(
                                 showDetails
-                                    ? 'Hide Technical Details'
-                                    : 'Show Technical Details',
+                                    ? 'mc_hide_technical'.tr: 'mc_show_technical'.tr,
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -1944,20 +1943,19 @@ class ModelController extends GetxController {
     final String warning;
     if (isCriticallyLow) {
       warning =
-          'Available RAM is lower than recommended. This can crash the app if Android cannot reserve enough memory.';
+          'mc_ram_low'.tr;
     } else if (isLargeForRam || isLowRam || isLiteRt) {
       warning =
-          'This can crash the app if Android cannot reserve enough memory for the model.';
+          'mc_ram_low_model'.tr;
     } else {
-      warning = 'Loading local models can use more memory than the file size.';
+      warning = 'mc_ram_more_than_file'.tr;
     }
     final runtimeLabel = isLiteRt
         ? 'LiteRT-LM'
         : lower.endsWith('.gguf')
             ? 'GGUF'
             : lower.endsWith('.safetensors')
-                ? 'Image model'
-                : 'Local model';
+                ? 'mc_runtime_image'.tr: 'mc_runtime_local'.tr;
     final loadedName = _inference.loadedModelName.value;
     final hasLoadedModel =
         _inference.isModelLoaded.value && loadedName.isNotEmpty;
@@ -2235,7 +2233,7 @@ class ModelController extends GetxController {
   Future<void> importModelFromStorage() async {
     if (isImporting.value) {
       Get.snackbar(
-          'Import in Progress', 'Wait for the current import to finish.',
+          'mc_import_in_progress'.tr, 'mc_import_wait'.tr,
           snackPosition: SnackPosition.BOTTOM);
       return;
     }
@@ -2263,9 +2261,8 @@ class ModelController extends GetxController {
             !lower.endsWith('.tflite') &&
             !lower.endsWith('.safetensors')) {
           Get.snackbar(
-              'Unsupported Model',
-              'Only .gguf, .litertlm, .tflite, and .safetensors files can be '
-                  'imported.',
+              'mc_unsupported'.tr,
+              'mc_import_only_formats'.tr,
               snackPosition: SnackPosition.BOTTOM);
           return;
         }
@@ -2286,7 +2283,7 @@ class ModelController extends GetxController {
         if (sourceStream == null) {
           Get.snackbar(
             'mc_import_failed'.tr,
-            'Unable to read the selected file. Try selecting it from local storage.',
+            'mc_import_unreadable'.tr,
             snackPosition: SnackPosition.BOTTOM,
           );
           return;
@@ -2353,7 +2350,7 @@ class ModelController extends GetxController {
     try {
       isImporting.value = true;
       importFileName.value = '';
-      importStatus.value = 'Select a model file...';
+      importStatus.value = 'mc_select_file'.tr;
       importCopiedBytes.value = 0;
       importTotalBytes.value = 0;
       importBytesPerSecond.value = 0;
@@ -2485,7 +2482,7 @@ class ModelController extends GetxController {
                       borderRadius: BorderRadius.circular(10)),
                 ),
                 child: Text(
-                  'Cancel',
+                  'mc_cancel'.tr,
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w600,
                     color: isDark ? Colors.white70 : Colors.black54,
@@ -2534,11 +2531,11 @@ class ModelController extends GetxController {
     final lower = rawError.toLowerCase();
     if (lower.contains('unknown model architecture') ||
         lower.contains('unsupported model architecture')) {
-      return 'This GGUF uses a model architecture that is not supported by the bundled llama.cpp runtime. Update the app runtime or try a GGUF exported for a supported architecture.';
+      return 'mc_arch_unsupported'.tr;
     }
     if (lower.contains('missing key') ||
         lower.contains('failed to load gguf split')) {
-      return 'This appears to be a split GGUF model, but one or more required model files are missing. Import every split into the same folder before loading it.';
+      return 'mc_split_missing'.tr;
     }
     if (lower.contains('failed to load model from buffer') ||
         lower.contains('invalid_argument') ||
@@ -2546,7 +2543,7 @@ class ModelController extends GetxController {
         lower.contains('missing or unreadable') ||
         lower.contains('incomplete') ||
         lower.contains('corrupt')) {
-      return 'The model file appears to be incomplete or corrupted. This usually happens when the download is interrupted or the file is invalid.';
+      return 'mc_file_corrupt'.tr;
     }
     if (lower.contains('out of memory') ||
         lower.contains('allocate') ||
@@ -2560,9 +2557,9 @@ class ModelController extends GetxController {
         lower.contains('gpu') ||
         lower.contains('cl_') ||
         lower.contains('driver')) {
-      return 'A hardware or GPU driver error occurred while initializing the model. Try disabling GPU acceleration or switching to CPU-only inference in Settings.';
+      return 'mc_hw_error'.tr;
     }
-    return 'The native AI engine encountered an unexpected error while loading the model. Please check the technical details below for more information.';
+    return 'mc_native_error'.tr;
   }
 
   Widget _buildTipRow(BuildContext context, IconData icon, String text) {

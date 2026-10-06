@@ -165,8 +165,7 @@ class _HfSearchSheetState extends State<HfSearchSheet> {
         _files = files;
         _busy = false;
         if (files.isEmpty) {
-          _error = 'Nothing loadable in this repo. Split archives and '
-              'LiteRT builds for other vendors\' accelerators are skipped.';
+          _error = 'hf_nothing_loadable'.tr;
         }
       });
       // Asked for separately and after the files are on screen, deliberately.
@@ -631,14 +630,14 @@ class _FiltersSheetState extends State<_FiltersSheet> {
   };
 
   /// The hub's "Misc" facets, limited to the ones a GGUF repo actually carries.
-  static const _misc = <String, String>{
+  static final _misc = <String, String>{
     'moe': 'Mixture of Experts',
     '4-bit': '4-bit precision',
     '8-bit': '8-bit precision',
     '16-bit': '16-bit precision',
     'imatrix': 'Importance matrix',
     'merge': 'Merge',
-    'mergekit': 'Made with mergekit',
+    'mergekit': 'hf_mergekit'.tr,
     'custom_code': 'Custom code',
     'conversational': 'Conversational',
   };
@@ -701,7 +700,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
             child: ListView(
               shrinkWrap: true,
               children: [
-                _label(theme, 'FORMAT'),
+                _label(theme, 'hf_format'.tr),
                 Wrap(
                   spacing: 8,
                   children: [
@@ -810,7 +809,7 @@ class _FiltersSheetState extends State<_FiltersSheet> {
                   title: Text('quantisation_aware_only'.tr),
                   subtitle: Text('hf_qat_explained'.tr),
                 ),
-                _label(theme, 'THIS DEVICE'),
+                _label(theme, 'hf_this_device'.tr),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,

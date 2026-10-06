@@ -24,7 +24,7 @@ class _WorkspaceSetupViewState extends State<WorkspaceSetupView> {
     if (uri == null && mounted) {
       // Cancelled — keep the gate visible.
       setState(() => _busy = false);
-      Get.snackbar('Workspace', 'No folder chosen yet. Pick one to continue.');
+      Get.snackbar('Workspace', 'ws_setup_none'.tr);
     }
   }
 

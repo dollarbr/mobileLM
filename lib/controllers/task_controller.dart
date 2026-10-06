@@ -119,7 +119,7 @@ Steps:''';
       final step = steps[i];
       steps[i] = step.copyWith(
         status: 'failed',
-        output: 'Command execution is not available.',
+        output: 'task_no_exec'.tr,
       );
     }
 

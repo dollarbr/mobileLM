@@ -177,6 +177,7 @@ class AppTranslation extends Translations {
       'soc_server_said': 'The server said:',
       'soc_loaded_name': 'loaded: @l',
       'soc_the_feature_vector': 'the feature vector',
+      'soc_run_now': 'running',
       'wv_delete_failed': 'Delete failed.',
       'encp_unknown': 'unknown',
       'hf_search_failed': 'Search failed: @e',
@@ -804,6 +805,215 @@ class AppTranslation extends Translations {
       'soc_server_no_answer': 'the server did not answer',
       'enc_what_file_says': 'what the file says about itself',
       'soc_which_area': 'which area does this belong to?',
+      // ── Texto de tela da varredura ampla (tool/broad_inline.tsv) ────
+      // O casamento é por TEXTO e nunca por `arquivo:linha`: reescrever um
+      // literal adjacente apaga as linhas do meio, e uma posição medida
+      // antes da primeira reescrita aponta para o lugar errado — e a
+      // ferramenta aceitaria, porque ela confia na posição.
+      'mc_settings_folder_failed': 'Could not create the settings folder',
+      'mc_config_write_failed': 'Could not write mobilelm-config.json',
+      'mc_not_a_backup': 'Not a mobileLM config backup.',
+      'mc_already_loading': 'Another model is already loading.',
+      'mc_model_loading': 'Model Loading',
+      'mc_incomplete_file': 'Incomplete Model File',
+      'mc_incomplete_tip_delete': 'Delete the model and try redownloading it completely.',
+      'mc_incomplete_tip_ram': 'Ensure your device has at least 2-3 GB of free RAM.',
+      'mc_hide_technical': 'Hide Technical Details',
+      'mc_show_technical': 'Show Technical Details',
+      'mc_ram_low': 'Available RAM is lower than recommended. This can crash the app if '
+          'Android cannot reserve enough memory.',
+      'mc_ram_low_model': 'This can crash the app if Android cannot reserve enough memory for '
+          'the model.',
+      'mc_ram_more_than_file': 'Loading local models can use more memory than the file size.',
+      'mc_runtime_image': 'Image model',
+      'mc_import_in_progress': 'Import in Progress',
+      'mc_import_wait': 'Wait for the current import to finish.',
+      'mc_unsupported': 'Unsupported Model',
+      'mc_import_only_formats': 'Only .gguf, .litertlm, .tflite, and .safetensors files can be '
+          'imported.',
+      'mc_import_unreadable': 'Unable to read the selected file. Try selecting it from local '
+          'storage.',
+      'mc_select_file': 'Select a model file...',
+      'mc_cancel': 'Cancel',
+      'mc_download_failed': 'Download Failed',
+      'mc_download_unavailable': 'Download Unavailable',
+      'mc_no_download_url': 'This model has no download URL.',
+      'mc_android_only': 'Android Only',
+      'mc_android_only_detail': 'Use the app download button or import a local model on this '
+          'platform.',
+      'mc_download_starting': 'Starting download...',
+      'mc_download_started': 'Download Started',
+      'mc_arch_unsupported': 'This GGUF uses a model architecture that is not supported by the '
+          'bundled llama.cpp runtime. Update the app runtime or try a GGUF '
+          'exported for a supported architecture.',
+      'mc_split_missing': 'This appears to be a split GGUF model, but one or more required '
+          'model files are missing. Import every split into the same folder '
+          'before loading it.',
+      'mc_file_corrupt': 'The model file appears to be incomplete or corrupted. This usually '
+          'happens when the download is interrupted or the file is invalid.',
+      'mc_out_of_memory': 'Your device ran out of memory (RAM) trying to load this model. '
+          'Mobile devices have strict memory limits; try using a smaller or '
+          'more heavily quantized model (e.g., 1B or 3B parameters, q4_k_m '
+          'quantized).',
+      'mc_hw_error': 'A hardware or GPU driver error occurred while initializing the '
+          'model. Try disabling GPU acceleration or switching to CPU-only '
+          'inference in Settings.',
+      'mc_native_error': 'The native AI engine encountered an unexpected error while loading '
+          'the model. Please check the technical details below for more '
+          'information.',
+      'mv_no_online_model': 'No online model selected',
+      'mv_save_key': 'Save Key',
+      'mv_verifying': 'Verifying...',
+      'mv_one_download': '1 download in progress · its own bar is on its card',
+      'mv_benchmark_running': 'Benchmark running…',
+      'mv_benchmark_usability': 'Benchmark usability',
+      'mv_bench_cpu_safe': 'CPU Safe mode, one short question. Takes a few seconds to load the '
+          'model, then a few to answer.',
+      'mv_bench_what_it_does': 'Runs the 230M model in CPU Safe mode and reports your real tok/s, '
+          'so you know whether a local model is worth the download.',
+      'mv_bench_what_it_does2': 'Downloads the 230M model and runs it in CPU Safe mode, then '
+          'reports your real tok/s. Nothing is downloaded or run until you '
+          'tap.',
+      'mv_bench_fast': 'Fast enough for local models. 1B and under should be comfortable; '
+          'larger ones are worth trying before you download them.',
+      'mv_bench_cpu_nothing': 'The CPU returned nothing. Cloud models are the reliable choice on '
+          'this device.',
+      'mv_bench_cpu_path_nothing': 'The CPU path returned nothing, so local models are not going to '
+          'work here. Use the cloud models — and if this repeats, the engine '
+          'is the problem rather than the model size.',
+      'mv_hide_list': 'Hide the local model list',
+      'mv_list_hidden': 'Local list hidden',
+      'mv_not_now': 'Not now',
+      'mv_clear_form': 'Clear form',
+      'mv_enter_model_name': 'Enter model name',
+      'mv_enter_model_url': 'Enter model URL',
+      'mv_enter_description': 'Enter description',
+      'mv_url_example': 'https://huggingface.co/…/model.gguf',
+      'mv_display_name_hint': 'Display name  (e.g. Qwen3-0.6B)',
+      'mv_projector_incomplete': 'Projector download did not complete',
+      'mv_no_mmproj': 'No mmproj file found in the models folder yet. Open HF search, '
+          'download the projector for this repo, come back here.',
+      'mv_loading': 'Loading...',
+      'mv_bad_url': 'Invalid URL format. Must start with http:// or https://',
+      'mv_size_unresolved': 'Could not resolve file size. Ensure the URL is accessible.',
+      'set_scrape_chain': 'Using the scrape chain.',
+      'set_gpu_safety_off': 'GPU Safety is off. Large models may crash or freeze on GPU.',
+      'set_gpu_safety_high': 'High GPU Safety allows larger models on GPU and may crash, freeze, '
+          'or overheat some phones.',
+      'set_ctx_may_crash': 'Your phone may crash with this value!',
+      'set_ctx_warning': 'Warning: values above 8192 may cause your device to run out of '
+          'memory. Continue only if your device has sufficient RAM.',
+      'set_ctx_capped': 'Context capped at 4096 to prevent driver memory crash for LiteRT '
+          'models.',
+      'set_ctx_all_ram': 'Context this large will eat all your RAM!',
+      'set_ws_move_failed': 'Could not move the workspace.',
+      'set_ws_moved': 'Workspace moved and active.',
+      'set_hops_label': 'Set max hops (1–8), or 0 for no cap of your own',
+      'set_no_local_files': 'No local model files found.',
+      'set_field_name': 'Name',
+      'sc_what_is_here': 'What is on this phone',
+      'sc_load_downloaded': 'Load a downloaded model',
+      'sc_download_catalogue': 'Download one from the catalogue',
+      'sc_download_here': 'Download models to this phone',
+      'sc_unload': 'Unload or replace the running model',
+      'sc_list_here': 'List what is on the phone',
+      'sc_use_for_inference': 'Use the phone for inference',
+      'sc_network_warning': 'Anyone on this network can use this server.',
+      'soc_no_address': 'The API server has no address yet.',
+      'soc_no_address_hint': 'the API server has not reported an address yet — open Settings, '
+          'API server, and start it',
+      'soc_nothing_freed': 'Nothing was loaded, so nothing was freed.',
+      'soc_nothing_loaded': 'nothing loaded',
+      'soc_is_head': 'this one is a head with a label set of its own',
+      'soc_head_labels': 'head with its own labels — the encoder console drives that one',
+      'soc_not_decided': 'not decided yet — no GGUF is loaded',
+      'soc_state': 'the state — the data being judged',
+      'soc_question': 'the question — optional',
+      'soc_system': 'the system instruction — optional',
+      'soc_default_ok': 'The default already says the three things that matter: treat the '
+          'state as data, pick exactly one, return only the letter.',
+      'soc_run_head': 'run the head',
+      'soc_no_tflite': 'no .tflite to name',
+      'soc_left_empty': 'Left empty, this is not sent at all and the endpoint will say '
+          'which one it wanted.',
+      'soc_left_empty2': 'Left empty, this is not sent at all. Zeros are never substituted: '
+          'a logit computed on invented features is a number with no meaning, '
+          'and it comes back with a label.',
+      'soc_options': 'the options — 2 to 24, the model card\'s number',
+      'soc_json_envelope': 'Sent inside a JSON envelope, never as instructions. A ticket with '
+          'quotes and braces must not be able to change the shape of the '
+          'question.',
+      'soc_copy': 'copy',
+      'soc_answer': 'the answer',
+      'soc_refused': 'the run was refused',
+      'soc_reprobe_failed': 'Re-probe failed, so what is shown below is from the file as it was '
+          'last read. The run will use the server\'s own answer.',
+      'enc_needs_bert': 'This console scores one query against a model, so it needs a '
+          'BERT\nor ModernBERT. A GGUF without that shape cannot be tested '
+          'here.',
+      'enc_no_output': 'This conversion has no output',
+      'enc_works_reranker': 'A reranker that works here: gte-reranker-modernbert-base-Q8_0.gguf',
+      'enc_works_embed': 'An embedding model that works: bge-small-en-v1.5-f16.gguf',
+      'enc_server_off': 'server not running — tap to retry',
+      'enc_aux_bad_json': 'auxiliary must be a JSON object of name → numbers',
+      'enc_tap_to_copy': 'tap to copy',
+      'enc_copied': 'the JSON response is on the clipboard',
+      'enc_role_embed': 'Embeddings turn text into one vector each.',
+      'enc_role_rerank': 'Rerankers score a query against each document.',
+      'enc_reread': 're-read',
+      'enc_asym_query': 'Prepended to a plain `input`. The other half of the same asymmetry '
+          '— a model trained with both sides marked returns vectors built for '
+          'one kind of text if you mark neither.',
+      'enc_normalize': 'Auto follows the model. Off returns the raw vector, for a caller '
+          'doing its own normalisation.',
+      'enc_top_n': 'How many documents come back. A request that sends its own `top_n` '
+          'wins over this.',
+      'enc_split_newline': 'Used when `documents` arrives as one string. A newline cannot be '
+          'told from a paragraph break, so a document sent with blank lines '
+          'in it comes back split and ranked, with nothing to indicate it.',
+      'enc_prob': 'Adds `relevance_score_probability` next to the raw logit. The '
+          'logit is left alone either way — it is the measured contract, and '
+          'a cross-encoder\'s sigmoid is not calibrated anyway.',
+      'enc_echo': 'Echoes each document back with its score, the way Cohere does. Off '
+          'halves the response on a long list.',
+      'hf_nothing_loadable': 'Nothing loadable in this repo. Split archives and LiteRT builds '
+          'for other vendors\' accelerators are skipped.',
+      'hf_mergekit': 'Made with mergekit',
+      'hf_format': 'FORMAT',
+      'hf_this_device': 'THIS DEVICE',
+      'lit_still_compiling': 'LiteRT accepted the file 90 s ago and still has not reported it '
+          'compiled. The compile log is in Settings, Log.',
+      'lit_screen_first': 'screen a .tflite first — nothing to run',
+      'chat_image_failed': '❌ Local image generation failed.',
+      'chat_image_here': 'Here is your generated image:',
+      'chat_privileged': 'This runs a privileged command.',
+      'chat_only_media': 'Only images, video, audio, PDF, DOCX, and text/code files are '
+          'supported.',
+      'chat_no_frames': 'No frames could be read from this video.',
+      'chat_vae_decoding': 'VAE decode in progress…',
+      'chat_just_now': 'Just now',
+      'chat_show_conversation': 'show conversation',
+      'chat_attached_file': 'Attached file:',
+      'widget_generated_with': 'Generated with mobileLM',
+      'ws_new_name': 'New name',
+      'ws_rename_failed': 'Rename failed.',
+      'ws_folder_name': 'Folder name',
+      'ws_create_folder_failed': 'Could not create folder (name may be taken).',
+      'ws_file_name': 'File name (e.g. notes.md)',
+      'ws_create_file_failed': 'Could not create file (name may be taken).',
+      'ws_setup_none': 'No folder chosen yet. Pick one to continue.',
+      'task_no_exec': 'Command execution is not available.',
+      'task_cancel': 'Cancel',
+      'cloud_nim': 'OpenAI compatible hosted NIM models',
+      'cloud_url_required': 'Base URL is required.',
+      'cloud_url_invalid': 'Enter a valid OpenAI-compatible base URL.',
+      'cloud_free_list': 'Free model list · OpenAI compatible',
+      'cloud_native_openai': 'Native OpenAI chat models',
+      'cloud_v4': 'OpenAI compatible V4 models',
+      'cloud_gemini': 'Gemini native API models',
+      'set_unknown_gpu': 'Unknown GPU',
+      'enc_doc_example': 'The map cache holds about 340 MB per city.\nThe cache is cleared '
+          'from Settings.\nOlive oil is pressed cold.',
     },
     'pt_BR': {
       'sc_section_endpoints': 'ENDPOINTS',
@@ -940,6 +1150,7 @@ class AppTranslation extends Translations {
       'soc_loaded_name': 'carregado: @l',
       'soc_the_feature_vector': 'o vetor de features',
       'wv_delete_failed': 'A exclusão falhou.',
+      'soc_run_now': 'executando',
       'encp_unknown': 'desconhecido',
       'hf_search_failed': 'A busca falhou: @e',
       'set_failed': 'Falhou: @e',
@@ -1659,6 +1870,220 @@ class AppTranslation extends Translations {
       'soc_server_no_answer': 'o servidor não respondeu',
       'enc_what_file_says': 'o que o arquivo diz sobre si mesmo',
       'soc_which_area': 'a que área isto pertence?',
+      // ── Texto de tela da varredura ampla (tool/broad_inline.tsv) ────
+      // O casamento é por TEXTO e nunca por `arquivo:linha`: reescrever um
+      // literal adjacente apaga as linhas do meio, e uma posição medida
+      // antes da primeira reescrita aponta para o lugar errado — e a
+      // ferramenta aceitaria, porque ela confia na posição.
+      'mc_settings_folder_failed': 'Não foi possível criar a pasta de configurações',
+      'mc_config_write_failed': 'Não foi possível gravar mobilelm-config.json',
+      'mc_not_a_backup': 'Isto não é um backup de configuração do mobileLM.',
+      'mc_already_loading': 'Outro modelo já está sendo carregado.',
+      'mc_model_loading': 'Carregando modelo',
+      'mc_incomplete_file': 'Arquivo de modelo incompleto',
+      'mc_incomplete_tip_delete': 'Apague o modelo e baixe-o de novo por inteiro.',
+      'mc_incomplete_tip_ram': 'Confira se o aparelho tem pelo menos 2-3 GB de RAM livre.',
+      'mc_hide_technical': 'Ocultar detalhes técnicos',
+      'mc_show_technical': 'Mostrar detalhes técnicos',
+      'mc_ram_low': 'A RAM disponível está abaixo do recomendado. Isto pode travar o '
+          'app se o Android não conseguir reservar memória suficiente.',
+      'mc_ram_low_model': 'Isto pode travar o app se o Android não conseguir reservar memória '
+          'suficiente para o modelo.',
+      'mc_ram_more_than_file': 'Carregar modelos locais pode usar mais memória do que o tamanho do '
+          'arquivo.',
+      'mc_runtime_image': 'Modelo de imagem',
+      'mc_import_in_progress': 'Importação em andamento',
+      'mc_import_wait': 'Espere a importação atual terminar.',
+      'mc_unsupported': 'Modelo não suportado',
+      'mc_import_only_formats': 'Só arquivos .gguf, .litertlm, .tflite e .safetensors podem ser '
+          'importados.',
+      'mc_import_unreadable': 'Não foi possível ler o arquivo selecionado. Tente selecioná-lo do '
+          'armazenamento local.',
+      'mc_select_file': 'Selecione um arquivo de modelo...',
+      'mc_cancel': 'Cancelar',
+      'mc_download_failed': 'Falha no download',
+      'mc_download_unavailable': 'Download indisponível',
+      'mc_no_download_url': 'Este modelo não tem URL de download.',
+      'mc_android_only': 'Só no Android',
+      'mc_android_only_detail': 'Use o botão de download do app ou importe um modelo local nesta '
+          'plataforma.',
+      'mc_download_starting': 'Iniciando download...',
+      'mc_download_started': 'Download iniciado',
+      'mc_arch_unsupported': 'Este GGUF usa uma arquitetura de modelo que o runtime de llama.cpp '
+          'incluído não suporta. Atualize o runtime do app ou tente um GGUF '
+          'exportado para uma arquitetura suportada.',
+      'mc_split_missing': 'Isto parece um GGUF dividido, mas falta um ou mais arquivos '
+          'obrigatórios. Importe todas as partes na mesma pasta antes de '
+          'carregar.',
+      'mc_file_corrupt': 'O arquivo do modelo parece incompleto ou corrompido. Isso costuma '
+          'acontecer quando o download é interrompido ou o arquivo é '
+          'inválido.',
+      'mc_out_of_memory': 'O aparelho ficou sem memória (RAM) ao tentar carregar este modelo. '
+          'Aparelhos móveis têm limites rígidos de memória; tente um modelo '
+          'menor ou mais quantizado (por exemplo, 1B ou 3B parâmetros, '
+          'quantizado q4_k_m).',
+      'mc_hw_error': 'Ocorreu um erro de hardware ou de driver da GPU ao iniciar o '
+          'modelo. Tente desativar a aceleração de GPU ou passar para '
+          'inferência só na CPU, em Configurações.',
+      'mc_native_error': 'O motor de IA nativo encontrou um erro inesperado ao carregar o '
+          'modelo. Veja os detalhes técnicos abaixo para mais informação.',
+      'mv_no_online_model': 'Nenhum modelo online selecionado',
+      'mv_save_key': 'Salvar chave',
+      'mv_verifying': 'Verificando...',
+      'mv_one_download': '1 download em andamento · a barra dele está no próprio card',
+      'mv_benchmark_running': 'Benchmark rodando…',
+      'mv_benchmark_usability': 'Usabilidade do benchmark',
+      'mv_bench_cpu_safe': 'Modo CPU Seguro, uma pergunta curta. Leva alguns segundos para '
+          'carregar o modelo, e mais alguns para responder.',
+      'mv_bench_what_it_does': 'Roda o modelo de 230M em modo CPU Seguro e informa o seu tok/s de '
+          'verdade, para você saber se um modelo local vale o download.',
+      'mv_bench_what_it_does2': 'Baixa o modelo de 230M e roda em modo CPU Seguro, depois informa o '
+          'seu tok/s de verdade. Nada é baixado nem roda antes de você tocar.',
+      'mv_bench_fast': 'Velocidade suficiente para modelos locais. 1B ou menos deve ser '
+          'tranquilo; os maiores valem a pena testar antes de baixar.',
+      'mv_bench_cpu_nothing': 'A CPU não devolveu nada. Modelos na nuvem são a escolha confiável '
+          'neste aparelho.',
+      'mv_bench_cpu_path_nothing': 'O caminho pela CPU não devolveu nada, então modelos locais não vão '
+          'funcionar aqui. Use os modelos na nuvem — e se isso se repetir, o '
+          'problema é o motor, não o tamanho do modelo.',
+      'mv_hide_list': 'Ocultar a lista de modelos locais',
+      'mv_list_hidden': 'Lista local oculta',
+      'mv_not_now': 'Agora não',
+      'mv_clear_form': 'Limpar o formulário',
+      'mv_enter_model_name': 'Digite o nome do modelo',
+      'mv_enter_model_url': 'Digite a URL do modelo',
+      'mv_enter_description': 'Digite uma descrição',
+      'mv_url_example': 'https://huggingface.co/…/model.gguf',
+      'mv_display_name_hint': 'Nome de exibição  (ex.: Qwen3-0.6B)',
+      'mv_projector_incomplete': 'O download do projetor não foi concluído',
+      'mv_no_mmproj': 'Still não há arquivo mmproj na pasta de modelos. Abra a busca do '
+          'HF, baixe o projetor deste repositório e volte para cá.',
+      'mv_loading': 'Carregando...',
+      'mv_bad_url': 'Formato de URL inválido. Precisa começar com http:// ou https://',
+      'mv_size_unresolved': 'Não foi possível resolver o tamanho do arquivo. Confirme que a URL '
+          'está acessível.',
+      'set_scrape_chain': 'Usando a cadeia de busca.',
+      'set_gpu_safety_off': 'A proteção da GPU está desligada. Modelos grandes podem travar ou '
+          'congelar na GPU.',
+      'set_gpu_safety_high': 'A proteção alta da GPU permite modelos maiores na GPU, e pode '
+          'travar, congelar ou superaquecer alguns aparelhos.',
+      'set_ctx_may_crash': 'O aparelho pode travar com este valor!',
+      'set_ctx_warning': 'Atenção: valores acima de 8192 podem esgotar a memória do '
+          'aparelho. Continue só se o aparelho tiver RAM suficiente.',
+      'set_ctx_capped': 'Contexto limitado a 4096 para evitar travamento por memória do '
+          'driver nos modelos LiteRT.',
+      'set_ctx_all_ram': 'Um contexto desse tamanho come toda a sua RAM!',
+      'set_ws_move_failed': 'Não foi possível mover o espaço de trabalho.',
+      'set_ws_moved': 'Espaço de trabalho movido e ativo.',
+      'set_hops_label': 'Defina o máximo de saltos (1–8), ou 0 para não ter teto próprio',
+      'set_no_local_files': 'Nenhum arquivo de modelo local encontrado.',
+      'set_field_name': 'Nome',
+      'sc_what_is_here': 'O que há neste aparelho',
+      'sc_load_downloaded': 'Carregar um modelo já baixado',
+      'sc_download_catalogue': 'Baixar um do catálogo',
+      'sc_download_here': 'Baixar modelos para este aparelho',
+      'sc_unload': 'Tirar ou trocar o modelo em uso',
+      'sc_list_here': 'Listar o que há no aparelho',
+      'sc_use_for_inference': 'Usar o aparelho para inferência',
+      'sc_network_warning': 'Qualquer pessoa nesta rede pode usar este servidor.',
+      'soc_no_address': 'O servidor da API ainda não tem endereço.',
+      'soc_no_address_hint': 'o servidor da API ainda não informou um endereço — abra '
+          'Configurações, Servidor de API, e ligue-o',
+      'soc_nothing_freed': 'Nada foi carregado, então nada foi liberado.',
+      'soc_nothing_loaded': 'nada carregado',
+      'soc_is_head': 'este tem cabeça com um conjunto de rótulos próprio',
+      'soc_head_labels': 'cabeça com rótulos próprios — é o console de encoder que dirige '
+          'essa',
+      'soc_not_decided': 'ainda não decidido — nenhum GGUF está carregado',
+      'soc_state': 'o estado — os dados que estão sendo avaliados',
+      'soc_question': 'a pergunta — opcional',
+      'soc_system': 'a instrução de sistema — opcional',
+      'soc_default_ok': 'O padrão já diz as três coisas que importam: trate o estado como '
+          'dado, escolha exatamente uma, devolva só a letra.',
+      'soc_run_head': 'rodar a cabeça',
+      'soc_no_tflite': 'nenhum .tflite para nomear',
+      'soc_left_empty': 'Vazio, isto não é enviado de todo, e o endpoint diz qual era o '
+          'esperado.',
+      'soc_left_empty2': 'Vazio, isto não é enviado de todo. Zeros nunca são substituídos: '
+          'um logit calculado sobre features inventadas é um número sem '
+          'significado, e volta com um rótulo.',
+      'soc_options': 'as opções — de 2 a 24, o número do model card',
+      'soc_json_envelope': 'Enviado dentro de um envelope JSON, nunca como instrução. Um '
+          'ticket com aspas e chaves não pode mudar a forma da pergunta.',
+      'soc_copy': 'copiar',
+      'soc_answer': 'a resposta',
+      'soc_refused': 'a execução foi recusada',
+      'soc_reprobe_failed': 'A nova sondagem falhou, então o que aparece abaixo vem do arquivo '
+          'como foi lido da última vez. A execução vai usar a resposta do '
+          'próprio servidor.',
+      'enc_needs_bert': 'Este console pontua uma consulta contra um modelo, então precisa '
+          'de um BERT ou ModernBERT. Um GGUF sem essa forma não pode ser '
+          'testado aqui.',
+      'enc_no_output': 'Esta conversão não tem saída',
+      'enc_works_reranker': 'Um reranker que funciona aqui: '
+          'gte-reranker-modernbert-base-Q8_0.gguf',
+      'enc_works_embed': 'Um modelo de embedding que funciona: bge-small-en-v1.5-f16.gguf',
+      'enc_server_off': 'servidor fora — toque para tentar de novo',
+      'enc_aux_bad_json': 'auxiliar tem que ser um objeto JSON de nome → números',
+      'enc_tap_to_copy': 'toque para copiar',
+      'enc_copied': 'a resposta JSON está na área de transferência',
+      'enc_role_embed': 'Embeddings transformam texto em um vetor cada.',
+      'enc_role_rerank': 'Rerankers pontuam uma consulta contra cada documento.',
+      'enc_reread': 'reler',
+      'enc_asym_query': 'Prependido a um `input` simples. A outra metade da mesma '
+          'assimetria — um modelo treinado com os dois lados marcados devolve '
+          'vetores feitos para um tipo de texto se você não marcar nenhum.',
+      'enc_normalize': 'Automático segue o modelo. Desligado devolve o vetor cru, para '
+          'quem faz a própria normalização.',
+      'enc_top_n': 'Quantos documentos voltam. Um pedido que mande o próprio `top_n` '
+          'tem a preferência.',
+      'enc_split_newline': 'Usado quando `documents` chega como uma string só. Uma quebra de '
+          'linha não se distingue de um parágrafo novo, então um documento '
+          'enviado com linhas em branco volta partido e ordenado, sem nada '
+          'indicando isso.',
+      'enc_prob': 'Acrescenta `relevance_score_probability` ao lado do logit cru. O '
+          'logit fica como está nos dois casos — é o contrato medido, e o '
+          'sigmoid de um cross-encoder não é calibrado de qualquer jeito.',
+      'enc_echo': 'Devolve cada documento com sua pontuação, como o Cohere faz. '
+          'Desligado corta a resposta pela metade numa lista longa.',
+      'hf_nothing_loadable': 'Nada carregável neste repositório. Arquivos divididos e builds '
+          'LiteRT para aceleradores de outros fornecedores são pulados.',
+      'hf_mergekit': 'Feito com mergekit',
+      'hf_format': 'Formato',
+      'hf_this_device': 'Este aparelho',
+      'lit_still_compiling': 'O LiteRT aceitou o arquivo há 90 s e ainda não informou que '
+          'compilou. O log de compilação está em Configurações, Log.',
+      'lit_screen_first': 'sondeie um .tflite primeiro — não há nada para rodar',
+      'chat_image_failed': '❌ Falha na geração local de imagem.',
+      'chat_image_here': 'Aqui está a imagem gerada:',
+      'chat_privileged': 'Isto roda um comando privilegiado.',
+      'chat_only_media': 'Só são suportados imagem, vídeo, áudio, PDF, DOCX e arquivos de '
+          'texto/código.',
+      'chat_no_frames': 'Não foi possível ler nenhum quadro deste vídeo.',
+      'chat_vae_decoding': 'Decodificação do VAE em andamento…',
+      'chat_just_now': 'Agora mesmo',
+      'chat_show_conversation': 'mostrar conversa',
+      'chat_attached_file': 'Arquivo anexado:',
+      'widget_generated_with': 'Gerado com mobileLM',
+      'ws_new_name': 'Novo nome',
+      'ws_rename_failed': 'Falha ao renomear.',
+      'ws_folder_name': 'Nome da pasta',
+      'ws_create_folder_failed': 'Não foi possível criar a pasta (o nome pode já estar em uso).',
+      'ws_file_name': 'Nome do arquivo (ex.: notas.md)',
+      'ws_create_file_failed': 'Não foi possível criar o arquivo (o nome pode já estar em uso).',
+      'ws_setup_none': 'Still nenhuma pasta escolhida. Escolha uma para continuar.',
+      'task_no_exec': 'Execução de comando não está disponível.',
+      'task_cancel': 'Cancelar',
+      'cloud_nim': 'Modelos NIM hospedados compatíveis com OpenAI',
+      'cloud_url_required': 'A URL base é obrigatória.',
+      'cloud_url_invalid': 'Digite uma URL base válida compatível com OpenAI.',
+      'cloud_free_list': 'Lista gratuita de modelos · compatível com OpenAI',
+      'cloud_native_openai': 'Modelos de chat nativos da OpenAI',
+      'cloud_v4': 'Modelos V4 compatíveis com OpenAI',
+      'cloud_gemini': 'Modelos da API nativa do Gemini',
+      'set_unknown_gpu': 'GPU desconhecida',
+      'enc_doc_example': 'O cache de mapas guarda cerca de 340 MB por cidade.\nO cache é '
+          'limpo em Configurações.\nAzeite de oliva é prensado a frio.',
     }
   };
 }

@@ -422,8 +422,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
       setState(() {
         _busy = false;
         _error =
-            'LiteRT accepted the file 90 s ago and still has not reported it '
-            'compiled. The compile log is in Settings, Log.';
+            'lit_still_compiling'.tr;
       });
     } on Object catch (e) {
       if (mounted) {
@@ -445,7 +444,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
     if (_busy) return;
     final head = _head;
     if (head == null) {
-      setState(() => _error = 'screen a .tflite first — nothing to run');
+      setState(() => _error = 'lit_screen_first'.tr);
       return;
     }
     setState(() {
@@ -464,7 +463,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
       if (auxText.isNotEmpty) {
         final aux = jsonDecode(auxText);
         if (aux is! Map) {
-          throw StateError('auxiliary must be a JSON object of name → numbers');
+          throw StateError('enc_aux_bad_json'.tr);
         }
         body['auxiliary_inputs'] = {
           for (final e in aux.entries)
@@ -606,7 +605,7 @@ class _LitertHeadConsoleState extends State<LitertHeadConsole> {
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: _raw!));
                         Get.snackbar(
-                            'copied', 'the JSON response is on the clipboard',
+                            'copied', 'enc_copied'.tr,
                             snackPosition: SnackPosition.BOTTOM,
                             duration: const Duration(seconds: 2));
                       },

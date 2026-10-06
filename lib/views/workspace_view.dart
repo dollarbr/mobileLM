@@ -73,18 +73,18 @@ class WorkspaceView extends GetView<WorkspaceService> {
   }
 
   Future<void> _createFolder(BuildContext context) async {
-    final name = await _promptName(context, 'wv_new_folder'.tr, 'Folder name');
+    final name = await _promptName(context, 'wv_new_folder'.tr, 'ws_folder_name'.tr);
     if (name == null || name.isEmpty) return;
     final ok = await controller.createFolder(name);
-    if (!ok) _showError('Could not create folder (name may be taken).');
+    if (!ok) _showError('ws_create_folder_failed'.tr);
   }
 
   Future<void> _createFile(BuildContext context) async {
     final name = await _promptName(
-        context, 'wv_new_file'.tr, 'File name (e.g. notes.md)');
+        context, 'wv_new_file'.tr, 'ws_file_name'.tr);
     if (name == null || name.isEmpty) return;
     final ok = await controller.createFile(name, content: '');
-    if (!ok) _showError('Could not create file (name may be taken).');
+    if (!ok) _showError('ws_create_file_failed'.tr);
   }
 
   static Future<String?> _promptName(
@@ -199,11 +199,11 @@ class _DirList extends StatelessWidget {
 
   Future<void> _rename(BuildContext context, String name) async {
     final newName =
-        await WorkspaceView._promptName(context, 'Rename', 'New name');
+        await WorkspaceView._promptName(context, 'Rename', 'ws_new_name'.tr);
     if (newName == null || newName.isEmpty || newName == name) return;
     final ok = await service.renameItem(service.childRelPath(name), newName);
     if (!ok) {
-      Get.snackbar('Workspace', 'Rename failed.',
+      Get.snackbar('Workspace', 'ws_rename_failed'.tr,
           snackPosition: SnackPosition.BOTTOM);
     }
   }

@@ -718,7 +718,7 @@ class ChatController extends GetxController {
       // Reject unsupported or extension-less files
       if (extension.isEmpty || fileType == 'file') {
         Get.snackbar('unsupported_file'.tr,
-          'Only images, video, audio, PDF, DOCX, and text/code files are supported.',
+          'chat_only_media'.tr,
           snackPosition: SnackPosition.BOTTOM,
         );
         return;
@@ -735,7 +735,7 @@ class ChatController extends GetxController {
             : await compute(VideoContactSheet.compose, frames);
         if (sheet == null) {
           Get.snackbar('video_not_attached'.tr,
-            'No frames could be read from this video.',
+            'chat_no_frames'.tr,
             snackPosition: SnackPosition.BOTTOM,
           );
           return;
@@ -1147,7 +1147,7 @@ class ChatController extends GetxController {
             rawResponse = '[IMAGE_BASE64]${base64Encode(pngBytes)}';
           } else {
             await imageNotifications.failed();
-            rawResponse = '❌ Local image generation failed.';
+            rawResponse = 'chat_image_failed'.tr;
           }
         } else {
           final inference = Get.find<InferenceService>();
@@ -1250,7 +1250,7 @@ class ChatController extends GetxController {
                         Text(command == null
                             ? '${call.name} wants to change something on '
                                 'this device.'
-                            : 'This runs a privileged command.'),
+                            : 'chat_privileged'.tr),
                         if (argsText.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Text(argsText),
@@ -1409,7 +1409,7 @@ class ChatController extends GetxController {
       String? outImageBase64;
       if (rawResponse.startsWith('[IMAGE_BASE64]')) {
         outImageBase64 = rawResponse.substring('[IMAGE_BASE64]'.length);
-        rawResponse = 'Here is your generated image:';
+        rawResponse = 'chat_image_here'.tr;
       }
 
       // Calculate total generation time for image gen

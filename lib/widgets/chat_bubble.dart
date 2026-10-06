@@ -73,7 +73,7 @@ class ChatBubble extends StatelessWidget {
 
     final visibleContent = message.fileName == null
         ? message.content
-        : message.content.split('\n\nAttached file:').first;
+        : message.content.split('chat_attached_file'.tr).first;
     final thoughtParts = isUser
         ? const ThoughtParts(thought: '', answer: '', isThinking: false)
         : splitThoughtTags(_cleanAssistantText(visibleContent));

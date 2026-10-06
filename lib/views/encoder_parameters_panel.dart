@@ -117,8 +117,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
       Expanded(
         child: Text(
           widget.role == 'embed'
-              ? 'Embeddings turn text into one vector each.'
-              : 'Rerankers score a query against each document.',
+              ? 'enc_role_embed'.tr: 'enc_role_rerank'.tr,
           style: GoogleFonts.inter(fontSize: 12, color: dim),
         ),
       ),
@@ -128,7 +127,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
           visualDensity: VisualDensity.compact,
           padding: const EdgeInsets.symmetric(horizontal: 8),
         ),
-        child: Text('re-read', style: GoogleFonts.inter(fontSize: 11)),
+        child: Text('enc_reread'.tr, style: GoogleFonts.inter(fontSize: 11)),
       ),
     ]);
   }
@@ -237,9 +236,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
         context,
         label: 'Passage prefix',
         hint: 'e5: "passage: "',
-        blurb: 'Prepended to a plain `input`. The other half of the same '
-            'asymmetry — a model trained with both sides marked returns vectors '
-            'built for one kind of text if you mark neither.',
+        blurb: 'enc_asym_query'.tr,
         value: _encoder.embedPassagePrefix.value,
         onSubmit: _encoder.setEmbedPassagePrefix,
       ),
@@ -247,8 +244,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
       _choiceRow(
         context,
         label: 'Normalise',
-        blurb: 'Auto follows the model. Off returns the raw vector, for a '
-            'caller doing its own normalisation.',
+        blurb: 'enc_normalize'.tr,
         value: _encoder.embedNormalize.value,
         onChanged: _encoder.setEmbedNormalize,
       ),
@@ -263,8 +259,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
         context,
         label: 'Top N',
         hint: 'all',
-        blurb: 'How many documents come back. A request that sends its own '
-            '`top_n` wins over this.',
+        blurb: 'enc_top_n'.tr,
         value: _encoder.rerankTopN.value,
         min: 1,
         max: 200,
@@ -275,9 +270,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
         context,
         label: 'Document separator',
         hint: r'newline',
-        blurb: 'Used when `documents` arrives as one string. A newline cannot '
-            'be told from a paragraph break, so a document sent with blank lines '
-            'in it comes back split and ranked, with nothing to indicate it.',
+        blurb: 'enc_split_newline'.tr,
         value: _encoder.rerankDocumentSeparator.value == '\n'
             ? null
             : _encoder.rerankDocumentSeparator.value,
@@ -290,9 +283,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
       _choiceRow(
         context,
         label: 'Include probability',
-        blurb: 'Adds `relevance_score_probability` next to the raw logit. The '
-            'logit is left alone either way — it is the measured contract, and a '
-            'cross-encoder\'s sigmoid is not calibrated anyway.',
+        blurb: 'enc_prob'.tr,
         value: _encoder.rerankSigmoid.value,
         onChanged: (v) => _encoder.setRerankSigmoid(v ?? true),
       ),
@@ -300,8 +291,7 @@ class _EncoderParametersPanelState extends State<EncoderParametersPanel> {
       _choiceRow(
         context,
         label: 'Return documents',
-        blurb: 'Echoes each document back with its score, the way Cohere does. '
-            'Off halves the response on a long list.',
+        blurb: 'enc_echo'.tr,
         value: _encoder.rerankReturnDocuments.value,
         onChanged: (v) => _encoder.setRerankReturnDocuments(v ?? true),
       ),

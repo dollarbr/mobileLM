@@ -349,12 +349,12 @@ class ServerView extends GetView<ServerController> {
     // sobe sem modelo justamente para isto, então os primeiros exemplos são os
     // de gestão — que são os que funcionam.
     if (model.isEmpty) {
-      blocks.add(_codeBlock(context, isDark, 'What is on this phone',
+      blocks.add(_codeBlock(context, isDark, 'sc_what_is_here'.tr,
           'curl $base/v1/models/local${_authHeader()}'));
       blocks.add(_codeBlock(
           context,
           isDark,
-          'Load a downloaded model',
+          'sc_load_downloaded'.tr,
           'curl $base/v1/models/load \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n'
               '  -d \'{"filename":"LFM2.5-230M-Q4_0.gguf","accept_risk":true}\'\n\n'
               '# 202, then poll /v1/models/local until its state is "loaded".\n'
@@ -364,7 +364,7 @@ class ServerView extends GetView<ServerController> {
       blocks.add(_codeBlock(
           context,
           isDark,
-          'Download one from the catalogue',
+          'sc_download_catalogue'.tr,
           'curl $base/v1/models/download \\\n  -H "Content-Type: application/json"${_authHeader()} \\\n'
               '  -d \'{"filename":"<filename>"}\'\n\n'
               '# Progress shows up as state "downloading" on /v1/models/local.'));
@@ -522,18 +522,18 @@ class ServerView extends GetView<ServerController> {
             const SizedBox(height: 14),
             // Named, because "it gets worse" is not something a person can
             // weigh. Each line is an endpoint that exists today.
-            _consequence(context, 'Download models to this phone',
+            _consequence(context, 'sc_download_here'.tr,
                 'POST /v1/models/download — writes gigabytes here'),
             _consequence(
                 context,
-                'Unload or replace the running model',
+                'sc_unload'.tr,
                 'POST /v1/models/load, /v1/models/unload — every other client '
                     'on the network changes model too'),
-            _consequence(context, 'List what is on the phone',
+            _consequence(context, 'sc_list_here'.tr,
                 'GET /v1/models/local — model names, sizes, what is loaded'),
             _consequence(
                 context,
-                'Use the phone for inference',
+                'sc_use_for_inference'.tr,
                 '/v1/chat/completions and /v1/completions — spends battery and '
                     'data'),
             const SizedBox(height: 12),
@@ -574,7 +574,7 @@ class ServerView extends GetView<ServerController> {
     await controller.saveSettings();
     Get.snackbar(
       'sv_api_key_off'.tr,
-      'Anyone on this network can use this server.',
+      'sc_network_warning'.tr,
       snackPosition: SnackPosition.BOTTOM,
       duration: const Duration(seconds: 6),
     );

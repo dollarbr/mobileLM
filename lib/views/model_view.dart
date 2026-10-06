@@ -556,27 +556,16 @@ class ModelView extends GetView<ModelController> {
                       children: [
                         Text(
                             state.running.value
-                                ? 'Benchmark running…'
-                                : 'Benchmark usability',
+                                ? 'mv_benchmark_running'.tr: 'mv_benchmark_usability'.tr,
                             style: GoogleFonts.inter(
                                 fontSize: 15, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 3),
                         Text(
                           state.running.value
-                              ? 'CPU Safe mode, one short question. Takes a '
-                                  'few seconds to load the model, then a few '
-                                  'to answer.'
-                              : missing
-                                  ? 'Downloads the 230M model and runs it in '
-                                      'CPU Safe mode, then reports your real '
-                                      'tok/s. Nothing is downloaded or run '
-                                      'until you tap.'
-                                  : tested
+                              ? 'mv_bench_cpu_safe'.tr: missing
+                                  ? 'mv_bench_what_it_does2'.tr: tested
                                       ? 'CPU Safe · ${state.summary.value}'
-                                      : 'Runs the 230M model in CPU Safe mode '
-                                          'and reports your real tok/s, so you '
-                                          'know whether a local model is worth '
-                                          'the download.',
+                                      : 'mv_bench_what_it_does'.tr,
                           style: GoogleFonts.inter(
                               fontSize: 12.5,
                               height: 1.35,
@@ -597,7 +586,7 @@ class ModelView extends GetView<ModelController> {
                                   const EdgeInsets.symmetric(horizontal: 10),
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            child: Text('Cancel',
+                            child: Text('mc_cancel'.tr,
                                 style: GoogleFonts.inter(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
@@ -642,23 +631,18 @@ class ModelView extends GetView<ModelController> {
         benchmarkSaysUseCloudModels(verdict ?? CpuVerdict.fail, tps);
     final (text, color) = switch (verdict) {
       CpuVerdict.ok => (
-          'Fast enough for local models. 1B and under should be comfortable; '
-              'larger ones are worth trying before you download them.',
+          'mv_bench_fast'.tr,
           AppColors.success
         ),
       CpuVerdict.slow => (
           tps == null
-              ? 'The CPU returned nothing. Cloud models are the reliable choice '
-                  'on this device.'
-              : 'Under ${kCpuUsableTokensPerSecond.toStringAsFixed(0)} tok/s. '
+              ? 'mv_bench_cpu_nothing'.tr: 'Under ${kCpuUsableTokensPerSecond.toStringAsFixed(0)} tok/s. '
                   'Cloud models will feel better; a local 230M still works if '
                   'you would rather keep it on the device.',
           AppColors.warning
         ),
       CpuVerdict.fail => (
-          'The CPU path returned nothing, so local models are not going to work '
-              'here. Use the cloud models — and if this repeats, the engine is '
-              'the problem rather than the model size.',
+          'mv_bench_cpu_path_nothing'.tr,
           AppColors.error
         ),
       null => ('', AppColors.primary),
@@ -706,7 +690,7 @@ class ModelView extends GetView<ModelController> {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: Text(
-                  hidden ? 'Local list hidden' : 'Hide the local model list',
+                  hidden ? 'mv_list_hidden'.tr: 'mv_hide_list'.tr,
                   style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -772,7 +756,7 @@ class ModelView extends GetView<ModelController> {
           actions: [
             TextButton(
                 onPressed: () => Get.back(result: false),
-                child: const Text('Not now')),
+                child: Text('mv_not_now'.tr)),
             FilledButton(
                 onPressed: () => Get.back(result: true),
                 child: Text('iv_download'.tr)),
@@ -1429,7 +1413,7 @@ class ModelView extends GetView<ModelController> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  hasSelectedModel ? model : 'No online model selected',
+                  hasSelectedModel ? model : 'mv_no_online_model'.tr,
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -2131,7 +2115,7 @@ class ModelView extends GetView<ModelController> {
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
           ),
           child:
-              Obx(() => Text(isVerifying.value ? 'Verifying...' : 'Save Key')),
+              Obx(() => Text(isVerifying.value ? 'mv_verifying'.tr: 'mv_save_key'.tr)),
         ),
       ],
     ));
@@ -2305,7 +2289,7 @@ class ModelView extends GetView<ModelController> {
                     child: Obx(() => Text(
                           cloud.customProfileIndex >= 0
                               ? 'Remove selected provider'
-                              : 'Clear form',
+                              : 'mv_clear_form'.tr,
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -2939,7 +2923,7 @@ class ModelView extends GetView<ModelController> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
-              'Cancel',
+              'mc_cancel'.tr,
               style: GoogleFonts.inter(color: Theme.of(context).hintColor),
             ),
           ),
@@ -3066,22 +3050,22 @@ class ModelView extends GetView<ModelController> {
             _buildTextField(
               context,
               controller: nameController,
-              label: 'Name',
-              hint: 'Enter model name',
+              label: 'set_field_name'.tr,
+              hint: 'mv_enter_model_name'.tr,
             ),
             const SizedBox(height: 12),
             _buildTextField(
               context,
               controller: urlController,
               label: 'url'.tr,
-              hint: 'Enter model URL',
+              hint: 'mv_enter_model_url'.tr,
             ),
             const SizedBox(height: 12),
             _buildTextField(
               context,
               controller: descController,
               label: 'Description',
-              hint: 'Enter description',
+              hint: 'mv_enter_description'.tr,
               maxLines: 3,
             ),
             const SizedBox(height: 12),
@@ -3236,7 +3220,7 @@ class ModelView extends GetView<ModelController> {
                 if (!context.mounted) return;
                 if (downloaded.isEmpty) {
                   Get.snackbar('Vision',
-                      'No mmproj file found in the models folder yet. Open HF search, download the projector for this repo, come back here.',
+                      'mv_no_mmproj'.tr,
                       snackPosition: SnackPosition.BOTTOM,
                       duration: const Duration(seconds: 6));
                   return;
@@ -3423,8 +3407,7 @@ class ModelView extends GetView<ModelController> {
                               ),
                               child: Text(
                                 isThisImageModelLoading
-                                    ? 'Loading...'
-                                    : isThisTextModelLoading
+                                    ? 'mv_loading'.tr: isThisTextModelLoading
                                         ? '$loadPercent%'
                                         : isActive
                                             ? 'Active'
@@ -3720,7 +3703,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
           !uri.hasScheme ||
           (uri.scheme != 'http' && uri.scheme != 'https')) {
         _urlError.value =
-            'Invalid URL format. Must start with http:// or https://';
+            'mv_bad_url'.tr;
         _urlWarning.value = '';
         // **O campo fica VAZIO, e não escrito com um rótulo.** Este campo é
         // editável e o que está nele vai para `AiModel.size` quando o usuário
@@ -3739,7 +3722,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
         final sizeLabel = await widget.modelController.detectUrlSize(url);
         if (sizeLabel == AppConstants.kUnknownSize) {
           _urlWarning.value =
-              'Could not resolve file size. Ensure the URL is accessible.';
+              'mv_size_unresolved'.tr;
           widget.sizeController.text = '';
         } else {
           _urlWarning.value = '';
@@ -3762,7 +3745,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
       final sizeLabel = await widget.modelController.detectUrlSize(url);
       if (sizeLabel == AppConstants.kUnknownSize) {
         _urlWarning.value =
-            'Could not resolve file size. Ensure the URL is accessible.';
+            'mv_size_unresolved'.tr;
         widget.sizeController.text = '';
       } else {
         _urlWarning.value = '';
@@ -3786,7 +3769,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
         !uri.hasScheme ||
         (uri.scheme != 'http' && uri.scheme != 'https')) {
       _urlError.value =
-          'Invalid URL format. Must start with http:// or https://';
+          'mv_bad_url'.tr;
       return;
     }
 
@@ -3946,7 +3929,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                     const SizedBox(height: 8),
                     _SheetTextField(
                       controller: widget.urlController,
-                      hint: 'https://huggingface.co/…/model.gguf',
+                      hint: 'mv_url_example'.tr,
                       prefixIcon: Icons.link_rounded,
                       keyboardType: TextInputType.url,
                       bg: fieldBg,
@@ -4004,7 +3987,7 @@ class _AddModelUrlSheetState extends State<_AddModelUrlSheet> {
                     const SizedBox(height: 8),
                     _SheetTextField(
                       controller: widget.nameController,
-                      hint: 'Display name  (e.g. Qwen3-0.6B)',
+                      hint: 'mv_display_name_hint'.tr,
                       prefixIcon: Icons.label_outline_rounded,
                       bg: fieldBg,
                       border: borderCol,
@@ -4597,8 +4580,7 @@ class _DeviceLoadCardState extends State<_DeviceLoadCard> {
                   const SizedBox(height: 8),
                   Text(
                     active == 1
-                        ? '1 download in progress · its own bar is on its card'
-                        : '$active downloads in progress · each own bar is on '
+                        ? 'mv_one_download'.tr: '$active downloads in progress · each own bar is on '
                             'its card',
                     style: GoogleFonts.inter(fontSize: 11.5, color: hint),
                   ),

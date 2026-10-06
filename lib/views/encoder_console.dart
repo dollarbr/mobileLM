@@ -320,8 +320,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
           },
       };
       if (_base.isEmpty) {
-        throw StateError('the API server has not reported an address yet — '
-            'open Settings, API server, and start it');
+        throw StateError('soc_no_address_hint'.tr);
       }
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 5);
@@ -391,8 +390,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
             Icon(Icons.rule,
                 color: isDark ? Colors.white54 : Colors.black45, size: 34),
             'Not an encoder',
-            'This console scores one query against a model, so it needs a BERT\n'
-                'or ModernBERT. A GGUF without that shape cannot be tested here.',
+            'enc_needs_bert'.tr,
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
@@ -415,7 +413,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
         card,
         Icon(Icons.link_off_rounded,
             color: isDark ? Colors.orange : Colors.deepOrange, size: 34),
-        'This conversion has no output',
+        'enc_no_output'.tr,
         'The architecture is an encoder, but this file carries neither a\n'
             'classification head (cls.output.weight) nor a pooling type, so\n'
             'llama.cpp has no logit to return and no vector to pool. It loads,\n'
@@ -427,8 +425,8 @@ class _EncoderConsoleState extends State<EncoderConsole> {
           if (tags.isNotEmpty)
             'The file calls itself: ${tags.join(', ')}.\nThat is the intent, stated '
                 'correctly, by a conversion that did not deliver it.',
-          'A reranker that works here: gte-reranker-modernbert-base-Q8_0.gguf',
-          'An embedding model that works: bge-small-en-v1.5-f16.gguf',
+          'enc_works_reranker'.tr,
+          'enc_works_embed'.tr,
         ],
       );
     }
@@ -466,7 +464,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
                       child: Text(
                         _serverUp
                             ? '$_base  ·  $_role'
-                            : 'server not running — tap to retry',
+                            : 'enc_server_off'.tr,
                         style: GoogleFonts.inter(
                             fontSize: 11,
                             decoration:
@@ -530,9 +528,7 @@ class _EncoderConsoleState extends State<EncoderConsole> {
           if (_role == 'reranker')
             _field(field, 'Documents — one per line', _documents,
                 maxLines: 6,
-                initial: 'The map cache holds about 340 MB per city.\n'
-                    'The cache is cleared from Settings.\n'
-                    'Olive oil is pressed cold.')
+                initial: 'enc_doc_example'.tr)
           else
             _field(field, 'Labels — comma separated', _labels,
                 maxLines: 1, initial: 'positive, negative'),
@@ -645,12 +641,12 @@ class _EncoderConsoleState extends State<EncoderConsole> {
 
         if (_raw != null) ...[
           const SizedBox(height: 14),
-          _label('response', 'tap to copy'),
+          _label('response', 'enc_tap_to_copy'.tr),
           const SizedBox(height: 6),
           InkWell(
             onTap: () {
               Clipboard.setData(ClipboardData(text: _raw!));
-              Get.snackbar('copied', 'the JSON response is on the clipboard',
+              Get.snackbar('copied', 'enc_copied'.tr,
                   snackPosition: SnackPosition.BOTTOM,
                   duration: const Duration(seconds: 2));
             },

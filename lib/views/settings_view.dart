@@ -590,7 +590,7 @@ class SettingsView extends GetView<SettingsController> {
                   ? 'No cap of your own — the app stops at '
                       '${AppConstants.agentHopBackstop} if the model keeps '
                       'asking for tools'
-                  : 'Set max hops (1–8), or 0 for no cap of your own',
+                  : 'set_hops_label'.tr,
               style: GoogleFonts.inter(fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -739,7 +739,7 @@ class SettingsView extends GetView<SettingsController> {
     final modelCtrl = Get.find<ModelController>();
     final downloaded = modelCtrl.downloadedFiles.toList();
     if (downloaded.isEmpty) {
-      Get.snackbar('scheduled_tasks'.tr, 'No local model files found.',
+      Get.snackbar('scheduled_tasks'.tr, 'set_no_local_files'.tr,
           snackPosition: SnackPosition.BOTTOM);
       return false;
     }
@@ -755,7 +755,7 @@ class SettingsView extends GetView<SettingsController> {
             children: [
               TextField(
                 controller: nameCtl,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(labelText: 'set_field_name'.tr),
               ),
               TextField(
                 controller: promptCtl,
@@ -883,7 +883,7 @@ class SettingsView extends GetView<SettingsController> {
             children: [
               TextField(
                 controller: nameCtl,
-                decoration: const InputDecoration(labelText: 'Name'),
+                decoration: InputDecoration(labelText: 'set_field_name'.tr),
               ),
               TextField(
                 controller: promptCtl,
@@ -1367,8 +1367,7 @@ class SettingsView extends GetView<SettingsController> {
         const SizedBox(height: 6),
         Text(
           controller.customSearchUrl.value.isEmpty
-              ? 'Using the scrape chain.'
-              : 'Using ${controller.customSearchUrl.value}'
+              ? 'set_scrape_chain'.tr: 'Using ${controller.customSearchUrl.value}'
                   '${controller.customSearchToken.value.isEmpty ? " (GET, no auth)" : " (POST, bearer token)"}'
                   ' first, scrapes as fallback.',
           style: GoogleFonts.inter(
@@ -1786,8 +1785,7 @@ class SettingsView extends GetView<SettingsController> {
                   Expanded(
                       child: Text(
                           controller.imageGenGpuGuardMb.value <= 0
-                              ? 'GPU Safety is off. Large models may crash or freeze on GPU.'
-                              : 'High GPU Safety allows larger models on GPU and may crash, freeze, or overheat some phones.',
+                              ? 'set_gpu_safety_off'.tr: 'set_gpu_safety_high'.tr,
                           style: GoogleFonts.inter(
                               fontSize: 12,
                               color: AppColors.warning,
@@ -2211,7 +2209,7 @@ class SettingsView extends GetView<SettingsController> {
         onChanged: (v) => controller.setMaxTokens(v.toInt()),
         displayValue: controller.maxTokens.value.toString(),
         icon: Icons.tag_rounded,
-        warning: 'Your phone may crash with this value!',
+        warning: 'set_ctx_may_crash'.tr,
         onTapValue: () {
           SettingsController.showManualEntryDialog(
             context: context,
@@ -2222,7 +2220,7 @@ class SettingsView extends GetView<SettingsController> {
             max: SettingsController.maxManualMaxTokens,
             warningThreshold: SettingsController.memoryWarningThreshold,
             warningMessage:
-                'Warning: values above 8192 may cause your device to run out of memory. Continue only if your device has sufficient RAM.',
+                'set_ctx_warning'.tr,
             controller: controller,
             onApplied: () {},
           );
@@ -2263,8 +2261,7 @@ class SettingsView extends GetView<SettingsController> {
           displayValue: currentValue.toInt().toString(),
           icon: Icons.memory_rounded,
           warning: isLiteRtActive
-              ? 'Context capped at 4096 to prevent driver memory crash for LiteRT models.'
-              : 'Context this large will eat all your RAM!',
+              ? 'set_ctx_capped'.tr: 'set_ctx_all_ram'.tr,
           onTapValue: () {
             SettingsController.showManualEntryDialog(
               context: context,
@@ -2275,7 +2272,7 @@ class SettingsView extends GetView<SettingsController> {
               max: SettingsController.maxManualContextSize,
               warningThreshold: SettingsController.memoryWarningThreshold,
               warningMessage:
-                  'Warning: values above 8192 may cause your device to run out of memory. Continue only if your device has sufficient RAM.',
+                  'set_ctx_warning'.tr,
               controller: controller,
               onApplied: () {},
             );
@@ -2352,7 +2349,7 @@ class SettingsView extends GetView<SettingsController> {
     final ok = await workspace.relocateWorkspace();
     Get.snackbar(
       'Workspace',
-      ok ? 'Workspace moved and active.' : 'Could not move the workspace.',
+      ok ? 'set_ws_moved'.tr: 'set_ws_move_failed'.tr,
       snackPosition: SnackPosition.BOTTOM,
     );
   }

@@ -179,7 +179,7 @@ class ChatView extends GetView<ChatController> {
                   if (collapsed || maximized) ...[
                     const SizedBox(width: 4),
                     Text(
-                      collapsed ? 'encoder console' : 'show conversation',
+                      collapsed ? 'encoder console' : 'chat_show_conversation'.tr,
                       style: GoogleFonts.inter(
                           fontSize: 10,
                           color: isDark ? Colors.white38 : Colors.black45),
@@ -1221,7 +1221,7 @@ class ChatView extends GetView<ChatController> {
 
   String _fmtDate(DateTime d) {
     final diff = DateTime.now().difference(d);
-    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 1) return 'chat_just_now'.tr;
     if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
@@ -1642,8 +1642,7 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
                 // Percentage + steps / decoding message
                 Text(
                   isDone
-                      ? 'VAE decode in progress…'
-                      : '${(pct * 100).toStringAsFixed(0)}% · Step $step of $total',
+                      ? 'chat_vae_decoding'.tr: '${(pct * 100).toStringAsFixed(0)}% · Step $step of $total',
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     color: Theme.of(context).hintColor.withValues(alpha: 0.6),
@@ -1692,7 +1691,7 @@ class _ImageGenIndicatorState extends State<_ImageGenIndicator>
                             size: 12, color: const Color(0xFFFF3B30)),
                         const SizedBox(width: 4),
                         Text(
-                          'Cancel',
+                          'mc_cancel'.tr,
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             color: const Color(0xFFFF3B30),

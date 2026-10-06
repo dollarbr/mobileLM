@@ -81,7 +81,7 @@ class _ImageViewerState extends State<ImageViewer> {
       await file.writeAsBytes(_bytes);
       await Share.shareXFiles(
         [XFile(file.path)],
-        text: 'Generated with mobileLM',
+        text: 'widget_generated_with'.tr,
       );
     } catch (e) {
       if (mounted) {

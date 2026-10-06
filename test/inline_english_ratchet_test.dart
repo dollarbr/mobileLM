@@ -623,10 +623,34 @@ void f(BuildContext context, bool showDetails) {
     // quebram comportamento quando traduzidas, e a prova de que isso importa foi
     // feita exatamente nelas.
     final fonte = telas().map((f) => f.readAsStringSync()).join('\n');
+    // **O mesmo texto que a lista de não-texto casa: o literal já juntado.**
+    // Uma entrada pode ser a frase inteira de um literal adjacente de várias
+    // linhas, e aí `fonte.contains(entrada)` é falso mesmo com a entrada viva —
+    // o fonte tem `'a '` numa linha e `'b'` na seguinte. As duas entradas que
+    // falhavam aqui são exatamente essa forma: uma cauda de frase que só existe
+    // concatenada. Procurar só por texto cru acusaria as duas de mortas, e elas
+    // estão vivas protegendo comparação de comparação real.
+    final juntado = <String>{};
+    for (final f in telas()) {
+      final src = f.readAsStringSync();
+      for (var i = 0; i < src.length; i++) {
+        if (src[i] != "'" && src[i] != '"') continue;
+        final inicio = i;
+        final (texto, fim) = TextLanguage.juntarSegmentos(src, inicio);
+        if (texto.isEmpty) {
+          i = inicio;
+          continue;
+        }
+        juntado.add(texto);
+        i = fim > inicio ? fim - 1 : inicio;
+      }
+    }
     final ausentes = <String>[];
     for (final entrada in TextLanguage.naoTexto.keys) {
       if (entrada.contains(' ')) {
-        if (!fonte.contains(entrada)) ausentes.add(entrada);
+        if (!fonte.contains(entrada) && !juntado.contains(entrada)) {
+          ausentes.add(entrada);
+        }
         continue;
       }
       // **Os dois delimitadores.** `"step"`, `"steps"` e `"Load"` estão com aspas

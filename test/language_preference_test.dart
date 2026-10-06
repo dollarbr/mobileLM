@@ -448,6 +448,12 @@ void main() {
       final suspitas = <String>[];
       for (final e in pt.entries) {
         final texto = e.value.toLowerCase();
+        // **Uma URL não é texto, é endereço, e o detector de inglês acusa o
+        // `from` dela.** `https://huggingface.co/…/model.gguf` é o exemplo que o
+        // campo de URL mostra, e ele é **igual nos dois idiomas** por
+        // definição: traduzir o caminho de um endereço dá um endereço que não
+        // existe. A marca é o esquema, e o esquema não muda com o idioma.
+        if (RegExp(r'^https?://').hasMatch(texto)) continue;
         if (!palavras
             .any((w) => texto.contains(RegExp('\\b${RegExp.escape(w)}\\b')))) {
           continue;
@@ -548,7 +554,13 @@ void main() {
       //
       // Este número já esteve errado seis vezes neste repo (45, 62, 10 encoders,
       // 484, 522, 535), então o teste afirma em vez de descrever.
-      expect(en.length, 674);
+      //
+      // **827 = 674 + 153 do item 3e**, a rodada que traduziu os 205 textos de
+      // tela que a varredura ampla tinha encontrado e nenhuma das outras três
+      // contava. Mais `soc_run_now`, que não vem do TSV: `'running'` é status
+      // gravado no Hive e o botão que o mostrava precisou de chave própria,
+      // porque traduzir o status quebraria a comparação.
+      expect(en.length, 827);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

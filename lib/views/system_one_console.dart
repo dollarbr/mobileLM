@@ -238,7 +238,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   Future<void> _probe() async {
     final url = widget.baseUrl ?? _server?.baseUrl ?? '';
     if (url.isEmpty) {
-      setState(() => _error = 'The API server has no address yet.');
+      setState(() => _error = 'soc_no_address'.tr);
       return;
     }
     setState(() {
@@ -380,8 +380,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         setState(() => _error = _head == null
             ? 'Could not read what $name wants. Load it first: POST '
                 '/v1/litert/load with "accept_risk": true, then re-probe.'
-            : 'Re-probe failed, so what is shown below is from the file as it '
-                'was last read. The run will use the server\'s own answer.');
+            : 'soc_reprobe_failed'.tr);
       }
       return;
     }
@@ -558,7 +557,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         _notice = unloaded
             ? 'Freed $name. The server is still up and a GGUF, if one is '
                 'loaded, is untouched.'
-            : 'Nothing was loaded, so nothing was freed.';
+            : 'soc_nothing_freed'.tr;
       });
     } on Object catch (e) {
       if (mounted) setState(() => _error = 'unload: $e');
@@ -629,8 +628,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                             const SizedBox(height: 8),
                             Text(
                               _loadedName.isEmpty
-                                  ? 'nothing loaded'
-                                  : '$_loadedName'
+                                  ? 'soc_nothing_loaded'.tr: '$_loadedName'
                                       '${_loadedRuntime.isEmpty ? '' : ' ($_loadedRuntime)'}',
                               style: GoogleFonts.inter(
                                 fontSize: 13,
@@ -666,7 +664,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                       _card(
                         card,
                         field,
-                        'this one is a head with a label set of its own',
+                        'soc_is_head'.tr,
                         Text(
                           'soc_classification_head_console'.tr,
                           style: GoogleFonts.inter(
@@ -710,7 +708,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             ),
           ),
           IconButton(
-            tooltip: 'close',
+            tooltip: 'close'.tr,
             onPressed: () {
               if (widget.onClose != null) {
                 widget.onClose!();
@@ -735,8 +733,8 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       SystemOneShape.decision => 'decision — text in, one letter out',
       SystemOneShape.tfliteHead => 'head — feature vector in, logits out',
       SystemOneShape.ggufHead =>
-        'head with its own labels — the encoder console drives that one',
-      _ => 'not decided yet — no GGUF is loaded',
+        'soc_head_labels'.tr,
+      _ => 'soc_not_decided'.tr,
     };
     final bits = <String>[
       head,
@@ -759,7 +757,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       _card(
         card,
         field,
-        'the state — the data being judged',
+        'soc_state'.tr,
         TextField(
           controller: _state,
           maxLines: 4,
@@ -773,14 +771,12 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           ),
         ),
         note:
-            'Sent inside a JSON envelope, never as instructions. A ticket with '
-            'quotes and braces must not be able to change the shape of the '
-            'question.',
+            'soc_json_envelope'.tr,
       ),
       _card(
         card,
         field,
-        'the question — optional',
+        'soc_question'.tr,
         TextField(
           controller: _question,
           style: GoogleFonts.inter(fontSize: 13),
@@ -796,7 +792,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       _card(
         card,
         field,
-        'the system instruction — optional',
+        'soc_system'.tr,
         TextField(
           controller: _instruction,
           maxLines: 3,
@@ -810,8 +806,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           ),
         ),
         note:
-            'The default already says the three things that matter: treat the '
-            'state as data, pick exactly one, return only the letter.',
+            'soc_default_ok'.tr,
       ),
       _actions(() => _runDecision(), 'soc_ask_for_the_letter'.tr),
     ];
@@ -864,7 +859,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       if (_vectorProblem != null) _problem(_vectorProblem!),
       ..._auxiliaryPanels(card, field),
       _labelsCard(card, field),
-      _actions(() => _runHead(), 'run the head'),
+      _actions(() => _runHead(), 'soc_run_head'.tr),
       // Only where there is something to free. A button that unloads nothing is
       // a button whose only effect is to say so.
       if (head != null) ...[
@@ -920,7 +915,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         _card(
           card,
           field,
-          'no .tflite to name',
+          'soc_no_tflite'.tr,
           Text(
             'soc_head_not_recognisable'.tr,
             style:
@@ -952,11 +947,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             );
           }),
           note: aux.count == null
-              ? 'Left empty, this is not sent at all and the endpoint will say '
-                  'which one it wanted.'
-              : 'Left empty, this is not sent at all. Zeros are never '
-                  'substituted: a logit computed on invented features is a '
-                  'number with no meaning, and it comes back with a label.',
+              ? 'soc_left_empty'.tr: 'soc_left_empty2'.tr,
         ),
     ];
   }
@@ -979,7 +970,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     return _card(
       card,
       field,
-      'the options — 2 to 24, the model card\'s number',
+      'soc_options'.tr,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1215,7 +1206,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
 
   Widget _copy(String value) {
     return IconButton(
-      tooltip: 'copy',
+      tooltip: 'soc_copy'.tr,
       onPressed: () async {
         await Clipboard.setData(ClipboardData(text: value));
       },
@@ -1241,7 +1232,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.play_arrow, size: 18),
-          label: Text(_busy ? 'running' : label,
+          label: Text(_busy ? 'soc_run_now'.tr : label,
               style: GoogleFonts.inter(fontSize: 13)),
         ),
         OutlinedButton.icon(
@@ -1263,7 +1254,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     return _card(
       card,
       field,
-      r.isFailure ? 'the run was refused' : 'the answer',
+      r.isFailure ? 'soc_refused'.tr: 'soc_answer'.tr,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

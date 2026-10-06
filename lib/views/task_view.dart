@@ -361,7 +361,7 @@ class TaskView extends GetView<TaskController> {
                       textCtrl.dispose();
                       Navigator.pop(ctx);
                     },
-                    child: Text('Cancel',
+                    child: Text('mc_cancel'.tr,
                         style:
                             GoogleFonts.inter(color: Theme.of(ctx).hintColor))),
                 ElevatedButton(

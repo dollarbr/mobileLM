@@ -73,7 +73,7 @@ class CloudModelController extends GetxController {
     ],
   };
 
-  final providers = const [
+  final providers = [
     CloudProviderInfo(
       id: 'openrouter',
       name: 'OpenRouter',
@@ -101,7 +101,7 @@ class CloudModelController extends GetxController {
     CloudProviderInfo(
       id: 'nvidia',
       name: 'NVIDIA NIM',
-      description: 'OpenAI compatible hosted NIM models',
+      description: 'cloud_nim'.tr,
       icon: Icons.memory_outlined,
     ),
     CloudProviderInfo(
@@ -387,13 +387,13 @@ class CloudModelController extends GetxController {
     final apiKey = customApiKeyController.text.trim();
     final model = customModelController.text.trim();
 
-    if (baseUrl.isEmpty) return 'Base URL is required.';
+    if (baseUrl.isEmpty) return 'cloud_url_required'.tr;
     final uri = Uri.tryParse(baseUrl);
     if (uri == null ||
         !uri.hasScheme ||
         (uri.scheme != 'https' && uri.scheme != 'http') ||
         uri.host.isEmpty) {
-      return 'Enter a valid OpenAI-compatible base URL.';
+      return 'cloud_url_invalid'.tr;
     }
     if (apiKey.isEmpty) return 'cm_api_key_required'.tr;
     if (model.isEmpty) return 'cm_model_id_required'.tr;

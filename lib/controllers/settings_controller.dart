@@ -1052,8 +1052,7 @@ class SettingsController extends GetxController {
     final vendorLabel = vendor == 'detecting'
         ? 'Detecting'
         : vendor == 'unknown'
-            ? 'Unknown GPU'
-            : vendor.toUpperCase();
+            ? 'set_unknown_gpu'.tr: vendor.toUpperCase();
     return backend == Backend.cpu
         ? '$vendorLabel - GPU unavailable'
         : '$vendorLabel - ${backend.displayName}';
