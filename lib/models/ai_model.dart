@@ -67,6 +67,32 @@ class AiModel {
   /// suggestion. One model in the catalogue carries it today.
   final bool isBenchmark;
 
+  /// What kind of model this is, as a **declared fact of the catalogue entry**.
+  ///
+  /// Empty for everything that was not a decision model, which is every entry
+  /// that predates the field. **Not inferred from the filename**, and that is the
+  /// rule the encoder catalogue already settled: a name carries no architecture —
+  /// `bge-small-en-v1.5` was once identified as a classifier because something
+  /// read the name and guessed.
+  ///
+  /// It has to be a field because the shape the `/v1/classify` endpoint uses is
+  /// decided from the file at run time (`hasClassificationHead`, and behind that
+  /// `pooling_type`), and the **catalogue** cannot know that: a card is drawn
+  /// before anything is loaded. So there are two facts and they are not the same
+  /// one — this says what the entry claims to be, and the endpoint says what the
+  /// file turned out to be. A card that disagreed with the endpoint would be
+  /// wrong in a way no test could see, which is why the field is a claim and not
+  /// a detection.
+  ///
+  /// One value today, `decision`. The name is a **wire-independent** label: it is
+  /// not the `SystemOneShape` enum, and the two are asserted to agree in
+  /// `test/model_role_test.dart`, so a rename on either side has to break a test
+  /// instead of silently emptying a category.
+  final String role;
+
+  /// Whether this entry claims to be a decision model.
+  bool get isDecisionModel => role == 'decision';
+
   AiModel({
     required this.name,
     required this.filename,
@@ -82,6 +108,7 @@ class AiModel {
     this.mmprojUrl = '',
     this.mmprojFilename = '',
     this.isBenchmark = false,
+    this.role = '',
   })  : // Uma entrada antiga do Hive tem só `description` — importada antes de
         // o catálogo ficar bilíngue. Ela vale nos dois idiomas: a alternativa
         // é pintar uma linha vazia num card que já tem nome, tamanho e
@@ -105,6 +132,7 @@ class AiModel {
         isBenchmark: map['benchmark'] == 'true',
         mmprojUrl: map['mmprojUrl'] ?? '',
         mmprojFilename: map['mmprojFilename'] ?? '',
+        role: map['role'] ?? '',
       );
 
   /// A descrição no idioma pedido, pela regra de [LanguagePreference].

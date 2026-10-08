@@ -340,10 +340,14 @@ class TextLanguage {
     'off': 'modo desligado: valor de botão, chave de mapa de tema e chave de prompt',
     //
     // **O rótulo de bloco é chave de ordenação E texto pintado.** `_byModality`
-    // agrupa por `'Text'`/`'Vision'`/`'Multimodal'`/`'Image generation'` e
+    // agrupa por `'Decision models'`/`'Text'`/`'Vision'`/`'Multimodal'`/`'Image
+    // generation'` e
     // ordena com `order.indexOf(a)` — o mesmo formato do `section.title`, que é
     // chave persistida. Traduzir a string tiraria a ordenação; traduzir no
     // ponto de pintura (`mv_block_*`) é o que o AGENTS já exige do `labelKey`.
+    'Decision models':
+        'rótulo de bloco do catálogo: chave de ordenação em _byModality, '
+        'traduzido no ponto de pintura por mv_block_decision',
     'Image generation':
         'rótulo de bloco do catálogo: chave de ordenação em _byModality, '
         'traduzido no ponto de pintura por mv_block_image_generation',

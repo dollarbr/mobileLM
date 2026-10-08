@@ -3258,3 +3258,75 @@ adb shell "run-as <pkg> cp /data/local/tmp/x.gguf \
 depois, no log nativo, com uma mensagem que fala de GGUF e não de cópia. O sintoma
 — "o modelo aparece na lista e não carrega" — não aponta para o transporte, e o
 modelo parece culpado.
+
+## O `d1-3B` entra no catálogo como **role**, não como nome
+
+A entrada existe (`lib/core/constants.dart`) e é a **primeira** do catálogo com
+`'role': 'decision'`. O bloco novo é **Decision models**, e ele vem **primeiro**
+na `order`, antes de Text.
+
+**O papel é um campo, e não é um palpite a partir do filename.** Já aconteceu
+neste repositório: `bge-small-en-v1.5` foi identificado como classificador porque
+alguém leu o nome e adivinhou. `bge-small-en-v1.5` não diz nada sobre
+`pooling_type`. A regra é a mesma dos encoders, que já têm `'role'`.
+
+**São dois fatos e não são o mesmo:**
+
+- o **catálogo** diz o que a entrada **declara** ser — um card é desenhado antes
+  de qualquer coisa ser carregada;
+- o **endpoint** diz o que o **arquivo** virou — `/v1/classify` decide em tempo de
+  execução por `hasClassificationHead` e, atrás dele, `pooling_type`.
+
+Um card que discordasse do endpoint estaria errado de um jeito que nenhum teste
+veria. Por isso o campo é uma **declaração**, não uma detecção.
+
+**`role: 'decision'` ganha precedência sobre a modalidade.** O `d1-3B` tem
+`mmproj`, então por modalidade ele cairia em Multimodal — o que é verdadeiro e
+inútil, porque "dá para mandar uma imagem" não é o que quem procura o modelo está
+perguntando. O teste do role vem **primeiro** na cadeia ternária de `_byModality`
+por isso.
+
+**O rótulo do bloco é `mv_block_decision`, não o literal.** `'Decision models'`
+entrou em `naoTexto` com o mesmo motivo de `'Text'`/`'Vision'`/`'Multimodal'`:
+é chave de ordenação em `_byModality`, e traduzir a string tiraria a ordenação.
+O que se pinta é o `labelKey`.
+
+**O card não aparece no A72.** `Q4_K_M` é a **menor quantização publicada** —
+BF16 5,03 GB, F16 5,03, Q8_0 2,68. São 1,56 GB contra um `maxModelBytes` de
+1,40 GB. Não existe opção menor para contornar. É o filtro funcionando, e o mesmo
+mecanismo que esconde os cinco modelos de imagem.
+
+## A mutação M3: 633/633 verdes com o bloco sem tradução
+
+**Um `switch` privado que mapeia rótulo para chave de tradução não é testado por
+consequência — e a consequência é silenciosa.**
+
+A mutação trocou
+
+```dart
+'Decision models' => 'mv_block_decision',   // -> 'Decision models',
+```
+
+e **todos os 633 testes passaram**. Três testes que já existiam não podiam ver:
+
+- `language_preference_test.dart` exige que cada entrada de `naoTexto`
+  **exista como literal no fonte**. `'Decision models'` continua existindo, em
+  três outros lugares. *O literal estar presente não é o rótulo estar traduzido.*
+- o teste de contagem lê 919 nos dois mapas. `mv_block_decision` **nunca saiu** de
+  nenhum dos dois, então contar não enxerga que o código parou de usá-la.
+- **nada afirmava o mapeamento em si.**
+
+O efeito era um usuário em português vendo um cabeçalho em inglês, e uma
+`labelKey` virando código morto. É a mesma forma do `order.indexOf` devolvendo
+`-1`: **um padrão silencioso comendo um erro real.**
+
+`test/model_role_test.dart` fecha os dois lados agora — toda chave devolvida pelo
+switch existe nos dois idiomas, e nenhuma `mv_block_*` está morta. O switch é
+lido do fonte porque a função é privada e o controller não pode ser construido em
+um teste. O teste que garante que **o parser ainda casa** é o que impede o grupo
+de passar em silêncio caso o switch mude de forma.
+
+**Registrado porque o nome engana:** o `ps` mostra `clamd` com 9,8% de CPU e isso
+é média desde o start, não consumo atual. Medir instantâneo antes de culpar um
+daemon. E uma mutação que sobrevive precisa de um grupo de testes que a **mate**,
+não de um teste novo que só passa.

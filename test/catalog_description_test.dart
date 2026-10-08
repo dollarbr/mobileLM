@@ -38,14 +38,19 @@ void main() {
 
   test('o catálogo tem entradas para testar, e são as mesmas que a tela mostra',
       () {
-    // 46 no catálogo + 16 encoders = 62, que é o que a tela de Modelos
-    // reporta. Este número já esteve errado mais de uma vez neste repo — o
-    // guia dizia 46 e a auditoria de cobertura dizia 10 encoders (7+3) — e os
-    // dois estavam errados por bastante para a tela e a documentação se
-    // contradizerem. O teste afirma em vez de descrever.
-    expect(AppConstants.availableModels.length, 46);
+    // 47 no catálogo + 16 encoders = 63, que é o que a tela de Modelos reporta.
+    // Este número já esteve errado mais de uma vez neste repo — o guia dizia 46
+    // e a auditoria de cobertura dizia 10 encoders (7+3) — e os dois estavam
+    // errados por bastante para a tela e a documentação se contradizerem. O
+    // teste afirma em vez de descrever.
+    //
+    // **47 = 46 + o `d1-3B`**, e ele é a primeira entrada com `'role'`. A
+    // contagem subiu porque uma entrada entrou, e o motivo está em
+    // `availableModels` — com os quatro URLs conferidos por HEAD e o `Q4_K_M`
+    // registrado como a menor quant publicada.
+    expect(AppConstants.availableModels.length, 47);
     expect(AppConstants.encoderModels.length, 16);
-    expect(todas().length, 62);
+    expect(todas().length, 63);
   });
 
   test('toda entrada tem ficha nos DOIS idiomas, e nenhum deles vazio', () {

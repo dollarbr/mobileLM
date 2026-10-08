@@ -567,7 +567,7 @@ void main() {
       // gravado no Hive e o botão que o mostrava precisou de chave própria,
       // porque traduzir o status quebraria a comparação.
       //
-      // **918 = 905 + 13 da janela System One**, que é a origem desta contagem
+      // **919 = 905 + 14: 13 da janela System One, que é a origem desta contagem
       // ter subido: `soc_repeat_orders`, `soc_variants_one`, `soc_variants_many`,
       // `soc_stability`, `soc_stable`, `soc_unstable`, `soc_agreement`,
       // `soc_no_answer`, `soc_match`, as três frases de `soc_match_*` (a letra, a
@@ -582,7 +582,7 @@ void main() {
       // dois mapas, porque **o número é o que acusa** e ele estava 12 abaixo do
       // que o fonte produz. As duas metades do mapa continuam com as mesmas
       // chaves — o teste logo acima é que diz isso.
-      expect(en.length, 918);
+      expect(en.length, 919);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

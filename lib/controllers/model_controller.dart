@@ -297,19 +297,44 @@ class ModelController extends GetxController {
     if (models.isEmpty) return const [];
     final blocks = <String, List<AiModel>>{};
     for (final m in models) {
-      final label = isImageModel(m)
-          ? 'Image generation'
-          : isVisionModel(m)
-              ? modalityLabel(m) == 'MULTIMODAL'
-                  ? 'Multimodal'
-                  : 'Vision'
-              : 'Text';
+      // **A decision model is grouped by its role, not by its modality, and it
+      // wins over both.** `d1-3B` carries an `mmproj`, so by modality it would
+      // land in Multimodal — which is true and useless, because "you can send it
+      // an image" is not what someone looking for it is asking. The role is the
+      // more specific fact about the file, and it is the fact the `/v1/classify`
+      // endpoint dispatches on.
+      //
+      // Exactly one block per model, which is the existing invariant: a
+      // downloaded custom GGUF showing up twice is the bug this whole function
+      // exists to prevent. The role test comes **first** precisely so it cannot
+      // also be a Vision one.
+      final label = m.isDecisionModel
+          ? 'Decision models'
+          : isImageModel(m)
+              ? 'Image generation'
+              : isVisionModel(m)
+                  ? modalityLabel(m) == 'MULTIMODAL'
+                      ? 'Multimodal'
+                      : 'Vision'
+                  : 'Text';
       blocks.putIfAbsent(label, () => []).add(m);
     }
     if (blocks.length == 1) {
       return [ModelBlock.unlabeled(blocks.values.first)];
     }
-    const order = ['Text', 'Vision', 'Multimodal', 'Image generation'];
+    // **`Decision models` first**, not alphabetically and not last. The order is
+    // how much the user needs to know what the model is for, and a model that
+    // answers a question with one letter is the single most surprising thing in
+    // this list — it is a language model that is not a chat model. It also has
+    // the smallest section, so putting it first costs one heading and does not
+    // push the common case down.
+    const order = [
+      'Decision models',
+      'Text',
+      'Vision',
+      'Multimodal',
+      'Image generation',
+    ];
     final sorted = blocks.keys.toList()
       ..sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
     return [for (final k in sorted) ModelBlock(k, _rotuloDoBloco(k), blocks[k]!)];
@@ -474,6 +499,16 @@ class ModelController extends GetxController {
   /// compila, e o que aparece na tela é a própria chave — a falha silenciosa
   /// que o `l10n_keys_test` não pega porque a chave **existe** no mapa.
   static String _rotuloDoBloco(String label) => switch (label) {
+        // The block key is English on purpose, like every other one here: it is
+        // what `_byModality` groups and `order` sorts by, and translating the
+        // string would break the grouping. `labelKey` is what gets painted.
+        //
+        // A key with no entry in either language map falls through to `label`,
+        // which is the **English word** — so a missing translation shows as a
+        // block heading in English rather than as an identifier, which is the
+        // better of the two failures and the same reason `section.title` keeps
+        // its key.
+        'Decision models' => 'mv_block_decision',
         'Text' => 'mv_block_text',
         'Vision' => 'mv_block_vision',
         'Multimodal' => 'mv_block_multimodal',

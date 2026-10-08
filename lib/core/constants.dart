@@ -824,6 +824,45 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
     //   curl -sI "https://huggingface.co/<repo>/resolve/main/<file>" | grep -i content-length
     // before trusting one: a renamed or removed file is a 404 at download time
     // with no other symptom, and the catalogue is the only place it shows up.
+    // ── Liquid AI `d1` ────────────────────────────────────────────────────────
+    //
+    // **Every URL in this entry was confirmed with a HEAD request, and the
+    // `Content-Length` matches the file on disk byte for byte.** That is the rule
+    // the catalogue already has — *"discovering the arch is unsupported after
+    // 774 MB is defeat"* — and it earned its keep: the Hub API answered
+    // `Invalid username or password`, the GGUF does not carry its own repo URL
+    // (only `general.base_model.0.repo_url`, which is the **base model**), and
+    // `LiquidAI/LFM2-d1-3B-GGUF` returns **401**. The name of the model *looks*
+    // like LFM2 because it is one, and that is not the repository.
+    //
+    // **`Q4_K_M` is the smallest quantisation published**: BF16 5.03 GB, F16
+    // 5.03, Q8_0 2.68. There is no smaller one to fall back on, so **this card
+    // does not appear on a 5.6 GB phone** — 1.56 GB against a
+    // `maxModelBytes` of 1.40 GB. That is the filter working, not a defect, and
+    // the same mechanism that hides the five image models.
+    {
+      'name': 'd1-3B (Q4_K_M + vision)',
+      'filename': 'd1-3B-Q4_K_M.gguf',
+      'url':
+          'https://huggingface.co/LiquidAI/d1-3B-GGUF/resolve/main/d1-3B-Q4_K_M.gguf',
+      'size': '1.56 GB',
+      'descriptionEn':
+          'Liquid AI decision model: text or image in, one letter out. Measured '
+          'on an A72 — answers a billing question correctly and it survives '
+          'reordering the options. 1.56 GB of weights plus a 0.54 GB projector',
+      'descriptionPt':
+          'Modelo de decisão da Liquid AI: texto ou imagem entra, uma letra sai. '
+          'Medido no A72 — acerta uma pergunta de fatura e a resposta sobrevive '
+          'à reordenação das opções. 1,56 GB de pesos mais um projector de '
+          '0,54 GB',
+      'template': 'chatml',
+      'runtime': 'llama',
+      'vision': 'true',
+      'mmprojUrl':
+          'https://huggingface.co/LiquidAI/d1-3B-GGUF/resolve/main/mmproj-d1-3B-Q8_0.gguf',
+      'mmprojFilename': 'mmproj-d1-3B-Q8_0.gguf',
+      'role': 'decision',
+    },
     {
       'name': 'LFM2.5-VL 450M (Q4_0 + vision)',
       'filename': 'LFM2.5-VL-450M-Q4_0.gguf',
