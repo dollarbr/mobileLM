@@ -3330,3 +3330,45 @@ de passar em silêncio caso o switch mude de forma.
 é média desde o start, não consumo atual. Medir instantâneo antes de culpar um
 daemon. E uma mutação que sobrevive precisa de um grupo de testes que a **mate**,
 não de um teste novo que só passa.
+
+## `d1-omni-600M` não carrega — e são **três** causas, não duas
+
+Medido com um carregador de 30 linhas compilado **contra o fonte vendorizado**, não
+contra o `llama.cpp` do sistema. O build precisa de `-DLLAMA_BUILD_APP=OFF`, porque
+o vendor é uma cópia podada e o `CMakeLists.txt:258` faz
+`add_subdirectory(app)` sem o diretório — sem essa flag o configure falha antes de
+compilar qualquer coisa.
+
+O erro que o celular dá, e que a cópia dá igual:
+
+```
+llama_model_load: error loading model: check_tensor_dims:
+    tensor 'blk.16.ffn_gate.weight' not found
+```
+
+**Três incompatibilidades, e cada uma só aparece depois que a anterior é corrigida.**
+
+| # | o arquivo tem | o código exige | onde |
+|---|---|---|---|
+| 1 | `ffn_gate` nos blocos **0..15**; 16 e 17 não | `ffn_gate` nas 18 | `lfm2.cpp:61` |
+| 2 | `attn_qkv` fundido **só nos blocos 16 e 17** | `attn_q_norm` quando `!is_recr(i)` | `lfm2.cpp:73-74` |
+| 3 | `feed_forward_length = [4608×16, 4096, 4096]` | um `n_ff` só, `n_ff_arr[0]` | `lfm2.cpp:61-63` |
+
+A 1 resolve com `TENSOR_NOT_REQUIRED` — que devolve `nullptr` e **já é tratado**:
+`build_ffn` abre com `if (gate)` (`llama-graph.cpp:1795`). **A segunda causa só ficou
+visível porque a primeira foi corrigida.** Isso é o padrão: corrigir uma deixa a
+seguinte aparecer, e um relatório que parasse na primeira erradoiria por construção.
+
+A 3 é a que **não é opcional**: `n_ff` é uma variável só antes do loop, então mesmo
+que o gate e o `q_norm` passem, o tensor de 16/27 seria criado com 4608 em vez de
+4096.
+
+**A 2 é a mais cara e a mais fácil de subestimar.** O `d1-omni` funde Q, K e V num
+tensor só — e só nas duas últimas camadas. Isso não é o mesmo modelo com outro
+tamanho: o `d1-3B`, que roda, **não tem nenhum** `attn_qkv`. UmGGUF novo da família
+`d1` pode trazer um terceiro layout.
+
+**Os números do `feed_forward_length` são um array de 18 valores e `llama-gguf` não
+imprime valores de kv, só nomes.** Quem estourou antes foi inferir `n_ff` de
+`n_elts / n_embd`, e isso deu 144 e 128 — errados, porque o FFN não é
+`n_ff × n_embd`. Os númerosTrue só apareceram lendo o valor da chave.
