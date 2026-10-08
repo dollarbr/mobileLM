@@ -2784,12 +2784,57 @@ A resposta que o modelo dá com convicção é permutation-stable. A que ele err
 vira "34% baixa, 25% média" e parece preferência. É a regra 1 desta janela
 confirmada por medição, não por argumento.
 
-**O `d1-omni-600M` colide com o detector, e é o único que não entra.** Ele tem
-`cls.output.weight` de shape `(1024,)` com bias `(1,)` — uma cabeça de **uma**
-classe sobre embeddings (estilo laya). `systemOneShapeOf` veria o tensor e
-rotearia para `ggufHead`, que espera pontuar *todas* as classes de uma vez. Os
-dois também não declaram `pooling_type`, então `nativeEncode` recusa os dois por
-desenho. Para vision só o `d1-3B` serve, e precisa do `mmproj-d1-3B-Q8_0.gguf`.
+**⚠️ O `d1-omni-600M` NÃO carrega, e a causa é o llama.cpp vendorizado — não o
+detector de forma.** Tudo o que esta seção dizia antes sobre o colliding com
+`ggufHead` está errado; o conserto está medido e é o fim desta seção.
+
+O que o arquivo realmente é, contado nos tensores:
+
+```
+18 blocos (0..17)
+  blocos 0..15   ffn_gate + ffn_down + ffn_up, n_ff = 4608
+  blocos 16,17   ffn_down + ffn_up + BIASES,  SEM ffn_gate, n_ff = 4096
+```
+
+**Os dois últimos blocos têm um FFN sem gate.** E `lfm2.feed_forward_length` **é
+um array de 18 valores**, `[4608 ×16, 4096, 4096]`, enquanto nosso vendor lê
+`hparams.n_ff` como escalar e assume 4608 para todas as camadas.
+
+Dois erros, **um atrás do outro** — e o segundo só aparece depois que o primeiro é
+resolvido:
+
+```
+1) check_tensor_dims: tensor 'blk.16.ffn_gate.weight' not found
+2) check_tensor_dims: tensor 'blk.16.ffn_down.weight' has wrong shape;
+                       expected 4608, 1024, got 4096, 1024, 1, 1
+```
+
+**O patch de "gate opcional" sozinho é necessário e insuficiente**, e é por isso
+que ele foi revertido em vez de ficar no vendor: ele muda a mensagem de erro e não
+faz o modelo carregar, e o repositório tem a invariante escrita — *"nenhum arquivo
+vendorizado foi alterado"*. Consertar são **três** coisas, e as três são vendor:
+
+1. `ffn_gate` como `TENSOR_NOT_REQUIRED` (`src/models/lfm2.cpp`);
+2. `n_ff` **por camada**, lido do array — isso é `llama-hparams`, não `lfm2.cpp`;
+3. `build_ffn` com `gate == NULL` para um FFN não-gated, e o guarda no grafo que
+   só soma o residual quando houve FFN.
+
+O ponto 3 é o que separa um conserto de um crash adiado: sem ele o modelo **carrega**
+e quebra na primeira inferência, porque `build_ffn` desreferencia os três tensores.
+
+**Três afirmações minhas que estavam erradas, e as três eram sobre este modelo:**
+
+| eu escrevi | o que é |
+|---|---|
+| "o `d1-omni` colide com o detector: `cls.output.weight [1024]` manda para `ggufHead`" | **`isClassifier => isEncoder && pooling == 'rank' && nClsOut > 1`**, e o arquivo não declara `pooling_type` → `isEncoder` falso → `isClassifier` falso → o dispatch já vai para o **caminho generativo**. Nenhum conserto de detector seria preciso. |
+| "o re-sync do vendor não compra suporte de decisão" | **não** — ele compra este modelo. Eu escrevi isso depois de só ter medido o `d1-3B`, que é LFM2 puro e carrega. |
+| "a cabeça é `(1024,)` com bias `(1,)`, uma cabeça de uma classe" | a cabeça existe, mas é irrelevante: quem impede o modelo é o FFN sem gate, e ela nunca chega a ser lida |
+
+O padrão é o da **`is_recr`** do LFM2: um LFM2 **pode** intercalar blocos de
+convolução, e o vendor assume que todo bloco tem a mesma estrutura de FFN. Um
+modelo que usa essa liberdade legal é barrado por um pressuposto, não por um erro.
+
+Para vision só o `d1-3B` serve, e precisa do `mmproj-d1-3B-Q8_0.gguf`.
 
 **Nosso vendor está atrás do merge, e o patch não aplica.** O merge no upstream foi
 em 07/10 e 08/10; o vendor está em `08b1d2aea`. Verificado numa cópia:
@@ -2802,6 +2847,13 @@ erro: tools/server/server-decision.cpp: Arquivo ou diretório inexistente
 
 `tools/server/` **não existe no nosso vendor** — só sobrou `tools/mtmd` — e é lá
 que mora toda a API de decisão. `include/llama.h` não ganhou API pública nova.
+
+**⚠️ "o re-sync não compra decisão" estava errado, e eu escrevi isso depois de só
+medir o `d1-3B`.** Ele compra o **`d1-omni-600M`**, que morre em
+`llama_model_load` por um pressuposto do vendor sobre blocos LFM2 — e essa seção
+do `d1-omni` tem os números. O que o re-sync **não** traz de útil aqui é
+`tools/server/` (o app não o usa), `gguf-py` (Python, não é runtime) e a decisão
+nativa (que o shape `decision` não precisa).
 **Nada disso é necessário para o `d1-3B`**, porque o shape `decision` não usa
 suporte nativo: ele prompta, gera, e casa a letra por regex. Por isso a
 `libllama.so` instalada tem **zero** strings de `decision`/`systemone`/`lfm2-d1`
@@ -3155,3 +3207,54 @@ expect(back.probes[1].order.keys.toList(), ['B', 'A']);
 o painel inteiro mostra. É a mesma lição do ratchet de tradução, uma oitava vez: uma
 lista do que a trava mede é uma afirmação, e ela só aparece quando a medição falha de
 um jeito que ninguém esperava.
+
+## Os quatro arquivos da Liquid AI, conferidos por HEAD antes de entrarem
+
+A regra do catálogo é conferir a URL antes de entrar — *"descobrir que a arch não é
+suportada depois de 774 MB é derrota"*. Os quatro respondem **200**, e o
+`Content-Length` bate **byte a byte** com o que está em `/home/dollar/models/`:
+
+```
+200  LiquidAI/d1-3B-GGUF/d1-3B-Q4_K_M.gguf              1.674.456.672
+200  LiquidAI/d1-3B-GGUF/mmproj-d1-3B-Q8_0.gguf           583.109.728
+200  LiquidAI/d1-omni-600M-GGUF/d1-omni-600M-Q8_0.gguf   407.207.584
+200  LiquidAI/d1-omni-600M-GGUF/mmproj-...-Q8_0.gguf     262.791.232
+```
+
+**E `Q4_K_M` é a menor quantização publicada do `d1-3B`**: BF16 5,03 GB, F16 5,03,
+Q8_0 2,68. Não há uma menor para escapar do teto, e por isso o card do `d1-3B`
+**não aparece no A72** — 1,56 GB contra `maxModelBytes` de **1,40 GB**
+(`totalRamGB × 0,25` = 5,6 × 0,25). No Edge 60, com 3,00 GB de teto, ele aparece.
+É o mesmo mecanismo dos 5 modelos de imagem, e **é o filtro funcionando**, não um
+defeito: 1,56 GB de pesos mais KV cache mais projetor não cabem em 25% de 5,6 GB.
+
+**Os quatro nomes de repositório vieram de HEAD, não de memória.** A API do Hub
+respondeu `Invalid username or password` e o `GGUF` **não carrega a URL do próprio
+repositório** — só `general.name` (`d1-3B`), `general.basename` (`d1`),
+`general.license.name` (`lfm1.0`) e `general.base_model.0.repo_url`, que é o
+**modelo base**, não o repo do GGUF. `LiquidAI/d1-3B-GGUF` é o que responde 200;
+`LiquidAI/LFM2-d1-3B-GGUF` dá 401, e existiu como candidato na minha cabeça porque
+o nome do modelo **parece** LFM2. Um nome que parece certo e um repositório que
+responde 401 são a mesma forma de erro.
+
+## Importar por `run-as` só funciona a partir de `/data/local/tmp`
+
+**`run-as` não consegue ler `/sdcard`, e o guia dizia o caminho sem o motivo.** O
+`cp` a partir de `/sdcard/Download/` dá `Permission denied`, e um
+`cat < /sdcard/... > models/...` via `sh -c` **não dá erro nenhum e deixa um
+arquivo de 0 bytes** — que o app aceita como modelo e só falha depois, em
+`llama_model_load: GGUF model file is empty or incomplete`.
+
+O que funciona:
+
+```sh
+adb push <arquivo> /data/local/tmp/x.gguf
+adb shell chmod 644 /data/local/tmp/x.gguf          # sem isto, o run-as não lê
+adb shell "run-as <pkg> cp /data/local/tmp/x.gguf \
+           /data/data/<pkg>/app_flutter/models/x.gguf"
+```
+
+**Um arquivo de 0 bytes é a falha que não dá aviso**, e ela só aparece 40 segundos
+depois, no log nativo, com uma mensagem que fala de GGUF e não de cópia. O sintoma
+— "o modelo aparece na lista e não carrega" — não aponta para o transporte, e o
+modelo parece culpado.
