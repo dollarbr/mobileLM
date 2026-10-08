@@ -17,6 +17,7 @@ import '../services/download_service.dart';
 import '../utils/logistic.dart';
 import '../utils/server_auth.dart';
 import 'decision_model.dart';
+import 'decision_stability.dart';
 import 'encoder_settings_service.dart';
 import 'inference_service.dart';
 import 'litert_service.dart';
@@ -1314,6 +1315,15 @@ class OpenAiServerService {
       return;
     }
 
+    // **How many permutations to run**, and the opt-out is the point.
+    //
+    // A caller that wants one decision and does not care about reproducibility
+    // must not pay N decisions for it. `variants: 1` is that call, and it is the
+    // default here because the endpoint's contract has always been "one answer to
+    // one question" — changing the default would turn every existing client into
+    // a client that waits 1,5–4,5 minutes on a phone.
+    final variants = _decisionVariants(body);
+
     final choices = _decisionChoices(body);
     if (choices == null) {
       await _json(request, {
@@ -1324,78 +1334,85 @@ class OpenAiServerService {
       return;
     }
 
-    final task = DecisionTask(
-      state: state,
-      question: (body['question'] as String?) ?? '',
-      choices: choices,
-      instruction: (body['instruction'] as String?)?.isNotEmpty == true
-          ? body['instruction'] as String
-          : kDefaultDecisionInstruction,
-    );
+    final orders = decisionPermutations(choices, limit: variants);
+    final probes = <DecisionProbe>[];
+    DecisionAnswer? answer;
 
     _busy = true;
-    String raw;
     try {
-      raw = await inference
-          .generate(
-            prompt: task.buildUserMessage(),
-            systemPrompt: task.buildSystemMessage(),
-            // **A decision is one letter, and the budget is sized for exactly
-            // that** — the empty `<think>` block plus the letter is about five
-            // tokens. It started at 24, and that was wrong twice over on the
-            // A72: a model that ignored the instruction and wrote prose could
-            // burn the whole budget, and it measured **8–9 s per token** with
-            // the cores at the floor, so 24 tokens is three minutes of a
-            // request that was never going to be a decision. Eight is enough
-            // for a compliant answer and fails fast on a non-compliant one —
-            // which is the case the caller most needs to hear about.
-            maxTokensOverride: 8,
-            temperatureOverride: 0.0,
-          )
-          // **A decision request must not hang.** Measured: the native loop can
-          // finish cleanly — six tokens, EOS, "Generation loop finished" in the
-          // log — and the Dart stream never delivers `onDone`, so `generate()`
-          // never returns. Without this the request hangs, `finally` never runs,
-          // and `_busy` stays true, so every later request to this endpoint and
-          // to `/v1/chat/completions` answers 429 for the rest of the app's
-          // life. One dropped completion event should not take the API down.
-          //
-          // The budget is generous on purpose: a phone at its floor clock
-          // measured 8,2 s just for the first token of a 135M, and this is a
-          // 0.8B. Sixty seconds is far past any answer worth having, and far
-          // under a client's own patience.
-          .timeout(kDecisionTimeout);
+      for (final order in orders) {
+        final task = DecisionTask(
+          state: state,
+          question: (body['question'] as String?) ?? '',
+          // The permuted map, not `choices`: the letters keep their labels and
+          // only move position, which is the whole point. A run that answered from
+          // a *renamed* option would be measuring the relabelling.
+          choices: order,
+          instruction: (body['instruction'] as String?)?.isNotEmpty == true
+              ? body['instruction'] as String
+              : kDefaultDecisionInstruction,
+        );
+        final raw = await _generateDecision(inference, task);
+        final one = parseDecisionAnswer(raw, order);
+        probes.add(DecisionProbe(
+          order: order,
+          letter: one?.letter,
+          label: one?.label,
+          // The **stripped** generation text, not `one?.raw`: when the parse
+          // fails there is no `one`, and that is exactly the run whose words are
+          // the only explanation. `one?.raw` would be null on every refusal.
+          raw: stripThinking(raw).trim(),
+        ));
+        // **The first run is the answer.** A caller that asked for one decision
+        // gets the one it asked for, in the order it sent; the rest are
+        // diagnostics about it. Averaging the variants into a "consensus" would
+        // answer a question nobody asked, and on a model with no stable opinion it
+        // would report the most popular guess as if it were the finding.
+        answer ??= one;
+      }
     } on TimeoutException {
       await _json(request, {
         'error': 'The model did not finish the decision in time.',
         'seconds': kDecisionTimeout.inSeconds,
         'model': inference.loadedModelName.value,
+        // On a multi-variant run, say **which** run hung. "It timed out" over a
+        // 12-variant loop is six refusals and one hang, and a caller cannot tell
+        // them apart from the message alone.
+        'completed_runs': probes.length,
         'note': 'The engine may have finished without reporting it. Reload the '
-            'model before retrying — a stuck generation is not recovered by '
+            'model before retrying \u2014 a stuck generation is not recovered by '
             'waiting.',
       }, status: HttpStatus.gatewayTimeout);
       return;
     } on Object catch (e) {
-      await _json(request, {'error': 'Generation failed: $e'},
-          status: HttpStatus.internalServerError);
+      await _json(request, {
+        'error': 'Generation failed: $e',
+        'model': inference.loadedModelName.value,
+        'completed_runs': probes.length,
+      }, status: HttpStatus.internalServerError);
       return;
     } finally {
       _busy = false;
     }
 
-    final answer = parseDecisionAnswer(raw, task.choices);
+    final stability = summariseDecisionStability(probes);
+
     if (answer == null) {
       await _json(request, {
-        'error': 'The model did not answer with one of the offered options. '
-            'A decision model has to be asked as a decision model — its own '
-            'model card says generic chat may produce prose.',
+        'error': variants > 1
+            ? 'The model did not answer with one of the offered options, in any '
+                'of the ${stability.runs} option orders tried.'
+            : 'The model did not answer with one of the offered options. '
+                'A decision model has to be asked as a decision model \u2014 its '
+                'own model card says generic chat may produce prose.',
         'model': inference.loadedModelName.value,
-        // The raw text, because "it said something else" is not debuggable
-        // without it and a decision model is exactly the case where that
-        // happens.
-        'raw': stripThinking(raw).trim().substring(
-            0, stripThinking(raw).trim().length.clamp(0, 200)),
-        'expected_one_of': task.choices.keys.toList(),
+        // The raw text of the **first** run, because "it said something else" is
+        // not debuggable without it and a decision model is exactly the case where
+        // that happens. 200 characters: enough to see the shape, not enough to
+        // make the response a data channel.
+        'raw': _clip(probes.isEmpty ? '' : (probes.first.raw ?? '')),
+        'expected_one_of': choices.keys.toList(),
+        if (variants > 1) 'stability': _stabilityPayload(stability, probes),
       }, status: HttpStatus.unprocessableEntity);
       return;
     }
@@ -1408,16 +1425,108 @@ class OpenAiServerService {
       // The counterpart to the head's field: a decision model reads **text**, so
       // there is no feature tensor to name here and claiming there were numbers
       // would be inventing them. The option count is the part that moves the
-      // answer, and 2–24 is the range this endpoint accepts.
-      'feature_source': describeTextSource(options: task.choices.length),
+      // answer, and 2\u201324 is the range this endpoint accepts.
+      'feature_source': describeTextSource(options: choices.length),
+      // **Which rule found the letter**, and the field exists because all three
+      // return the same `label`/`choice` pair: `B`, `B.` and `billing` all come
+      // back as the same answer. `letter` means the model answered as instructed;
+      // `decoratedLetter` means it obeyed and dressed it up; `label` means it did
+      // not answer with a letter at all and the parser recovered the answer from
+      // the label it wrote.
+      //
+      // Reported, not enforced. Refusing `label` would refuse a model that
+      // answered correctly, and that is the caller's decision to make.
+      'match': answer.match.name,
+      'followed_contract': answer.followedContract,
+      // Only when the caller asked for more than one run. A single run has no
+      // stability to report, and a field that says "stable" for n=1 would be
+      // asserting a property that was never measured.
+      if (variants > 1)
+        'stability': _stabilityPayload(stability, probes),
       // Null, with the reason, rather than a fabricated number.
       'relevance_score': null,
-      'scores': {for (final e in task.choices.entries) e.value: null},
+      'scores': {for (final e in choices.entries) e.value: null},
       'why_no_scores':
           'A decision model returns one letter, not a logit per class. The '
           'probabilities you may have seen for Bespoke-Nimble come from its '
           'serving layer, not from the weights.',
     });
+  }
+
+  /// One generation for one option order, with the budget and the deadline.
+  ///
+  /// Extracted from the handler because the permutation loop calls it N times and
+  /// the budget comment is load-bearing: it belongs next to the call, not 80
+  /// lines above it.
+  Future<String> _generateDecision(
+      InferenceService inference, DecisionTask task) {
+    return inference
+        .generate(
+          prompt: task.buildUserMessage(),
+          systemPrompt: task.buildSystemMessage(),
+          // **A decision is one letter, and the budget is sized for exactly
+          // that** \u2014 the empty `<think>` block plus the letter is about five
+          // tokens. It started at 24, and that was wrong twice over on the A72: a
+          // model that ignored the instruction and wrote prose could burn the
+          // whole budget, and it measured **8\u20139 s per token** with the cores
+          // at the floor, so 24 tokens is three minutes of a request that was
+          // never going to be a decision. Eight is enough for a compliant answer
+          // and fails fast on a non-compliant one \u2014 which is the case the
+          // caller most needs to hear about.
+          maxTokensOverride: 8,
+          temperatureOverride: 0.0,
+        )
+        // **A decision request must not hang.** Measured: the native loop can
+        // finish cleanly \u2014 six tokens, EOS, "Generation loop finished" in the
+        // log \u2014 and the Dart stream never delivers `onDone`, so `generate()`
+        // never returns. Without this the request hangs, `finally` never runs, and
+        // `_busy` stays true, so every later request to this endpoint and to
+        // `/v1/chat/completions` answers 429 for the rest of the app's life. One
+        // dropped completion event should not take the API down.
+        //
+        // Generous on purpose: a phone at its floor clock measured 8,2 s just for
+        // the first token of a 135M, and this is a 0.8B. Sixty seconds is far past
+        // any answer worth having, and far under a client's own patience.
+        .timeout(kDecisionTimeout);
+  }
+
+  /// The stability block on the wire.
+  ///
+  /// Carries the **probes**, not just the verdict, so the client can recompute
+  /// instead of trusting a number it did not derive. That is the same rule the
+  /// decision model's own `relevance_score` follows: expose the signal, name it,
+  /// never substitute a summary for it.
+  Map<String, Object?> _stabilityPayload(
+      DecisionStability s, List<DecisionProbe> probes) {
+    return {
+      'runs': s.runs,
+      'stable': s.isStable,
+      'distinct_answers': s.distinct,
+      'failed_runs': s.failed,
+      'leading': s.leading,
+      'leading_runs': s.leadingRuns,
+      'agreement': s.agreement,
+      'summary': s.describe(),
+      'probes': [
+        for (final p in probes)
+          {
+            'order': p.order.keys.toList(),
+            'letter': p.letter,
+            'label': p.label,
+            // Clipped per probe, same rule as the top-level `raw`: 12 full model
+            // answers would make the refusal payload larger than the model's own
+            // context, and a refusal that does not fit in a response is a
+            // refusal nobody reads.
+            'raw': p.raw == null ? null : _clip(p.raw!, 80),
+          },
+      ],
+    };
+  }
+
+  /// Trim the model's own words for the refusal payload.
+  String _clip(String text, [int max = 200]) {
+    final t = text.trim();
+    return t.length <= max ? t : '${t.substring(0, max)}\u2026';
   }
 
   /// The options, as an ordered letter-to-label map.
@@ -1426,6 +1535,26 @@ class OpenAiServerService {
   /// than two options is not a choice, and the Tev1 card says 2–24. A single
   /// "option" would produce a model that always agrees, which is a decision
   /// endpoint that cannot say no.
+  /// How many option orders to ask about, clamped and defaulted.
+  ///
+  /// **Default 1, and that is a contract decision.** The endpoint has always
+  /// answered one question with one decision, and a client that does not ask for
+  /// reproducibility must not pay N× the latency for a number it will not read.
+  /// A 3B decision measures **6,6–23,8 s** on the Galaxy A72, so 12 variants of
+  /// one question is 1,5–4,5 minutes — which is why the opt-in exists at all and
+  /// why the number the app's own test window sends is not the default here.
+  ///
+  /// Out-of-range values **clamp** rather than refuse: a caller asking for 400
+  /// permutations gets the ceiling, and a caller that sent `0` or a string gets
+  /// one. Refusing would make the endpoint stricter than it needs to be over a
+  /// performance knob that has a safe answer either way.
+  int _decisionVariants(Map<String, dynamic> body) {
+    final raw = body['variants'];
+    if (raw is! int) return 1;
+    if (raw <= 1) return 1;
+    return raw > kMaxDecisionVariants ? kMaxDecisionVariants : raw;
+  }
+
   Map<String, String>? _decisionChoices(Map<String, dynamic> body) {
     final raw = body['choices'] ?? body['options'] ?? body['labels'];
     if (raw is! Map || raw.length < 2 || raw.length > 24) return null;

@@ -6,8 +6,12 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão atual: **0.6.0+2009** (tag `0.6.0` publicada; arm64 medido em
-`versionCode=4009`).
+<https://github.com/dollarbr/mobileLM/releases>. Versão publicada: **0.6.0+2009** (tag `0.6.0`; arm64 medido em `versionCode=4009`).
+O pubspec está em **`0.7.0+2010`** — a próxima minor, e ela é a **consistência por
+permutação** de um decision model: `/v1/classify` mede se a resposta muda com a ordem
+das opções, a resposta diz **como** a letra foi achada, e a janela mostra os dois.
+**Meça o asset dela antes de escrever qualquer número**: o esperado é `4010`, e se
+der outra coisa é a fórmula e não o pubspec.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + **encoders (embeddings/rerank/classify, BERT e
@@ -191,6 +195,23 @@ dependa dela.
 
 **Minor = feature, patch = conteúdo.** Um catálogo maior não é feature. Antes de subir um
 minor, escreva "isto faz X, que antes não existia" — se a frase não sai, é patch.
+
+**A `0.7.0` foi pedida como `0.6.1` e subiu como minor, e a razão vale mais que o
+número.** O trabalho da consistência por permutação cria três coisas que não
+existiam: o `/v1/classify` aceita `variants` e mede se a resposta muda com a ordem das
+opções; a resposta carrega `match` e `followed_contract`, dizendo **como** a letra foi
+achada — o shape `decision` só produzia `label` e `choice`, e esses dois campos são
+**idênticos** para `B`, `B.` e `billing`; e a janela mostra os três blocos novos,
+inclusive no caminho da recusa. A frase sai verdadeira: *"o app diz se a resposta de
+um decision model sobrevive a reordenar as opções, diz como a letra foi encontrada, e
+não diz quando isso não foi medido"*. Patch seria uma versão cuja descrição não sabe
+dizer o que mudou.
+
+**E foi a segunda vez que um `versionCode` é o que trava a atualização, não a tag.** O
+maior publicado é **4009** (`0.6.0`, medido no asset com `aapt2 dump badging`), logo
+`build + 2000` tem que passar de 4009: `0.7.0+2010` dá **4010**. Um número folgado
+seria aceito e um número parado derrubaria a instalação com
+`INSTALL_FAILED_VERSION_DOWNGRADE` — e nenhum dos dois aparece no `pubspec`.
 
 `0.6.0` é o **seletor de idioma**: Auto / English / Português (Brasil), com
 **inglês como padrão**. A frase sai verdadeira — *antes não existia escolha de
@@ -2707,6 +2728,144 @@ cabeça renderiza e lê 1024/4/2 do `GET /v1/litert/status` real; `compile_ms` 5
 o vetor são 1024 números. O contrato de ponta está verificado por `curl` com o
 JSON extraído do próprio código; a lacuna é do aparelho, e está escrita assim.
 
+**A regra 1 foi confirmada por medição depois**, com um terceiro modelo que não é
+Tev1 nem Bespoke-Nimble e não tinha nada de decision model no nome: ver a seção
+seguinte.
+
+## A família `d1` da Liquid AI entra pela porta que já existe
+
+Medido em 08/10/2026 no A72, com o `d1-3B-Q4_K_M` importado à mão. Detalhe
+completo em [`docs/SYSTEM_ONE.md`](SYSTEM_ONE.md); aqui só o que o guia precisa
+saber para não refazer o trabalho.
+
+**Não existe "d3-3B"** — a família se chama `d1`, e são `d1-3B` (3,1 B, texto +
+imagem) e `d1-omni-600M` (587 M, texto + imagem **ou** áudio). Ambos open-weight,
+lançados em 07/10/2026, ambos com GGUF oficial.
+
+**Não existe `LLAMA_ARCH_D1` também.** O `d1-3B` tem `text_config:
+Lfm2ForCausalLM`, `tie_word_embeddings: true`, e nos 266 tensores **não há cabeça
+de saída nem decision head** — só `token_embd.weight` e os 30 blocos LFM2 (8 com
+atenção, 22 convolução). `lfm2-d1` é um LFM2 comum lido no último token com os
+logits restritos às letras. **O app já suporta `lfm2`.**
+
+**E o shape sai certo sozinho, sem uma linha de código.** `systemOneShapeOf`
+decide por `hasClassificationHead`, e o `d1-3B` não tem `cls.output.weight` —
+caiu em `decision` como um `Tev1` qualquer. `POST /v1/classify` devolveu
+`{"choice":"B","label":"Financeiro"}` numa pergunta de renegociação de fatura, que
+é a resposta certa.
+
+**Não é config, e isso foi separado por experimento.** O template `systemone` do
+GGUF é **flat** (`user\n…assistant\n`, **sem papel de system**); o app monta
+`systemPrompt` com a instrução do Tev1 + `/no_think` e um `userPrompt` em JSON.
+Prompturas diferentes, **respostas idênticas** — o desktop com o prompt do app deu
+`'B'`, `'A'`, `'B'` exatamente onde o caminho canônico deu `b`, `a`, `b`. E o A72
+deu as **5 de 5** que o canônico deu no desktop, **inclusive as erradas**. Logo o
+erro é do modelo, reproduzido em máquina e código diferentes — não é template,
+não é integração, e não há config que conserte.
+
+**E não é viés de posição — que é o que a permutation stability pega.** 24
+permutações das 4 opções, dois casos:
+
+| caso | estabilidade | confiança canônica |
+|---|---|---|
+| fatura / renegociação | **24/24 → Financeiro** | 0,80–0,94 |
+| dúvida sobre fatura | **13/24 → Suporte, 11/24 → Financeiro** | 0,32–0,63 |
+
+A resposta que o modelo dá com convicção é permutation-stable. A que ele erra
+**não tem opinião nenhuma**, e o número normalizado não distingue as duas: o
+`d1-omni` devolve `confidence: 0.0` com `0,34/0,25/0,28/0,14`, que softmaxado
+vira "34% baixa, 25% média" e parece preferência. É a regra 1 desta janela
+confirmada por medição, não por argumento.
+
+**O `d1-omni-600M` colide com o detector, e é o único que não entra.** Ele tem
+`cls.output.weight` de shape `(1024,)` com bias `(1,)` — uma cabeça de **uma**
+classe sobre embeddings (estilo laya). `systemOneShapeOf` veria o tensor e
+rotearia para `ggufHead`, que espera pontuar *todas* as classes de uma vez. Os
+dois também não declaram `pooling_type`, então `nativeEncode` recusa os dois por
+desenho. Para vision só o `d1-3B` serve, e precisa do `mmproj-d1-3B-Q8_0.gguf`.
+
+**Nosso vendor está atrás do merge, e o patch não aplica.** O merge no upstream foi
+em 07/10 e 08/10; o vendor está em `08b1d2aea`. Verificado numa cópia:
+
+```
+erro: falha no patch: conversion/lfm2.py:127
+erro: falha no patch: gguf-py/gguf/constants.py:6071
+erro: tools/server/server-decision.cpp: Arquivo ou diretório inexistente
+```
+
+`tools/server/` **não existe no nosso vendor** — só sobrou `tools/mtmd` — e é lá
+que mora toda a API de decisão. `include/llama.h` não ganhou API pública nova.
+**Nada disso é necessário para o `d1-3B`**, porque o shape `decision` não usa
+suporte nativo: ele prompta, gera, e casa a letra por regex. Por isso a
+`libllama.so` instalada tem **zero** strings de `decision`/`systemone`/`lfm2-d1`
+— confirmado no APK extraído, não na fonte. Se um dia entrar o suporte nativo,
+esse é o caminho, e ele exige re-sync, não cherry-pick.
+
+**⚠️ A afirmação de que o `tev1` "devolveu prosa" foi palpite meu, e estava errada.**
+O log mostrava 6 tokens a 8,0 s cada e eu li isso como prosa. Não é: este arquivo
+já documenta que o `tev1` responde `<think>\n\n</think>\n\nB`, que **são** ~6
+tokens, e o `parseDecisionAnswer` devolve a letra pela regra do bloco. **Não
+consegui decodificar os ids** — o `gguf-py` do PyPI não instala sem `pip`, e o
+leitor escrito à mão erra o offset do array de strings — então a frase ficou sem
+prova e foi documentada como se tivesse. O sintoma real era **latência**: 8,0 s
+por token com o núcleo no piso, e um `d1-3B` de 3 B leva 6,6–23,8 s pela mesma
+CPU.
+
+**E o trabalho seguinte achou o bug que era silencioso e pior.** Escrever o enum
+`DecisionMatch` obrigou a exercitar as três regras do `parseDecisionAnswer`, e a
+**regra 3 casava a primeira letra de qualquer palavra** — tudo depois da letra é
+opcional no regex. Um modelo que responde `account` casava `a`, que é a opção A, e
+voltava **`A = bug`** com confiança total. A regra 4, que casava o rótulo inteiro,
+era a rede exatamente para isso e era **código morto**. Medido antes do conserto:
+`bug` → `B/billing`, `account` → `A/bug`. Ambos errados, nenhum nulo. O conserto é
+um lookahead `(?=\s|[.):\-]|$)`.
+
+É a mesma classe que este arquivo descreve em cima — **um detector que não acha
+nada reporta o mesmo que um detector que não existe** — e apareceu em código com
+**28 testes**, nenhum cobrindo um modelo que responde com o rótulo em vez da letra.
+
+## O diretório de modelos no host — `<Vendor>/<Família>/`
+
+`/home/dollar/models/` guarda os GGUF e `.safetensors` baixados, organizados por
+publisher do HuggingFace e família, que é o mesmo critério com que o `/v1/classify`
+decide a forma de um arquivo. 19 arquivos, 13 GB.
+
+```
+ConvaiInnovations/Laya/   Google/gemma/        HuggingFaceTB/SmolLM2/
+IBM/Granite/              LiquidAI/d1/         LiquidAI/LFM2.5/
+Lykon/DreamShaper-8/      OpenBMB/MiniCPM5/    TogetherAI/Tev1/
+Qwen/Qwen2.5-Coder/       Qwen/Qwen3/          Qwen/Qwen3.5/
+madebyollin/TAESD/
+```
+
+O `d1` tem **quatro** arquivos porque um decision model de imagem não funciona
+sem o seu: `d1-3B-Q4_K_M` + `mmproj-d1-3B-Q8_0`, e `d1-omni-600M-Q8_0` +
+`mmproj-d1-omni-600M-Q8_0`. Separar o par é como quebrar um modelo.
+
+**O app descobre sozinho um `.gguf` avulso, e a prova é uma sonda, não uma
+contagem.** `refreshDownloaded` varre o diretório, aceita `.gguf`, `.litertlm`,
+`.tflite` e `.safetensors`, e adiciona com `descriptionEn: 'Imported from local
+storage'` qualquer nome que não esteja em `availableModels`. Verificado com uma
+sonda: copiar um modelo existente com **nome novo** direto no diretório e
+reiniciar levou `BAIXADOS 9 → 10` e `MODELOS LOCAIS 65 → 66`. Então
+`adb push` + `run-as cp` para `app_flutter/models/` **funciona**, e o picker de
+import é o caminho quando não se tem adb — não o único caminho.
+
+**E é fácil contar errado, porque um arquivo é filtrado.**
+`_isAuxiliaryImageFile` tira o `taesd.safetensors` da contagem: 10 arquivos no
+diretório são **9** em `BAIXADOS`. Quem conta olhando `ls` chega à conclusão
+oposta da lista — foi o que aconteceu com o `d1-3B`, que estava nos 9 desde o
+push e só foi percebido depois do import. E `refreshDownloaded` chama
+`_deletePartialImports()` **primeiro**, então um arquivo que ele considere import
+incompleto pode ser apagado antes de ser listado.
+
+**O import pelo SAF copia e não move**, e por isso pergunta *"Model already
+imported — Replace it?"* quando o nome já existe. Ele também **não alcança** o
+diretório privado nem `/data/local/tmp` — para importar pela tela o arquivo
+precisa estar em `/sdcard/Download/` — e **não apaga a origem**: depois de
+importar um GGUF grande sobra uma cópia em `/sdcard/Download/`, que só sai com
+`adb shell rm`.
+
 ## Sugestões de próximas features
 
 **Comece por [`docs/HANDOFF.md`](docs/HANDOFF.md)** — snapshot datado do estado,
@@ -2778,3 +2937,111 @@ candidatas acima estava escrita como minor em lugar nenhum.** Uma fila de
 trabalho que termina em "e então subir a versão" deixa a pergunta "o que é uma
 feature?" sem resposta até o dia de subir — e a resposta fica sendo o que já
 foi entregue, que é como este arquivo já esteve errado duas vezes.
+
+## Estabilidade por permutação, e o `DecisionMatch` — 0.7.0
+
+A seção acima mediu instability por permutação **manualmente**, com `curl` no
+llama.cpp de mesa. Isso virou código: `lib/services/decision_stability.dart` (puro,
+16 testes) e `tool/decision_compare.py` (roda no aparelho e compara com o desktop).
+
+**Estabilidade substitui porcentagem, e a razão é o `relevance_score: null` da
+regra 1.** Um decision model emite **uma** distribuição sobre o vocabulário
+inteiro, e o único que se lê é o logit dos tokens de letra — que não são
+calibrados. Softmax sempre soma 1, **inclusive quando o modelo não tem ideia**:
+o `d1-omni` deu `confidence: 0.0` sobre `0,34/0,25/0,28/0,14`, que normalizado
+vira "34% baixa" e parece preferência. A família `d1` embarca a calibração que
+falta (`lfm2.decision.temperature.*`, por tipo de pergunta e por faixa de
+quantidade de opções) — ignorá-la joga fora o que o autor mandou.
+
+**Permutação é mensurável sem inventar número.** A mesma pergunta com as opções
+embaralhadas: se a resposta segue o **conteúdo**, é estável; se segue a
+**posição**, é artefato do prompt. O llama.cpp faz o mesmo upstream — `n_variants`
+retorna 2 pra choice do LEV, *"to cancel the preference for the first label"*.
+
+**`decisionPermutations` é round-robin por primeira letra, Lehmer dentro do
+grupo — e duas ordens anteriores falharam, ambas medidas.**
+
+| ordem | alcança das 6 que invertem |
+|---|---|
+| rotação (`ABCD`, `BCDA`, `CDAB`, `DABC`) | **0** |
+| prefixo de Lehmer (`ABCD`, `ABDC`, `ACBD`, …) | **0** |
+| stride sobre os ranks de Lehmer | **0** |
+| **round-robin por 1ª letra + Lehmer na cauda** | **3** (`bacd`, `bcad`, `bdca`) |
+
+Rotação cobre **4 das 24** permutações, todas na mesma família cíclica, e nenhuma
+das 6 que invertem está nelas. O harness mediu isso no A72: **3/3 "ESTÁVEL"** no
+caso que o desktop mostrou instável. Não é azar, é estrutura — e o default de 3
+viraria uma tela que não vê o defeito que existe para pegar.
+
+**O default é 12, e o custo é dito no código:** um `d1-3B` no A72 leva
+**6,6–23,8 s** por decisão, então 12 variantes de uma pergunta são **1,5–4,5 min**.
+Por isso é teste que a pessoa escolhe rodar, nunca default interativo.
+
+**`DecisionMatch` diz COMO a letra foi achada, e as três eram indistinguíveis.**
+`B`, `B.` e `billing` devolviam o mesmo `letter`/`label` — `letter` para os dois
+primeiros caminhos e `label` para o terceiro, o que é o caso de um modelo que
+**ignorou a instrução** e escreveu o rótulo. O endpoint agora manda `match` e
+`followed_contract`; `decoratedLetter` conta como **não** limpo, porque tratar
+polidez como obediência é como um limiar de drift nunca dispara.
+
+**E o `DecisionMatch` expôs o bug do parser, que era o pior da sessão.** A regra 3
+casava a primeira letra de **qualquer palavra** — tudo depois da letra é opcional
+no regex — então `account` voltava `A = bug`. A regra 4, que casava o rótulo
+inteiro, era a rede para isso e era código morto. 28 testes, nenhum cobrindo um
+modelo que responde com rótulo. Conserto em `(?=\s|[.):\-]|$)`.
+
+**⚠️ O `variants` é opt-in no endpoint e o default é 1 — e o guia anterior não
+dizia.** `/v1/classify` continua respondendo **uma pergunta com uma decisão**, e
+quem não pede reproduzibilidade não paga N× a latência por um número que não vai
+ler. Fora do intervalo **clampa** em vez de recusar: `variants: 400` devolve o
+teto, `variants: 0` ou uma string devolvem 1. Recusar seria deixar o endpoint mais
+estrito do que precisa por causa de um botão de desempenho que tem resposta segura
+dos dois lados. A **primeira** execução é a resposta; as outras são diagnóstico
+sobre ela, e **nunca** viram uma "consolidação" — média sobre variantes sem
+opinião reporta o palpite mais popular como se fosse a conclusão.
+
+**A janela ganhou o controle (chips `1` / `4` / `12`) e mostra os três blocos
+novos, e o bloco de estabilidade está no caminho da RECUSA — que é onde ele é mais
+necessário.** Um 422 diz "não respondeu"; o bloco diz *quantas vezes foi perguntada e
+quantas vezes recusou*, que é a diferença entre "este modelo não sabe" e "sabe, e
+uma ordem de opções o fez hesitar". Antes o endpoint mandava o bloco,
+`fromClassify` o interpretava, e **o único ramo que mais precisava dele o jogava
+fora**. E `soc_model_said` nomeia o texto cru do modelo **nesse** ramo — sem ele a
+recusa mostrava o bloco e não mostrava o que o modelo escreveu.
+
+**Uma tela que os testes de layout alcançam exige um argumento de construtor, e o
+motivo não é conveniência.** `_result` só é escrito por `_show`, `_show` só vem de
+uma resposta de servidor, e `flutter_test` substitui o `HttpClient` por um stub que
+responde 400 — então os painéis de resultado são **inalcançáveis** de um teste.
+`SystemOneConsole.initialResult` é o que fecha isso, pelo mesmo motivo que
+`headContract` já era argumento. E `stableWithTwelve()` monta **doze** probes com
+um rótulo de 35 caracteres: a lista de permutações desenha **uma linha monoespaçada
+por execução** dentro de um `Column` dentro de um card a 360 dp — exatamente a forma
+que já estourou quatro telas deste repo.
+
+**O `_drain` que eu copiei para os testes novos é o defeito, e as quatro mutações
+medidas mostram.** Trocar o `Wrap` dos chips por um `Row` deixou **11 de 11 verde**
+com `_drain`: o helper descarta a própria coisa que o teste existe para achar. Verifiquei
+que um overflow de `RenderFlex` **chega** a `takeException()` neste harness — um
+`Row` de duas strings longas a 360 dp e 2× reporta `A RenderFlex overflowed by 9048
+pixels on the right` — ou seja o sinal existe, e quem o engole é o helper. Os testes
+novos **afirmam que não há exceção** em vez de drenar, e a tabela de mutações está
+escrita no próprio arquivo. A quinta mutação — involve a linha da permutação em um
+`Row` inquebrável — **ainda passa**, porque a linha está num `Column` com
+`CrossAxisAlignment.start` e o texto quebra antes. Está escrito que essa não é
+coberta: uma mutação que ninguém tentou é uma mutação que ninguém pode afirmar estar
+coberta.
+
+**E o número de chaves subiu 905 → 918, e subir foi o sintoma de um buraco.** As 13
+novas são da janela System One, e nenhuma é texto já existente renomeado — são frases
+que **não existiam**. Sem elas a tela de decisão diria "how the letter was found" com
+o corpo vazio. Este número já esteve errado seis vezes aqui, e o conserto aqui não foi
+subir o teto: foi conferir os dois mapas e **perceber que `soc_model_said` faltava**
+porque o ramo da recusa era o único que não mostrava o texto do modelo.
+
+**O harness está em `tool/decision_compare.py` e é a forma de medir isso sem
+confiar em mim.** Ele monta o prompt do app **byte a byte** (mesma instrução, mesmo
+envelope JSON), roda as permutações, e compara com um `llama-server` local quando
+passado `--local`. O caso que não responde é contado como **instável**, não
+descartado: descartar a recusa deixa um modelo que responde uma vez e recusa três
+reportar estabilidade perfeita.

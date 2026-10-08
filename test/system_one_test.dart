@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobilelm/services/decision_model.dart';
 import 'package:mobilelm/services/system_one.dart';
 
 /// The test window's model layer.
@@ -1085,4 +1086,264 @@ void mainFeatureSource() {
       expect(describeTextSource(options: 24), contains('24 options'));
     });
   });
+}
+
+/// The two things this session added, tested at the layer where they can be
+/// wrong without a phone: the wire contract and the reading of it.
+void _stabilityAndMatchTests() {
+  group('decisionBody — the variants key', () {
+    const opts = SystemOneOptions.starter;
+
+    test('one decision sends no variants key at all', () {
+      final body = const SystemOneResult().decisionBody(
+        state: 's',
+        question: 'q',
+        options: opts,
+      );
+      expect(body.containsKey('variants'), isFalse,
+          reason: 'sending 1 explicitly claims the caller thought about it');
+      expect(body['choices'], isA<Map>());
+    });
+
+    test('more than one sends the count', () {
+      final body = const SystemOneResult().decisionBody(
+        state: 's',
+        question: 'q',
+        options: opts,
+        variants: 12,
+      );
+      expect(body['variants'], 12);
+    });
+
+    test('nothing else about the body moved', () {
+      final one = const SystemOneResult().decisionBody(
+          state: 's', question: 'q', options: opts);
+      final many = const SystemOneResult().decisionBody(
+          state: 's', question: 'q', options: opts, variants: 12);
+      expect(many.keys.where((k) => k != 'variants').toSet(),
+          one.keys.toSet());
+      for (final k in one.keys) {
+        expect(many[k], one[k], reason: k);
+      }
+    });
+  });
+
+  group('fromClassify — match', () {
+    /// The reason `match` is a `String` in `SystemOneResult` and not the enum:
+    /// this file is pure and does not import `decision_model.dart`. So the
+    /// equality between the wire name and the enum's name has to be **asserted**,
+    /// and this is that assertion — otherwise the two drift and the screen shows
+    /// its fallback sentence for a case it has a translation for.
+    test('the wire names are the enum names', () {
+      for (final m in DecisionMatch.values) {
+        expect(m.name, isIn(['letter', 'decoratedLetter', 'label']));
+      }
+    });
+
+    test('a compliant answer reads as letter', () {
+      // The name comes from `DecisionMatch.letter.name`, not from a literal, so
+      // renaming the enum case fails here instead of making the screen show its
+      // fallback sentence for a case it has a translation for.
+      final r = SystemOneResult().fromClassify({
+        'model': 'tev1-Q8_0.gguf',
+        'choice': 'B',
+        'label': 'billing',
+        'match': DecisionMatch.letter.name,
+        'relevance_score': null,
+      });
+      expect(r.match, 'letter');
+      expect(r.letter, 'B');
+      expect(r.label, 'billing');
+    });
+
+    test('a written label is its own kind and still an answer', () {
+      final r = SystemOneResult().fromClassify({
+        'model': 'x',
+        'choice': 'A',
+        'label': 'bug',
+        'match': 'label',
+      });
+      expect(r.match, 'label');
+      expect(r.isFailure, isFalse, reason: 'it did answer — wrongly formatted');
+      expect(r.letter, 'A');
+    });
+
+    test('an unknown match name survives as itself, not as good news', () {
+      // The console falls back to printing the name. If the reader substituted
+      // `letter` for anything it did not recognise, a future enum case would be
+      // reported as a compliant answer — the screen would lie about a case nobody
+      // wrote a sentence for.
+      final r = SystemOneResult().fromClassify({
+        'model': 'x',
+        'choice': 'B',
+        'label': 'billing',
+        'match': 'someFutureCase',
+      });
+      expect(r.match, 'someFutureCase');
+      expect(r.match, isNot(DecisionMatch.letter.name));
+    });
+
+    test('a head has no match, and that is not a gap', () {
+      final r = SystemOneResult().fromClassify({
+        'model': 'head.tflite',
+        'logits': [0.2, -0.1],
+      });
+      expect(r.match, isNull);
+      expect(r.stability, isNull);
+    });
+
+    test('a refusal carries no match', () {
+      final r = SystemOneResult().fromClassify(
+        {'error': 'did not answer', 'raw': 'I cannot help.', 'status': 422},
+        status: 422,
+      );
+      expect(r.isFailure, isTrue);
+      expect(r.match, isNull);
+      expect(r.stability, isNull);
+    });
+  });
+
+  group('fromClassify — the stability block', () {
+    Map<String, dynamic> block(List<Map<String, Object?>> probes) => {
+          'runs': probes.length,
+          'stable': false,
+          'distinct_answers': 2,
+          'failed_runs': 0,
+          'leading': 'Financeiro',
+          'leading_runs': 2,
+          'agreement': 0.667,
+          'summary': 'unstable: 2 different answers across 3 runs',
+          'probes': probes,
+        };
+
+    test('the verdict is recomputed, not copied off the wire', () {
+      // The payload claims `stable: false` and 2 distinct; the probes agree.
+      // The point is the reverse direction: a payload that lies.
+      final r = SystemOneResult().fromClassify({
+        'model': 'd1-3B-Q4_K_M.gguf',
+        'choice': 'B',
+        'label': 'Financeiro',
+        'stability': block([
+          {
+            'order': ['A', 'B', 'C', 'D'],
+            'letter': 'B',
+            'label': 'Financeiro'
+          },
+          {
+            'order': ['B', 'C', 'D', 'A'],
+            'letter': 'A',
+            'label': 'Suporte'
+          },
+          {
+            'order': ['C', 'D', 'A', 'B'],
+            'letter': 'B',
+            'label': 'Financeiro'
+          },
+        ]),
+      });
+      final s = r.stability!;
+      expect(s.runs, 3);
+      expect(s.distinct, 2);
+      expect(s.leading, 'Financeiro');
+      expect(s.leadingRuns, 2);
+      expect(s.isStable, isFalse);
+    });
+
+    test('a refused run is counted, not dropped', () {
+      final r = SystemOneResult().fromClassify({
+        'model': 'x',
+        'choice': 'B',
+        'label': 'billing',
+        'stability': block([
+          {
+            'order': ['A', 'B'],
+            'letter': 'B',
+            'label': 'billing'
+          },
+          {'order': ['B', 'A'], 'letter': null, 'label': null},
+        ]),
+      });
+      final s = r.stability!;
+      expect(s.failed, 1);
+      expect(s.isStable, isFalse,
+          reason: 'one vote is not two out of two');
+      expect(s.describe(), contains('produced no answer'));
+    });
+
+    test('all runs agreeing reads stable', () {
+      final r = SystemOneResult().fromClassify({
+        'model': 'x',
+        'choice': 'B',
+        'label': 'billing',
+        'stability': block([
+          for (final o in [
+            ['A', 'B'],
+            ['B', 'A'],
+          ])
+            {'order': o, 'letter': 'A', 'label': 'billing'},
+        ]),
+      });
+      final s = r.stability!;
+      expect(s.isStable, isTrue);
+      expect(s.distinct, 1);
+      expect(s.agreement, 1.0);
+    });
+
+    test('a tally with no probes still recovers refusals as failures', () {
+      // The endpoint may send only the summary. `runs` minus the tally's total
+      // is the count of refusals, and calling them failures is what stops
+      // "answered twice, refused twice" from reading as stable.
+      final r = SystemOneResult().fromClassify({
+        'model': 'x',
+        'choice': 'B',
+        'label': 'billing',
+        'stability': {
+          'runs': 4,
+          'tally': {'billing': 2},
+        },
+      });
+      final s = r.stability!;
+      expect(s.runs, 4);
+      expect(s.leading, 'billing');
+      expect(s.leadingRuns, 2);
+      expect(s.failed, 2);
+      expect(s.isStable, isFalse);
+    });
+
+    test('an empty or absent block is null, not an empty verdict', () {
+      // "no permutations were run" and "they ran and disagreed" are different
+      // facts, and collapsing them makes a screen say "unstable" about a run
+      // that was never tested.
+      for (final body in <Map<String, dynamic>>[
+        {'choice': 'B', 'label': 'billing'},
+        {'choice': 'B', 'label': 'billing', 'stability': null},
+        {'choice': 'B', 'label': 'billing', 'stability': <String, Object?>{}},
+        {
+          'choice': 'B',
+          'label': 'billing',
+          'stability': {'runs': 0}
+        },
+      ]) {
+        expect(SystemOneResult().fromClassify(body).stability, isNull,
+            reason: body.toString());
+      }
+    });
+
+    test('a single run is a fact about one order, not stability', () {
+      final r = SystemOneResult().fromClassify({
+        'model': 'x',
+        'choice': 'B',
+        'label': 'billing',
+        'stability': block([
+          {'order': ['A', 'B'], 'letter': 'B', 'label': 'billing'},
+        ]),
+      });
+      // One run, one answer, one distinct label — the maths says stable, and it
+      // IS, but the endpoint deliberately does not send the block at n=1. This
+      // test is here to make the reader tolerate the shape if it ever does.
+      expect(r.stability!.runs, 1);
+      expect(r.stability!.isStable, isTrue);
+    });
+  });
+  _stabilityAndMatchTests();
 }

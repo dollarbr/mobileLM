@@ -566,7 +566,23 @@ void main() {
       // contava. Mais `soc_run_now`, que não vem do TSV: `'running'` é status
       // gravado no Hive e o botão que o mostrava precisou de chave própria,
       // porque traduzir o status quebraria a comparação.
-      expect(en.length, 905);
+      //
+      // **918 = 905 + 13 da janela System One**, que é a origem desta contagem
+      // ter subido: `soc_repeat_orders`, `soc_variants_one`, `soc_variants_many`,
+      // `soc_stability`, `soc_stable`, `soc_unstable`, `soc_agreement`,
+      // `soc_no_answer`, `soc_match`, as três frases de `soc_match_*` (a letra, a
+      // letra enfeitada e o rótulo escrito) e `soc_model_said`, que nomeia o texto
+      // cru do modelo **no caminho da recusa** — sem ele a recusa mostrava o bloco
+      // de estabilidade e não mostrava o que o modelo escreveu. Nenhuma delas é
+      // texto já existente
+      // renomeado; são frases que **não existiam**, e sem elas a tela de decisão
+      // mostraria "how the letter was found" com o corpo vazio.
+      //
+      // O número subiu depois de a soma ter sido conferida duas vezes contra os
+      // dois mapas, porque **o número é o que acusa** e ele estava 12 abaixo do
+      // que o fonte produz. As duas metades do mapa continuam com as mesmas
+      // chaves — o teste logo acima é que diz isso.
+      expect(en.length, 918);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

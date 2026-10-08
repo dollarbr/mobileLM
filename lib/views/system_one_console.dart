@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mobilelm/services/decision_stability.dart';
 import 'package:mobilelm/services/text_interpolation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -61,6 +62,7 @@ class SystemOneConsole extends StatefulWidget {
     this.shape = SystemOneShape.unknown,
     this.embedders = const [],
     this.headContract,
+    this.initialResult,
   });
 
   final VoidCallback? onClose;
@@ -101,6 +103,23 @@ class SystemOneConsole extends StatefulWidget {
   /// The window re-probes anyway, and overwrites this. It is a starting value,
   /// not an authority.
   final HeadContract? headContract;
+
+  /// A result to draw on the first frame, instead of after a round trip.
+  ///
+  /// **A constructor argument for the same reason [headContract] is one**, and the
+  /// reason is not convenience: there is no other way to reach the result panels
+  /// from a test. They render from `_result`, `_result` is set only by `_show`,
+  /// and `_show` is only reachable through a server response — and `flutter_test`
+  /// replaces the `HttpClient` with a stub that answers 400, so a layout test
+  /// can never produce a 200 with a stability block in it.
+  ///
+  /// That is not hypothetical here: the permutation list renders **one monospace
+  /// line per run**, twelve of them at `variants: 12`, inside a `Column` inside a
+  /// card, at 360 dp — the exact shape that has overflowed this repo's screens
+  /// four times. A test that cannot reach the widget cannot see that.
+  ///
+  /// Null in production. The window draws a result when one arrives.
+  final SystemOneResult? initialResult;
 
   /// Where the server is, and what to authenticate with.
   ///
@@ -143,6 +162,20 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   SystemOneOptions _options = SystemOneOptions.starter;
   SystemOneLabels _labels = SystemOneLabels.starter;
 
+  /// How many option orders the decision run asks the model about.
+  ///
+  /// **1 is the default, and it is the contract decision.** The endpoint has
+  /// always answered one question with one decision; a window that asked for 12
+  /// by default would turn a two-second tap into a four-minute wait, and the
+  /// person using a *test* window would not know why. The control is there for
+  /// the question the window exists to answer — *does this model mean it?* — which
+  /// costs what it costs and says so before it starts.
+  ///
+  /// The offered values are 1, 4 and 12 and not a slider: 12 is
+  /// `kMaxDecisionVariants`, 4 is the point where the round-robin starts reaching
+  /// permutations rotation never does, and 1 is the honest default.
+  int _variants = 1;
+
   FeatureVector? _parsedVector;
   String? _vectorProblem;
 
@@ -173,6 +206,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   @override
   void initState() {
     super.initState();
+    _result = widget.initialResult;
     final given = widget.headContract;
     if (given != null) {
       _head = given;
@@ -465,6 +499,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           question: _question.text,
           options: options,
           instruction: _instruction.text,
+          variants: _variants,
         ),
       );
       _show(json, SystemOneShape.decision);
@@ -811,8 +846,54 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         note:
             'soc_default_ok'.tr,
       ),
+      _variantsCard(card, field),
       _actions(() => _runDecision(), 'soc_ask_for_the_letter'.tr),
     ];
+  }
+
+  /// The permutation-count control, and the sentence that costs minutes.
+  ///
+  /// The note is not decoration: a 12-variant run of a 3B decision measures
+  /// **6,6–23,8 s each** on the Galaxy A72, which is **1,5–4,5 minutos** for one
+  /// question. A button that silently spends that is the kind of thing that gets
+  /// called "the app hung", and the person has no way to know the run was the
+  /// point.
+  ///
+  /// The chips are `1`, `4`, `12` and not a slider, because the interesting
+  /// values are the ones the measurement names and a slider invents values in
+  /// between that measure nothing in particular.
+  Widget _variantsCard(Color card, Color field) {
+    const options = [1, 4, 12];
+    return _card(
+      card,
+      field,
+      'soc_repeat_orders'.tr,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final n in options)
+                ChoiceChip(
+                  label: Text('×$n'),
+                  selected: _variants == n,
+                  onSelected: _busy
+                      ? null
+                      : (_) => setState(() => _variants = n),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _variants == 1
+                ? 'soc_variants_one'.tr
+                : 'soc_variants_many'.tr,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
   }
 
   List<Widget> _headPanels(Color card, Color field) {
@@ -1226,6 +1307,107 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// each other with nothing limiting them. `Wrap` is also the right widget
   /// because they are alternatives, and stacking them says that in a way three
   /// side-by-side buttons do not.
+  /// The sentence for a `match` wire name.
+  ///
+  /// Tolerant by construction: an unknown name falls back to the name itself
+  /// rather than to the "answered correctly" wording. A future `DecisionMatch`
+  /// case added on the server and not yet translated here must read as *"this is
+  /// something I do not know about"* — defaulting it to the good news would make
+  /// the screen lie about a case nobody wrote a sentence for.
+  String _matchPhrase(String match) => switch (match) {
+        'letter' => 'soc_match_letter'.tr,
+        'decoratedLetter' => 'soc_match_decorated'.tr,
+        'label' => 'soc_match_label'.tr,
+        _ => match,
+      };
+
+  /// A label and its sentence, in the muted style used for every note here.
+  Widget _note(String title, String body) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted)),
+        const SizedBox(height: 2),
+        Text(body, style: GoogleFonts.inter(fontSize: 12)),
+      ],
+    );
+  }
+
+  /// The permutation verdict, with the per-run detail underneath.
+  ///
+  /// The detail is a `Column` of `order → letter` and **not** a single
+  /// sentence, because the count alone is the same for two very different
+  /// situations: two runs that refused and one run that refused plus one that
+  /// drifted both say "not all the same". Seeing which orders went where is what
+  /// turns "unstable" into a thing the user can act on — reorder the options, or
+  /// stop trusting the model on this question.
+  Widget _stabilityBlock(DecisionStability s) {
+    final colour = s.isStable ? AppColors.primary : AppColors.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              s.isStable ? Icons.check_circle_outline : Icons.warning_amber,
+              size: 15,
+              color: colour,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('soc_stability'.tr,
+                  style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textMuted)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          s.isStable ? 'soc_stable'.tr : 'soc_unstable'.tr,
+          style: GoogleFonts.inter(
+              fontSize: 13, fontWeight: FontWeight.w600, color: colour),
+        ),
+        const SizedBox(height: 4),
+        // `agreement` is deliberately shown as a fraction of runs and never as
+        // a percentage with a % sign: it is the share of runs that agreed, and
+        // reading it as a probability is the mistake `decision_stability.dart`
+        // was written to prevent.
+        if (s.leading != null)
+          Text(
+            preencher('soc_agreement', {
+              'a': '${s.leadingRuns}',
+              'n': '${s.runs}',
+              'label': s.leading!,
+            }),
+            style: GoogleFonts.inter(fontSize: 12),
+          ),
+        if (s.failed > 0) ...[
+          const SizedBox(height: 2),
+          Text(
+            preencher('soc_no_answer', {'n': '${s.failed}'}),
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.error),
+          ),
+        ],
+        if (s.runs > 1) ...[
+          const SizedBox(height: 6),
+          for (final p in s.probes)
+            Text(
+              '  ${p.order.keys.join(' ')}  →  ${p.letter ?? '—'}'
+              '${p.label == null ? '' : '  (${p.label})'}',
+              style: GoogleFonts.jetBrainsMono(
+                  fontSize: 10, color: AppColors.textMuted),
+            ),
+        ],
+      ],
+    );
+  }
+
   Widget _actions(VoidCallback onRun, String label) {
     return consoleActions(
       children: [
@@ -1263,10 +1445,25 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (r.isFailure)
+          if (r.isFailure) ...[
             Text(r.failure!,
-                style: GoogleFonts.inter(fontSize: 12, color: AppColors.error))
-          else ...[
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.error)),
+            // **The stability block belongs on the refusal path more than on the
+            // answer path.** A 422 says "it did not answer"; the block says *how
+            // many times it was asked and how many times it refused*, which is
+            // the difference between "this model cannot do this question" and
+            // "this model can, and one option order made it hesitate". Before
+            // this the block was sent by the endpoint, parsed by `fromClassify`,
+            // and then thrown away by the one branch that most needed it.
+            if (r.stability != null) ...[
+              const SizedBox(height: 10),
+              _stabilityBlock(r.stability!),
+            ],
+            if (raw.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _note('soc_model_said'.tr, raw),
+            ],
+          ] else ...[
             Row(
               children: [
                 if (r.letter != null) ...[
@@ -1292,6 +1489,19 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                 ),
               ],
             ),
+            // **How the letter was found**, right under the letter. All three
+            // match kinds produce the same `choice`/`label` pair, so a screen
+            // that shows only the letter shows a clean answer for a model that
+            // ignored the instruction entirely. That is the case the whole
+            // `DecisionMatch` enum exists to surface.
+            if (r.match != null) ...[
+              const SizedBox(height: 8),
+              _note('soc_match'.tr, _matchPhrase(r.match!)),
+            ],
+            if (r.stability != null) ...[
+              const SizedBox(height: 8),
+              _stabilityBlock(r.stability!),
+            ],
             if (r.logits != null) ...[
               const SizedBox(height: 10),
               // The values, in a fixed-width block, sorted with the top first.
@@ -1365,7 +1575,9 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           ],
           if (r.model.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text(preencher('soc_model_label', {'m': r.model ?? ''}),
+            // No `?? ''`: `model` is a non-nullable `String`, so the `??` was dead code and
+// the analyzer said so for as long as it has been here.
+            Text(preencher('soc_model_label', {'m': r.model}),
                 style: GoogleFonts.inter(
                     fontSize: 11, color: AppColors.textMuted)),
           ],

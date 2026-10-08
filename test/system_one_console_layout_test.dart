@@ -358,3 +358,231 @@ void main() {
     _drain(tester);
   });
 }
+
+/// The three blocks this session added, mounted **the way they are shown**.
+///
+/// Each of them is a `Column` of text inside a card at 360 dp with text at 2×,
+/// which is the shape that has overflowed this repo's screens four times — and
+/// the permutation list is the worst of them: **one monospace line per run**,
+/// twelve of them, and a monospace line does not wrap at the width it wants.
+///
+/// There is a [SystemOneConsole.initialResult] argument for exactly this, and it
+/// is not a testing convenience bolted on: `_result` is set only by `_show`,
+/// `_show` only from a server response, and `flutter_test` stubs the
+/// `HttpClient` to answer 400 — so without the argument these widgets are
+/// **unreachable** from a test, and unreachable means unverified.
+void _decisionResultLayoutTests() {
+  const width = Size(360, 2400);
+  const bigScale = TextScaler.linear(2.0);
+
+  /// The decision 200 as the endpoint sends it after this session's change.
+  /// Twelve probes, one label, `match: letter`.
+  Map<String, dynamic> stableWithTwelve() => {
+        'model': 'd1-3B-Q4_K_M.gguf',
+        'choice': 'B',
+        'label': 'Financeiro',
+        'match': 'letter',
+        'relevance_score': null,
+        'stability': {
+          'runs': 12,
+          'stable': true,
+          'distinct_answers': 1,
+          'failed_runs': 0,
+          'leading': 'Financeiro',
+          'leading_runs': 12,
+          'agreement': 1.0,
+          'summary': 'stable: 12 of 12 agreed on Financeiro',
+          'probes': [
+            for (final o in [
+              ['A', 'B', 'C', 'D'],
+              ['A', 'B', 'D', 'C'],
+              ['A', 'C', 'B', 'D'],
+              ['A', 'C', 'D', 'B'],
+              ['A', 'D', 'B', 'C'],
+              ['A', 'D', 'C', 'B'],
+              ['B', 'A', 'C', 'D'],
+              ['B', 'A', 'D', 'C'],
+              ['B', 'C', 'A', 'D'],
+              ['B', 'C', 'D', 'A'],
+              ['B', 'D', 'A', 'C'],
+              ['B', 'D', 'C', 'A'],
+            ])
+              {
+                'order': o,
+                'letter': 'B',
+                // A long option label on purpose. `Financeiro` is 9 characters
+                // and would fit on the probe line by accident; a decision model
+                // gets labels written by people, and "Direito do Consumidor e
+                // Reclamacoes" is what actually lands there.
+                'label': 'Direito do Consumidor e Reclamacoes',
+                'raw': 'B',
+              },
+          ],
+        },
+      };
+
+  /// The 422 with a block: refused 12 times, and the raw text is a sentence.
+  Map<String, dynamic> refusedTwelve() => {
+        '__status': 422,
+        'error':
+            'The model did not answer with one of the offered options, in any of '
+                'the 12 option orders tried.',
+        'model': 'd1-3B-Q4_K_M.gguf',
+        'raw': 'I cannot determine which department handles this without more '
+            'context.',
+        'expected_one_of': ['A', 'B', 'C', 'D'],
+        'stability': {
+          'runs': 12,
+          'stable': false,
+          'distinct_answers': 0,
+          'failed_runs': 12,
+          'leading': null,
+          'leading_runs': 0,
+          'agreement': null,
+          'summary': 'no run produced an answer',
+          'probes': [
+            for (final o in [
+              ['A', 'B', 'C', 'D'],
+              ['A', 'B', 'D', 'C'],
+              ['A', 'C', 'B', 'D'],
+              ['A', 'C', 'D', 'B'],
+              ['A', 'D', 'B', 'C'],
+              ['A', 'D', 'C', 'B'],
+              ['B', 'A', 'C', 'D'],
+              ['B', 'A', 'D', 'C'],
+              ['B', 'C', 'A', 'D'],
+              ['B', 'C', 'D', 'A'],
+              ['B', 'D', 'A', 'C'],
+              ['B', 'D', 'C', 'A'],
+            ])
+              {
+                'order': o,
+                'letter': null,
+                'label': null,
+                'raw': 'I cannot determine which department handles this.',
+              },
+          ],
+        },
+      };
+
+  /// A `label` match: the model wrote the label, not a letter. The sentence is
+  /// long and the case is the one the whole `DecisionMatch` enum exists for.
+  Map<String, dynamic> labelMatch() => {
+        'model': 'd1-3B-Q4_K_M.gguf',
+        'choice': 'C',
+        'label': 'Recursos humanos',
+        'match': 'label',
+        'relevance_score': null,
+      };
+
+  /// A **harness that is known to be capable of failing**, for the same reason
+  /// the file's last test is one.
+  ///
+  /// The four mutations below are the measured proof that these tests are not
+  /// green because they cannot fail:
+  ///
+  /// | mutation | result |
+  /// |---|---|
+  /// | the variants `Wrap` → a `Row` | **fails** — `RenderFlex overflowed` |
+  /// | `isStable => true` | **fails** |
+  /// | rotation instead of round-robin | **fails** — reaches 0 of the flips |
+  /// | the parser lookahead removed | **fails** |
+  ///
+  /// And one that does **not**, which is why it is written down: wrapping a
+  /// permutation line in an unbreakable `Row` still passes, because the line
+  /// lives in a `Column` with `CrossAxisAlignment.start` and the text wraps
+  /// before the row gets a chance not to. That mutation is not covered, and a
+  /// mutation nobody tried is a mutation nobody should claim is covered.
+  ///
+  /// **Asserts there is no exception. It does NOT drain — and that is the point.**
+  ///
+  /// The first version of these three tests called `_drain`, copied from the
+  /// harness above, and the consequence was measured: swapping the variants
+  /// `Wrap` for a `Row` and wrapping the permutation line in an unbreakable
+  /// `Row` both left **11 of 11 green**. The drain is what hid both.
+  ///
+  /// Verified that a `RenderFlex` overflow *does* reach `takeException()` here —
+  /// a `Row` of two long strings at 360 dp and 2× text reports
+  /// `A RenderFlex overflowed by 9048 pixels on the right`. So the signal is
+  /// there; a helper that swallows it is the defect.
+  ///
+  /// The existing harness drains because its tests assert about **which widgets
+  /// exist**, and a hostile parent legitimately raises layout errors they are not
+  /// about. These three are about layout, so for them a drain is a way of never
+  /// finding out.
+  void _noOverflow(WidgetTester tester) {
+    final e = tester.takeException();
+    expect(e, isNull, reason: e == null ? '' : '$e');
+    // One more read, because `takeException` hands back one at a time and a
+    // build that raises three would otherwise leave two for the next test to be
+    // blamed for.
+    expect(tester.takeException(), isNull);
+  }
+
+  Future<void> mount(
+    WidgetTester tester,
+    Map<String, dynamic> json, {
+    required int status,
+  }) async {
+    tester.view.physicalSize = width * 3;
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    final result =
+        SystemOneResult(shape: SystemOneShape.decision).fromClassify(
+      json,
+      status: status,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en', 'US'),
+        // `MediaQuery.of(context).copyWith(...)` returns a **MediaQueryData**,
+        // not a widget — the wrapper is what puts the value into the tree. Same
+        // rule the harness comment above already states; this copy got it wrong
+        // and the compiler is what said so.
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: bigScale),
+          child: child ?? const SizedBox.shrink(),
+        ),
+        home: SystemOneConsole(
+          shape: SystemOneShape.decision,
+          baseUrl: 'http://127.0.0.1:1',
+          initialResult: result,
+        ),
+      ),
+    );
+    Get.addTranslations(AppTranslation().keys);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('12 permutation lines fit at 360 dp with text at 2x',
+      (tester) async {
+    await mount(tester, stableWithTwelve(), status: 200);
+    // The list, not the verdict: the verdict is one line and would hide the
+    // overflow this is looking for.
+    expect(find.textContaining('ABCD'), findsOneWidget);
+    expect(find.textContaining('BDCA'), findsOneWidget,
+        reason: 'the twelfth line is the one that never builds in a lazy list');
+    _noOverflow(tester);
+  });
+
+  testWidgets('a refusal shows the block and the raw text, at 2x',
+      (tester) async {
+    await mount(tester, refusedTwelve(), status: 422);
+    // The 12 refusals, and the words. Before this change the 422 branch printed
+    // `failure` and nothing else: the endpoint sent the block, `fromClassify`
+    // parsed it, and the one branch that most needed it discarded it.
+    expect(find.textContaining('did not answer with one of the offered'),
+        findsOneWidget);
+    expect(find.textContaining('I cannot determine'), findsOneWidget);
+    _noOverflow(tester);
+  });
+
+  testWidgets('a label match prints its own sentence', (tester) async {
+    await mount(tester, labelMatch(), status: 200);
+    expect(find.textContaining('did not answer with a letter'),
+        findsWidgets,
+        reason: 'the sentence is what distinguishes this from a clean letter');
+    _noOverflow(tester);
+  });
+  _decisionResultLayoutTests();
+}

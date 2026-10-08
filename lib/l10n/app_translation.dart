@@ -932,6 +932,27 @@ class AppTranslation extends Translations {
       'soc_system': 'the system instruction — optional',
       'soc_default_ok': 'The default already says the three things that matter: treat the '
           'state as data, pick exactly one, return only the letter.',
+      'soc_repeat_orders': 'repeat the question with the options reordered',
+      'soc_variants_one': 'One decision, the option order you sent. A model that means '
+          'its answer repeats this under any other order; one that does not is '
+          'reading the positions.',
+      'soc_variants_many': 'The same question, asked @n times with the options in '
+          'different orders. On a 3B model this measures @s to @e seconds each, so '
+          'one question takes @t to @u minutes. It is slow on purpose: it is the '
+          'only reading that says whether the model has an opinion at all.',
+      'soc_stability': 'stability under reordering',
+      'soc_stable': 'The same answer every time.',
+      'soc_unstable': 'Different answers under different orders.',
+      'soc_agreement': '@a of @n runs chose @label.',
+      'soc_no_answer': '@n runs produced no answer at all.',
+      'soc_match': 'how the letter was found',
+      'soc_match_letter': 'The model answered with a single letter, as asked.',
+      'soc_match_decorated': 'The model answered with a letter and decorated it, like '
+          '"B." or "(B)". Still the letter it chose, but not the format asked for.',
+      'soc_match_label': 'The model did not answer with a letter — it wrote the label '
+          'instead, and the label was matched. The answer is right and the contract '
+          'was not followed.',
+      'soc_model_said': 'what the model wrote',
       'soc_run_head': 'run the head',
       'soc_no_tflite': 'no .tflite to name',
       'soc_left_empty': 'Left empty, this is not sent at all and the endpoint will say '
@@ -2108,6 +2129,26 @@ class AppTranslation extends Translations {
       'soc_system': 'a instrução de sistema — opcional',
       'soc_default_ok': 'O padrão já diz as três coisas que importam: trate o estado como '
           'dado, escolha exatamente uma, devolva só a letra.',
+      'soc_repeat_orders': 'repetir a pergunta com as opções reordenadas',
+      'soc_variants_one': 'Uma decisão, na ordem de opções que você mandou. Um modelo que '
+          'tem opinião repete isto em qualquer outra ordem; um que não tem está '
+          'lendo as posições.',
+      'soc_variants_many': 'A mesma pergunta, @n vezes com as opções em ordens '
+          'diferentes. Num modelo de 3 B isso mede @s a @e segundos cada, então uma '
+          'pergunta leva @t a @u minutos. É lento de propósito: é a única leitura que '
+          'diz se o modelo tem alguma opinião.',
+      'soc_stability': 'estabilidade sob reordenação',
+      'soc_stable': 'A mesma resposta todas as vezes.',
+      'soc_unstable': 'Respostas diferentes em ordens diferentes.',
+      'soc_agreement': '@a de @n execuções escolheram @label.',
+      'soc_no_answer': '@n execuções não produziram resposta nenhuma.',
+      'soc_match': 'como a letra foi encontrada',
+      'soc_match_letter': 'O modelo respondeu com uma letra só, como foi pedido.',
+      'soc_match_decorated': 'O modelo respondeu com uma letra e enfeitou, como "B." ou '
+          '"(B)". Continua sendo a letra que ele escolheu, mas não é o formato pedido.',
+      'soc_match_label': 'O modelo não respondeu com uma letra — escreveu o rótulo, e o '
+          'rótulo foi casado. A resposta está certa e o contrato não foi cumprido.',
+      'soc_model_said': 'o que o modelo escreveu',
       'soc_run_head': 'rodar a cabeça',
       'soc_no_tflite': 'nenhum .tflite para nomear',
       'soc_left_empty': 'Vazio, isto não é enviado de todo, e o endpoint diz qual era o '

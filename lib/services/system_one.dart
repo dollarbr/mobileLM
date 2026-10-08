@@ -39,6 +39,8 @@ library;
 
 import 'dart:convert';
 
+import 'decision_stability.dart';
+
 /// How a System One model answers, decided from facts about the file.
 enum SystemOneShape {
   /// A plain language model fine-tuned to answer with **one letter** — Tev1,
@@ -718,6 +720,8 @@ class SystemOneResult {
     this.requestedAccelerator,
     this.availableAccelerators = const [],
     this.failure,
+    this.match,
+    this.stability,
   });
 
   final String model;
@@ -764,6 +768,26 @@ class SystemOneResult {
   /// endpoint answers 422 with the raw text for exactly the case where the
   /// model wrote prose, and that text is the only way to see what happened.
   final String? failure;
+
+  /// How the letter was found, from `/v1/classify`'s `match`.
+  ///
+  /// Null on a `.tflite` head and on every refusal, because the field describes a
+  /// generative answer and there is no generative answer to describe. A [String]
+  /// and not the enum on purpose: this file is pure and does not import
+  /// `decision_model.dart`, so the console compares the **wire name** the endpoint
+  /// sends. The two are asserted equal in `system_one_test.dart`, which is what
+  /// keeps them from drifting.
+  final String? match;
+
+  /// How reproducible the decision was across permuted option orders.
+  ///
+  /// This is the reading that replaces a percentage for a decision model, and the
+  /// reason is in `decision_stability.dart`: a generative decision model emits one
+  /// distribution over the whole vocabulary and the only readable part is the
+  /// logit of the letter tokens, which are not calibrated. Softmax always sums to
+  /// 1 **including when the model has no idea**, so a normalised number cannot tell
+  /// "I am sure" from "I am guessing".
+  final DecisionStability? stability;
 
   /// A result with nothing in it, for the formatter and for tests.
   static const empty = SystemOneResult();
@@ -871,8 +895,62 @@ class SystemOneResult {
       // LiteRT-specific and correctly absent; this one is not, it is the sentence
       // that says the model read text and nothing was embedded.
       featureSource: _str(json['feature_source']),
+      match: _str(json['match']),
+      stability: _stability(json['stability']),
       notes: _notes(json),
     );
+  }
+
+  /// Read the stability block the endpoint sends for a decision model.
+  ///
+  /// Returns null when there is none, and **not** an empty verdict: "no
+  /// permutations were run" and "permutations ran and disagreed" are different
+  /// facts, and collapsing them is how a screen ends up saying "unstable" about a
+  /// run that was never tested. `decision_stability.dart` owns the verdict's
+  /// wording; this only unpacks the payload.
+  static DecisionStability? _stability(Object? raw) {
+    if (raw is! Map) return null;
+    final runs = raw['runs'];
+    if (runs is! int || runs <= 0) return null;
+    final tally = <String, int>{};
+    final labels = raw['tally'];
+    if (labels is Map) {
+      labels.forEach((k, v) {
+        if (k is String && v is int) tally[k] = v;
+      });
+    }
+    final probes = <DecisionProbe>[
+      for (final p in (raw['probes'] as List? ?? const []))
+        if (p is Map && p['label'] is String)
+          DecisionProbe(
+            order: {
+              for (final e in (p['order'] as Map? ?? const {}).entries)
+                if (e.key is String && e.value is String)
+                  e.key as String: e.value as String,
+            },
+            letter: p['letter'] as String?,
+            label: p['label'] as String?,
+          ),
+    ];
+    // Preferred: rebuild from the probes, so the verdict is **derived here** rather
+    // than copied off the wire. A client that displays a number it did not compute
+    // is one edit away from displaying a wrong one.
+    if (probes.isNotEmpty) return summariseDecisionStability(probes);
+
+    // Fallback: the endpoint sent only the tally. Rebuild the runs from the counts
+    // so the verdict still comes out of `summariseDecisionStability` — but **not**
+    // pretending every run answered. `runs - answered` is exactly the count of
+    // refusals, and calling those failures is what stops "answered twice, refused
+    // twice" from reading as stable.
+    final answered = tally.values.fold<int>(0, (a, b) => a + b);
+    final recovered = <DecisionProbe>[
+      for (final e in tally.entries)
+        for (var i = 0; i < e.value; i++)
+          DecisionProbe(order: {e.key: e.key}, letter: e.key, label: e.key),
+      for (var i = answered; i < runs; i++)
+        const DecisionProbe(order: {}),
+    ];
+    return recovered.isEmpty ? null : summariseDecisionStability(recovered);
   }
 
   /// A client-side refusal, so a window that never sent anything still shows a
@@ -890,6 +968,7 @@ class SystemOneResult {
     required String question,
     required SystemOneOptions options,
     String? instruction,
+    int variants = 1,
   }) {
     final body = <String, dynamic>{
       'state': state,
@@ -899,6 +978,11 @@ class SystemOneResult {
     if (instruction != null && instruction.trim().isNotEmpty) {
       body['instruction'] = instruction;
     }
+    // Only when the caller asked for more than one. Sending `variants: 1`
+    // explicitly would say "the caller cares about the run count and chose one",
+    // which is a different claim from not saying anything — and the endpoint
+    // defaults to 1 anyway, so the honest body for "one decision" has no key.
+    if (variants > 1) body['variants'] = variants;
     return body;
   }
 

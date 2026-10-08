@@ -31,6 +31,8 @@
 /// into a percentage would be displaying a fiction. The caller gets the label,
 /// the letter, and the model's own answer text to judge it by.
 
+library;
+
 /// The default system instruction, from the Tev1 model card.
 ///
 /// Three things in it are load-bearing and were not obvious from the prose:
@@ -105,12 +107,46 @@ class DecisionTask {
   String buildSystemMessage() => '$instruction\n\n/no_think';
 }
 
+/// How the letter was found in what the model wrote.
+///
+/// This exists because the three ways [parseDecisionAnswer] can succeed look
+/// **identical** to a caller that only reads `letter`: `B`, `B. billing` and
+/// `billing` all come back as `{"letter": "B", "label": "bug"}`. They are not the
+/// same claim. The first is the contract the model card asks for; the second is a
+/// model that obeyed and added politeness; the third is a model that **did not
+/// answer with a letter at all** and the parser recovered the answer from the
+/// label it wrote instead.
+///
+/// The third is the one that matters, and it is the exact failure this file's own
+/// header calls out — *"generic chat is not the intended interface and may
+/// produce prose"*. Measured on the A72 with `tev1-Q8_0`: every answer is
+/// `<think>\n\n</think>\n\nB`, which parses as [letter]. A model that writes the
+/// label gets [label], and a caller watching only `letter` cannot tell the two
+/// apart — so the honest reading is not available to it.
+enum DecisionMatch {
+  /// A single letter, alone in the answer. What the instruction asks for.
+  letter,
+
+  /// A letter the model dressed up: `B.`, `(B)`, `**B**`. Anchored at the start,
+  /// so it is still answering-first — but it is not what it was asked for.
+  decoratedLetter,
+
+  /// The model wrote the **label**, not the letter. The parser matched it
+  /// against the whole answer, so it is unambiguous, and it is still an answer.
+  ///
+  /// Marked separately because it is the shape a model drifts into when it
+  /// ignores the instruction, and a caller deciding whether to trust an automated
+  /// decision has a different answer for this than for [letter].
+  label,
+}
+
 /// What the model actually said, once the thinking block is gone.
 class DecisionAnswer {
   const DecisionAnswer({
     required this.letter,
     required this.label,
     required this.raw,
+    required this.match,
   });
 
   /// The matched letter, upper-cased.
@@ -122,6 +158,18 @@ class DecisionAnswer {
   /// The model's answer with the thinking block stripped, kept so a caller can
   /// see what happened when the answer is not a clean letter.
   final String raw;
+
+  /// Which rule produced [letter]. Never null: a `DecisionAnswer` exists because
+  /// one of the three rules matched, and a fourth kind would mean the caller
+  /// cannot tell a well-behaved model from a drifting one.
+  final DecisionMatch match;
+
+  /// Whether the model answered the way the instruction asked.
+  ///
+  /// [decoratedLetter] counts as **not** clean: it is still a letter the model
+  /// chose to emit first, and treating politeness as compliance is how a drift
+  /// threshold ends up never firing.
+  bool get followedContract => match == DecisionMatch.letter;
 }
 
 String _jsonString(String value) {
@@ -173,17 +221,40 @@ DecisionAnswer? parseDecisionAnswer(
   // 2: a single whole letter, alone on the line or alone in the text.
   final solo = RegExp(r'^\s*([A-Za-z])\s*$').firstMatch(cleaned);
   if (solo != null && valid.contains(solo.group(1)!.toUpperCase())) {
-    return _answer(solo.group(1)!, cleaned, choices);
+    return _answer(
+      solo.group(1)!,
+      cleaned,
+      choices,
+      DecisionMatch.letter,
+    );
   }
 
   // 3: a letter with punctuation around it. Anchored at the start, because the
   // instruction asks for the letter *first* and a model that puts the letter at
   // the end has not followed the contract — guessing at that is how you get a
   // confident wrong answer.
-  final decorated = RegExp(r'^\s*\*{0,2}\(?([A-Za-z])\)?\*{0,2}\s*[.):\-]?')
-      .firstMatch(cleaned);
+  //
+  // **The lookahead is load-bearing, and dropping it is a silent wrong answer.**
+  // Without it this regex matches the first letter of *any* word, because every
+  // part after the letter is optional — so a model that answered `account`
+  // matched `a`, and `a` is option A, and the answer came back confidently
+  // **bug**. Rule 4 below, which matches the whole answer against the labels, is
+  // the safety net for exactly that, and it was unreachable: a label that starts
+  // with a letter always lost to rule 3 first. Measured here before the fix:
+  // `bug` → `B/billing`, `account` → `A/bug`. Both wrong, neither null.
+  //
+  // So the letter must be followed by whitespace, one of the accepted marks, or
+  // the end of the answer — never by another word character.
+  final decorated =
+      RegExp(r'^\s*\*{0,2}\(?([A-Za-z])\)?\*{0,2}(?=\s|[.):\-]|$)')
+          .firstMatch(cleaned);
   if (decorated != null && valid.contains(decorated.group(1)!.toUpperCase())) {
-    return _answer(decorated.group(1)!, cleaned, choices);
+    return _answer(
+      decorated.group(1)!,
+      cleaned,
+      choices,
+      DecisionMatch.decoratedLetter,
+    );
   }
 
   // A model that wrote the label instead of the letter is still answering, and
@@ -193,21 +264,31 @@ DecisionAnswer? parseDecisionAnswer(
   for (final entry in choices.entries) {
     final label = entry.value.trim().toLowerCase();
     if (label.isNotEmpty && lower == label) {
-      return _answer(entry.key, cleaned, choices);
+      return _answer(entry.key, cleaned, choices, DecisionMatch.label);
     }
   }
 
   return null;
 }
 
-DecisionAnswer _answer(String letter, String raw, Map<String, String> choices) {
+DecisionAnswer _answer(
+  String letter,
+  String raw,
+  Map<String, String> choices,
+  DecisionMatch match,
+) {
   final up = letter.toUpperCase();
   // The map may be keyed in lower case; look it up as given, fall back to upper.
   var label = choices[letter];
   label ??= choices.entries
       .firstWhere((e) => e.key.toUpperCase() == up, orElse: () => const MapEntry('', ''))
       .value;
-  return DecisionAnswer(letter: up, label: label, raw: raw);
+  return DecisionAnswer(
+    letter: up,
+    label: label,
+    raw: raw,
+    match: match,
+  );
 }
 
 /// Remove a reasoning block, if there is one.
