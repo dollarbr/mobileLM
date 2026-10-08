@@ -21,11 +21,23 @@
 ///   outage scored `confidence: 0.0` over a flat `0.34 / 0.25 / 0.28 / 0.14`.
 ///   Normalised, that reads "34% low severity" — a mild preference, when the
 ///   truth is that the model does not know and picked wrong.
-/// - The Liquid `d1` family ships its own calibration in the GGUF
+/// - The Liquid `d1-omni-600M` ships its own calibration in the GGUF
 ///   (`lfm2.decision.temperature.*`, per question type and per option-count
-///   bucket), precisely because the raw logits are not probabilities. Ignoring
-///   them discards what the author shipped; that is a separate, legitimate
-///   reading, and it is not this file's job to invent one when the key is absent.
+///   bucket), precisely because the raw logits are not probabilities.
+///
+///   **And the model that runs does not.** Measured 08/10/2026 over both files'
+///   metadata: `d1-3B-Q4_K_M` — the one that loads on the A72 and the one every
+///   number in this repo was measured with — carries **zero** `temperature`
+///   keys and only `lfm2.decision.type = "lfm2-d1"`. The ten calibration keys
+///   are all in `d1-omni-600M`, which the app cannot run (its `cls.output.weight`
+///   is a one-class head, so `systemOneShapeOf` routes it to `ggufHead`).
+///
+///   So "the author shipped a calibration and we are ignoring it" is true for a
+///   model we do not run and false for the one we do. Reading a temperature when
+///   the key is present is still the right thing — it is a separate, legitimate
+///   reading — but it is not an argument that applies to `d1-3B`, and the
+///   argument that carries this file is the softmax one above, which stands on
+///   its own.
 ///
 /// **Permutation stability is measurable without inventing a number.** Ask the
 /// same question with the options in different orders. If the answer follows the

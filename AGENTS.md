@@ -2956,9 +2956,34 @@ regra 1.** Um decision model emite **uma** distribuição sobre o vocabulário
 inteiro, e o único que se lê é o logit dos tokens de letra — que não são
 calibrados. Softmax sempre soma 1, **inclusive quando o modelo não tem ideia**:
 o `d1-omni` deu `confidence: 0.0` sobre `0,34/0,25/0,28/0,14`, que normalizado
-vira "34% baixa" e parece preferência. A família `d1` embarca a calibração que
-falta (`lfm2.decision.temperature.*`, por tipo de pergunta e por faixa de
-quantidade de opções) — ignorá-la joga fora o que o autor mandou.
+vira "34% baixa" e parece preferência.
+
+**⚠️ Eu escrevi que "a família `d1` embarca a calibração que falta", e está
+errado — ela está num modelo só, e não no que roda.** Medido nos dois arquivos em
+08/10/2026, pelas 43 e 48 chaves de metadados de cada um:
+
+| arquivo | chaves `lfm2.decision.temperature.*` |
+|---|---|
+| `d1-3B-Q4_K_M.gguf` — **o que roda no A72** | **0** |
+| `d1-omni-600M-Q8_0.gguf` — o que está **fora** | **10** |
+
+O `d1-3B` carrega **só** `lfm2.decision.type = "lfm2-d1"`, e nenhuma chave com
+`temperature` em nenhum lugar das 43. A calibração do autor existe, e é por tipo de
+pergunta (`choice`, `noul`, `score`) e por **faixa de quantidade de opções** —
+`.2`, `.3_5`, `.6_10`, `.11`, com valores de 1,0 a 1,75:
+
+```
+choice.2 = 1,7465   choice.3_5 = 1,3999   choice.6_10 = 1,1751   choice.11 = 1,3725
+noul.2   = 1,6663   score.3_5 = 1,7301
+```
+
+Isto importa mais do que a frase errada: **o modelo que a calibração foi escrita
+para é exatamente o que o app não consegue rodar**, e o que roda não a tem. Então
+o argumento "usamos estabilidade porque a calibração do autor existe e nós a
+ignoramos" é verdadeiro para o `d1-omni` e **falso para o `d1-3B`**. O argumento
+que sobra, e que continua de pé sozinho, é o do softmax: soma 1 inclusive na
+incerteza total. As duas coisas são measurements independentes e só uma delas
+alcança o modelo em uso.
 
 **Permutação é mensurável sem inventar número.** A mesma pergunta com as opções
 embaralhadas: se a resposta segue o **conteúdo**, é estável; se segue a
