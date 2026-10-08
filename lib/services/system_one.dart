@@ -901,6 +901,40 @@ class SystemOneResult {
     );
   }
 
+  /// The option order of one probe, from **either** shape the wire can carry.
+  ///
+  /// **The endpoint sends a `List` of letters and this reader used to demand a
+  /// `Map`.** Found by the round-trip test that connects [stabilityPayload] to
+  /// this class — and it is the same object-vs-array mistake `HeadContract` cost
+  /// once already, in the opposite direction: the hand-written payload in the
+  /// tests was a **Map**, which is what the reader wanted, so every test passed
+  /// and a real response produced an **empty** order for every probe.
+  ///
+  /// What that looked like on the screen: the console's "which order went where"
+  /// lines print `order.keys.join(' ')`, so all twelve rendered as an empty
+  /// string — a permutation report with the permutations missing. The counts were
+  /// still right, which is why the device run passed and nobody looked.
+  ///
+  /// Both are accepted, and neither is trusted: the **list** carries the order
+  /// (which is the only thing order means, and a JSON object's key order is not
+  /// guaranteed), and the map carries the labels when it is there. A list with no
+  /// map degrades to the letters alone rather than to nothing.
+  static Map<String, String> _probeOrder(Object? raw) {
+    if (raw is List) {
+      return {
+        for (final letter in raw)
+          if (letter is String) letter: '',
+      };
+    }
+    if (raw is Map) {
+      return {
+        for (final e in raw.entries)
+          if (e.key is String) e.key as String: '${e.value}',
+      };
+    }
+    return const {};
+  }
+
   /// Read the stability block the endpoint sends for a decision model.
   ///
   /// Returns null when there is none, and **not** an empty verdict: "no
@@ -921,13 +955,17 @@ class SystemOneResult {
     }
     final probes = <DecisionProbe>[
       for (final p in (raw['probes'] as List? ?? const []))
-        if (p is Map && p['label'] is String)
+        // **Every** probe that is a map, including the ones with no label.
+        //
+        // The guard used to be `p['label'] is String`, which **dropped every
+        // refusal** — and dropping a refusal is the exact failure
+        // `decision_stability.dart` exists to prevent: a model that answers once
+        // and refuses eleven times reported `1/1 stable` because the eleven
+        // refusals were not there to disagree with it. A refusal is a counted
+        // run with a null answer, not a missing record.
+        if (p is Map)
           DecisionProbe(
-            order: {
-              for (final e in (p['order'] as Map? ?? const {}).entries)
-                if (e.key is String && e.value is String)
-                  e.key as String: e.value as String,
-            },
+            order: _probeOrder(p['order']),
             letter: p['letter'] as String?,
             label: p['label'] as String?,
           ),

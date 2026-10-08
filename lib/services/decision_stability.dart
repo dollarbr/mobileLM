@@ -316,3 +316,84 @@ int _fact(int n) {
   }
   return v;
 }
+// ── The wire format ───────────────────────────────────────────────────────────
+//
+// These two live here, and not in `openai_server_service_io.dart`, for a reason
+// that was **measured** rather than designed: with the producers private to the
+// server class, renaming a payload key and removing the clamp entirely both left
+// **607 of 607 tests green**. The tests carried hand-written copies of the
+// payload, and a copy is not a contract.
+//
+// That is the same failure the System One test file's own header warns about —
+// *"every payload below is a shape the server actually returns, copied from
+// `openai_server_service_io.dart`"* — and the same one `HeadContract` already cost
+// once, when the reader looked for a `signature` **object** and the device returns
+// an **array**, and the test passed because it fed the invented shape.
+//
+// So the endpoint and the tests now call **the same function**, and a rename
+// becomes a compile error instead of a silent blank panel.
+
+/// The `variants` field of a `/v1/classify` body, clamped.
+///
+/// **Clamps rather than refuses**, and the reason is that a refusal is a rule that
+/// can be got wrong while the clamp cannot: a caller asking for 400 gets the
+/// ceiling, one sending `0`, a negative, or a string gets one. Every wrong value
+/// has a safe answer, so the endpoint does not need a refusal path for a knob whose
+/// worst outcome is "you asked for the maximum".
+///
+/// [cap] exists for tests and for the case where the ceiling is not
+/// [kMaxDecisionVariants]; the endpoint passes nothing and gets the ceiling.
+int parseVariants(Object? raw, {int cap = kMaxDecisionVariants}) {
+  if (raw is! int) return 1;
+  final ceiling = cap < 1 ? 1 : cap;
+  if (raw <= 1) return 1;
+  return raw > ceiling ? ceiling : raw;
+}
+
+/// The `stability` block on the wire.
+///
+/// Carries the **probes**, not just the verdict, so a client can recompute instead
+/// of trusting a number it did not derive. That is the same rule the decision
+/// model's own `relevance_score` follows: expose the signal, name it, never
+/// substitute a summary for it.
+///
+/// [clipRaw] is how many characters of each probe's own words travel with it.
+/// 200 at the top level, 80 per probe, because twelve full model answers would
+/// make a refusal payload larger than the model's context — and a refusal that
+/// does not fit in a response is a refusal nobody reads.
+Map<String, Object?> stabilityPayload(
+  DecisionStability s,
+  List<DecisionProbe> probes, {
+  int clipRaw = 80,
+}) {
+  return {
+    'runs': s.runs,
+    'stable': s.isStable,
+    'distinct_answers': s.distinct,
+    'failed_runs': s.failed,
+    'leading': s.leading,
+    'leading_runs': s.leadingRuns,
+    'agreement': s.agreement,
+    'summary': s.describe(),
+    'probes': [
+      for (final p in probes)
+        {
+          'order': p.order.keys.toList(),
+          'letter': p.letter,
+          'label': p.label,
+          'raw': p.raw == null ? null : clipDecisionText(p.raw!, clipRaw),
+        },
+    ],
+  };
+}
+
+/// Trim the model's own words for the wire.
+///
+/// Shared with the refusal payload's `raw` on purpose: both are the model\'s text
+/// in an HTTP response, and two clip rules would be one more thing to keep in sync
+/// for no reason. The ellipsis is a real character and not three dots, because a
+/// response that says the text was cut should look cut.
+String clipDecisionText(String text, [int max = 200]) {
+  final t = text.trim();
+  return t.length <= max ? t : '${t.substring(0, max)}\u2026';
+}

@@ -3077,3 +3077,81 @@ envelope JSON), roda as permutações, e compara com um `llama-server` local qua
 passado `--local`. O caso que não responde é contado como **instável**, não
 descartado: descartar a recusa deixa um modelo que responde uma vez e recusa três
 reportar estabilidade perfeita.
+
+## O round-trip que não existia, e os **dois** bugs que ele achou
+
+O item 1 da fila ("tirar `_stabilityPayload` e `_decisionVariants` do servidor para
+um arquivo puro") era sobre **teste**. O que se descobre fazendo é que ele era
+sobre duas coisas que estavam **erradas em produção**, e nenhuma delas produzia erro
+nenhum — o que é a definição de silencioso.
+
+**Por que estava errado: o formato do wire não tinha dono.** As duas funções eram
+`private` da classe do servidor, e os testes carregavam **cópias escritas à mão** do
+payload. Uma cópia não é contrato. Medido antes de mexer, e as duas mutações
+passavam a suíte inteira:
+
+| mutação | o que acontece em produção | antes |
+|---|---|---|
+| `distinct_answers` → `distinctCount` | nada: o cliente **recalcula** | **607/607** |
+| remover o clamp de `variants` | `variants: 400` vira 400 gerações, ~2 h no A72 | **607/607** |
+
+A primeira é **benigna e continua benigna** depois do conserto — e vale entender por
+que, porque é o desenho certo: os campos de resumo do payload são **redundantes por
+construção**, o cliente deriva o veredito dos `probes` com a mesma função pura que o
+servidor usou. Renomear um deles não quebra nada porque **ninguém os lê**. É a regra
+1 desta janela aplicada ao próprio payload de decisão. O que **não** é redundante é
+`probes`, e é o que os testes fixam.
+
+**O `order` é uma lista no wire e o leitor exigia um mapa.** O endpoint manda
+`p.order.keys.toList()` — uma **lista**, porque é a ordem que é o dado, e a ordem das
+chaves de um objeto JSON não é garantida. `SystemOneResult._stability` fazia
+`p['order'] as Map`, que devolve `null` para uma lista, e cada probe voltava com a
+ordem **vazia**.
+
+**Como isso aparecia na tela:** o console imprime `order.keys.join(' ')`, então as
+doze linhas de permutação saíam **em branco** — um relatório de permutação sem as
+permutações. **Todos os números continuavam certos**, que é o que fez passar a
+medição no aparelho: o teste contou `runs`, `failed` e `distinct`, e nenhum dos três
+depende da ordem. É a mesma classe do `HeadContract` — objeto onde o aparelho manda
+array — e na **direção oposta**: aqui o payload escrito à mão era o que o leitor
+queria, então **os dois lados do teste concordavam e o aparelho discordava dos dois**.
+
+**E o segundo bug é pior: o leitor descartava as recusas.** O guarda era
+`if (p is Map && p['label'] is String)`, e uma recusa tem `label: null`. Ou seja:
+**um modelo que responde uma vez e recusa onze reportava `1/1 estável`**, porque as
+onze recusas não estavam lá para discordar. É literalmente o defeito que o cabeçalho
+de `decision_stability.dart` diz impedir — *"descartar a recusa deixa um modelo que
+responde uma vez e recusa três reportar estabilidade perfeita"* — e o próprio
+arquivo o cometia.
+
+**As quatro mutações que reprovam hoje** (`test/decision_stability_test.dart`, e a
+tabela está no arquivo):
+
+| mutação | resultado |
+|---|---|
+| remover o clamp de `parseVariants` | **reprova** |
+| o leitor voltar a exigir `Map` | **reprova** |
+| o filtro voltar a descartar recusas | **reprova** |
+| `isStable => true` | **reprova** |
+| rotação no lugar do round-robin | **reprova** |
+| lookahead do parser removido | **reprova** |
+
+E uma que **não** reprova, escrita no arquivo como não coberta: renomear
+`distinct_answers`, porque o campo é redundante por desenho. **Isso é o conserto
+funcionando, e não uma lacuna** — mas só depois de se explicar por quê, porque um
+teste que não reprova é a mesma frase de "não testado" com outro nome.
+
+**O assert que faltava, e a lição dele.** A primeira versão do round-trip afirmava
+`runs`, `failed`, `distinct`, `leading`, `leadingRuns` e `isStable` — e **todas as
+contagens sobrevivem a um leitor que joga a ordem fora**. Por isso remover de novo o
+ramo `List` de `_probeOrder` deixou o arquivo **verde**. O que fecha é uma linha que
+não existia:
+
+```dart
+expect(back.probes[1].order.keys.toList(), ['B', 'A']);
+```
+
+**Uma asserção sobre contagem não prova que a ordem sobreviveu**, e a ordem é o que
+o painel inteiro mostra. É a mesma lição do ratchet de tradução, uma oitava vez: uma
+lista do que a trava mede é uma afirmação, e ela só aparece quando a medição falha de
+um jeito que ninguém esperava.

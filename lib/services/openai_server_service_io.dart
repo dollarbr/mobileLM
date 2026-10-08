@@ -1322,7 +1322,7 @@ class OpenAiServerService {
     // default here because the endpoint's contract has always been "one answer to
     // one question" — changing the default would turn every existing client into
     // a client that waits 1,5–4,5 minutes on a phone.
-    final variants = _decisionVariants(body);
+    final variants = parseVariants(body['variants']);
 
     final choices = _decisionChoices(body);
     if (choices == null) {
@@ -1410,9 +1410,9 @@ class OpenAiServerService {
         // not debuggable without it and a decision model is exactly the case where
         // that happens. 200 characters: enough to see the shape, not enough to
         // make the response a data channel.
-        'raw': _clip(probes.isEmpty ? '' : (probes.first.raw ?? '')),
+        'raw': clipDecisionText(probes.isEmpty ? '' : (probes.first.raw ?? '')),
         'expected_one_of': choices.keys.toList(),
-        if (variants > 1) 'stability': _stabilityPayload(stability, probes),
+        if (variants > 1) 'stability': stabilityPayload(stability, probes),
       }, status: HttpStatus.unprocessableEntity);
       return;
     }
@@ -1442,7 +1442,7 @@ class OpenAiServerService {
       // stability to report, and a field that says "stable" for n=1 would be
       // asserting a property that was never measured.
       if (variants > 1)
-        'stability': _stabilityPayload(stability, probes),
+        'stability': stabilityPayload(stability, probes),
       // Null, with the reason, rather than a fabricated number.
       'relevance_score': null,
       'scores': {for (final e in choices.entries) e.value: null},
@@ -1490,45 +1490,6 @@ class OpenAiServerService {
         .timeout(kDecisionTimeout);
   }
 
-  /// The stability block on the wire.
-  ///
-  /// Carries the **probes**, not just the verdict, so the client can recompute
-  /// instead of trusting a number it did not derive. That is the same rule the
-  /// decision model's own `relevance_score` follows: expose the signal, name it,
-  /// never substitute a summary for it.
-  Map<String, Object?> _stabilityPayload(
-      DecisionStability s, List<DecisionProbe> probes) {
-    return {
-      'runs': s.runs,
-      'stable': s.isStable,
-      'distinct_answers': s.distinct,
-      'failed_runs': s.failed,
-      'leading': s.leading,
-      'leading_runs': s.leadingRuns,
-      'agreement': s.agreement,
-      'summary': s.describe(),
-      'probes': [
-        for (final p in probes)
-          {
-            'order': p.order.keys.toList(),
-            'letter': p.letter,
-            'label': p.label,
-            // Clipped per probe, same rule as the top-level `raw`: 12 full model
-            // answers would make the refusal payload larger than the model's own
-            // context, and a refusal that does not fit in a response is a
-            // refusal nobody reads.
-            'raw': p.raw == null ? null : _clip(p.raw!, 80),
-          },
-      ],
-    };
-  }
-
-  /// Trim the model's own words for the refusal payload.
-  String _clip(String text, [int max = 200]) {
-    final t = text.trim();
-    return t.length <= max ? t : '${t.substring(0, max)}\u2026';
-  }
-
   /// The options, as an ordered letter-to-label map.
   ///
   /// Returns null when the request cannot make a decision model answer: fewer
@@ -1548,13 +1509,6 @@ class OpenAiServerService {
   /// permutations gets the ceiling, and a caller that sent `0` or a string gets
   /// one. Refusing would make the endpoint stricter than it needs to be over a
   /// performance knob that has a safe answer either way.
-  int _decisionVariants(Map<String, dynamic> body) {
-    final raw = body['variants'];
-    if (raw is! int) return 1;
-    if (raw <= 1) return 1;
-    return raw > kMaxDecisionVariants ? kMaxDecisionVariants : raw;
-  }
-
   Map<String, String>? _decisionChoices(Map<String, dynamic> body) {
     final raw = body['choices'] ?? body['options'] ?? body['labels'];
     if (raw is! Map || raw.length < 2 || raw.length > 24) return null;
