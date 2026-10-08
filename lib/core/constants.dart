@@ -837,9 +837,10 @@ Se perguntado sobre você mesmo, pode mencionar que é um assistente de IA local
     //
     // **`Q4_K_M` is the smallest quantisation published**: BF16 5.03 GB, F16
     // 5.03, Q8_0 2.68. There is no smaller one to fall back on, so **this card
-    // does not appear on a 5.6 GB phone** — 1.56 GB against a
-    // `maxModelBytes` of 1.40 GB. That is the filter working, not a defect, and
-    // the same mechanism that hides the five image models.
+    // does not appear on the A72** — 1.56 GB against a `maxModelBytes` of
+    // 1.20 GB (MemTotal 5011844 kB = 4.78 GB, times 0.25). That is the filter
+    // working, not a defect, and the same mechanism that hides the image models:
+    // **30 of the 47 entries are filtered out on that phone**.
     {
       'name': 'd1-3B (Q4_K_M + vision)',
       'filename': 'd1-3B-Q4_K_M.gguf',

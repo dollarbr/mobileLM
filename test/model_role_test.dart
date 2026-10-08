@@ -295,17 +295,118 @@ void main() {
     });
 
     test('the declared size is the smallest published quantisation', () {
-      // BF16 5.03 GB, F16 5.03, Q8_0 2.68 — and 1.56 is the Q4_K_M. The card
-      // is therefore **absent on a 5.6 GB phone** (1.56 GB against a
-      // `maxModelBytes` of 1.40), which is the filter working and not a defect.
+      // BF16 5.03 GB, F16 5.03, Q8_0 2.68 — and 1.56 is the Q4_K_M, so there is
+      // no smaller option to fall back on.
       final d1 =
           catalogo.firstWhere((m) => m.filename == 'd1-3B-Q4_K_M.gguf');
       expect(d1.size, '1.56 GB');
-      final maxOnA72 = (5.6 * 0.25 * 1024 * 1024 * 1024).round();
-      final declared = (1.56 * 1024 * 1024 * 1024).round();
-      expect(declared, greaterThan(maxOnA72),
-          reason: 'if this ever stops being true, the note in the '
-              'description is lying');
+    });
+  });
+
+  /// The catalogue cap, restated from `DeviceInfoService.maxModelBytes`.
+  ///
+  /// **The first version of this file hardcoded 5.6 GB** — the A72's RAM as the
+  /// guide described it — and the size assertion passed anyway. 1.56 GB exceeds
+  /// both the 1.40 GB that 5.6 implies and the 1.20 GB the phone actually has,
+  /// so the assertion was true for two different reasons and could not tell a
+  /// right number from a wrong one. **A test that passes for more than one reason
+  /// is not measuring any of them.**
+  ///
+  /// The A72 reports `MemTotal: 5011844 kB`, and the app reads that line and
+  /// divides by 1024 twice — **MB, not GB** (`device_info_native.dart:145`). So
+  /// the cap is 1.195 GB, not the 1.40 the guide claimed.
+  group('the 25%-of-RAM cap, on the number the phone actually reports', () {
+    /// `MemTotal` in kB, off `adb shell cat /proc/meminfo` on the A72.
+    const memTotalKbA72 = 5011844;
+
+    int capOnA72() {
+      // The division the app does: kB -> MB -> GB, in that order.
+      final ramGb = memTotalKbA72 / 1024 / 1024;
+      return (ramGb * 0.25 * 1024 * 1024 * 1024).round();
+    }
+
+    int declaredBytes(String size) {
+      final m = RegExp(r'([\d.]+)\s*(GB|MB)').firstMatch(size)!;
+      final v = double.parse(m.group(1)!);
+      return m.group(2)!.toUpperCase() == 'GB'
+          ? (v * 1024 * 1024 * 1024).round()
+          : (v * 1024 * 1024).round();
+    }
+
+    test('the cap is 1.20 GB, and not the 1.40 the guide claimed', () {
+      // A guard on the guard: if someone edits the note that says 5.6 GB, this
+      // fails before the size assertion can pass for the wrong reason again.
+      expect(memTotalKbA72, 5011844);
+      expect(capOnA72(), 1283032064);
+      expect(capOnA72() / (1024 * 1024 * 1024), closeTo(1.195, 0.001));
+      expect(capOnA72(), isNot(1503238554), // 5.6 * 0.25
+          reason: 'esse era o teto que o guia afirmava');
+    });
+
+    test('the d1-3B is filtered out, and by a margin', () {
+      final d1 =
+          catalogo.firstWhere((m) => m.filename == 'd1-3B-Q4_K_M.gguf');
+      final declarado = declaredBytes(d1.size);
+      expect(declarado, greaterThan(capOnA72()));
+      // The margin matters as much as the inequality: with 5.6 GB the excess was
+      // 0.06 GB, which is the width of one rounding error in a written note.
+      expect(declarado - capOnA72(), greaterThan(1024 * 1024 * 1024 * 0.2));
+    });
+
+    test('the measured file on disk is also over the cap', () {
+      // `Content-Length` confirmed by HEAD, and the byte count is what
+      // `_knownModelBytes` uses when the file is present.
+      const onDisk = 1674456672;
+      expect(onDisk, greaterThan(capOnA72()));
+      // And the declared string agrees with the file, so a card cannot claim one
+      // size and ship another.
+      expect(onDisk, closeTo(declaredBytes('1.56 GB'), 1024 * 1024 * 1024));
+    });
+
+    test('the catalogue note carries the same numbers the test does', () {
+      // **Mutation M7 survived the whole suite.** Putting `1.40 GB` and `5.6 GB`
+      // back into the comment above the entry left 641/641 green — the same shape
+      // as the M3 hole: a claim in prose that nothing reads, and the next person
+      // to change a quantisation trusts it.
+      //
+      // The comment is the only place a reader meets the filter, so its numbers
+      // have to be the ones the phone produces. Both are read out of the source,
+      // so editing either side without the other fails here.
+      final src = File('lib/core/constants.dart').readAsStringSync();
+      final at = src.indexOf("'filename': 'd1-3B-Q4_K_M.gguf'");
+      expect(at, greaterThan(-1));
+      // The comment sits immediately above this entry.
+      final antes = src.substring(
+        src.lastIndexOf('// ──', at),
+        at,
+      );
+
+      expect(antes, contains('5011844'),
+          reason: 'a nota do catálogo precisa do MemTotal medido');
+      expect(antes, contains('4.78'), reason: 'e do total em GB que ele dá');
+      expect(antes, isNot(contains('5.6 GB')),
+          reason: 'o A72 tem 4.78 GB; 5.6 foi um número escrito à mão');
+      expect(antes, isNot(contains('1.40')),
+          reason: 'e o teto é 1.20, não 1.40');
+
+      // And the entry's own description must not repeat the wrong claim either.
+      final d1 =
+          catalogo.firstWhere((m) => m.filename == 'd1-3B-Q4_K_M.gguf');
+      expect(d1.descriptionEn, isNot(contains('5.6')));
+      expect(d1.descriptionEn, isNot(contains('1.40')));
+      expect(d1.descriptionPt, isNot(contains('5,6')));
+    });
+
+    test('how much of the catalogue the A72 actually shows', () {
+      final visiveis = catalogo
+          .where((m) => m.size.isNotEmpty)
+          .where((m) => declaredBytes(m.size) <= capOnA72())
+          .toList();
+      final filtradas = catalogo.length - visiveis.length;
+      // 47 entries, 30 over the cap. Measured by running the filter, not by
+      // counting rows in a table.
+      expect(filtradas, 30);
+      expect(catalogo.length, 47);
     });
   });
 }

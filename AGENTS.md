@@ -1305,7 +1305,7 @@ comentário. Nenhuma das duas é uma chave, e o teste as pedia no mapa.
 
 | Aparelho | Papel | Regra |
 |---|---|---|
-| **Galaxy A72** (SM-A725M, Snapdragon 720G / SM7125, **/e/OS e-4.3, Android 15**, 5,6 GB, `adb root`) | **debug** — é onde tudo é medido | recebe debug à vontade. A tela dele **estraga**: a imagem aparece mas o touch não responde, então tudo é feito por comando adb, nunca por toque. Não é quebra do aparelho e não é reparável aqui. |
+| **Galaxy A72** (SM-A725M, Snapdragon 720G / SM7125, **/e/OS e-4.3, Android 15**, **4,78 GB** (`MemTotal` 5011844 kB), `adb root`) | **debug** — é onde tudo é medido | recebe debug à vontade. A tela dele **estraga**: a imagem aparece mas o touch não responde, então tudo é feito por comando adb, nunca por toque. Não é quebra do aparelho e não é reparável aqui. |
 | **Motorola Edge 60** (Dimensity 7300, Mali-G615) | **só release** | nunca instalar debug. Instalar debug sobre uma release significa trocar a assinatura → desinstalar → perde modelos, histórico e workspace. É por isso que a 0.4.0 ficou um ciclo inteiro sem conseguir testar no Edge 60. |
 
 Medir no A72 é a escolha certa mesmo sendo mais fraco: um número que sai dele é um
@@ -1769,7 +1769,7 @@ tem **165,2 MB de pesos** — é o adaptador, não um modelo. Para rodar é prec
 mesclar o adaptador na base, e a base em Q4_K_M são ~5,5 GB antes de qualquer
 cache.
 
-O A72 tem 5,6 GB. A escada recusaria, com razão. O Edge 60 (até 12 GB) caberia,
+O A72 tem 4,78 GB (`MemTotal` medido). A escada recusaria, com razão. O Edge 60 (até 12 GB) caberia,
 mas produzir isso é trabalho de mesa — baixar a base, mesclar, quantizar — e o
 app não tem suporte a adaptador: `loadModel` recebe um caminho de GGUF único.
 Não é entrada de catálogo; no máximo é "importar um GGUF já mesclado", e mesmo
@@ -3223,10 +3223,17 @@ suportada depois de 774 MB é derrota"*. Os quatro respondem **200**, e o
 
 **E `Q4_K_M` é a menor quantização publicada do `d1-3B`**: BF16 5,03 GB, F16 5,03,
 Q8_0 2,68. Não há uma menor para escapar do teto, e por isso o card do `d1-3B`
-**não aparece no A72** — 1,56 GB contra `maxModelBytes` de **1,40 GB**
-(`totalRamGB × 0,25` = 5,6 × 0,25). No Edge 60, com 3,00 GB de teto, ele aparece.
-É o mesmo mecanismo dos 5 modelos de imagem, e **é o filtro funcionando**, não um
-defeito: 1,56 GB de pesos mais KV cache mais projetor não cabem em 25% de 5,6 GB.
+**não aparece no A72** — 1,56 GB contra `maxModelBytes` de **1,20 GB**.
+
+**O A72 tem 4,78 GB, não 5,6.** `MemTotal: 5011844 kB` em `/proc/meminfo`, que é
+exatamente o que o app lê (`device_info_native.dart:145`, `int.parse / 1024 / 1024`
+— MB, não GB). 4,780 × 0,25 = **1,195 GB**. Eu escrevi 5,6 GB aqui e no teste, e
+o teste **passava pela razão errada**: 1,56 GB é maior que 1,20 e também maior que
+1,40, então a asserção era verdadeira nos dois casos e não podia distinguir um
+número do outro. Um teste que passa por dois motivos não está medindo nenhum deles.
+
+**30 das 47 entradas de catálogo são filtradas por esse teto no A72** — medido, não
+contado à mão. Só 17 aparecem. O `d1-3B` está entre as 30.
 
 **Os quatro nomes de repositório vieram de HEAD, não de memória.** A API do Hub
 respondeu `Invalid username or password` e o `GGUF` **não carrega a URL do próprio
