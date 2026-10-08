@@ -307,7 +307,7 @@ Tags com prefixo `v` (ex: `v0.3.0`) também são aceitas. As notas saem agrupada
 prefixo de Conventional Commit; o que não casa com nenhum prefixo cai em "Other",
 então nada some.
 
-Release tags publicadas: `0.6.0` (o idioma é escolhido — seletor Auto /
+Release tags publicadas: `0.7.0` (a resposta de um decision model diz se ela se sustenta: `/v1/classify` mede a consistência por permutação com `variants`, a resposta carrega `match`/`followed_contract`, e a janela mostra os três blocos — inclusive na recusa; **arm64 medido em `4010`**, assinatura `1cd43cb7…`, 86 MB), `0.6.0` (o idioma é escolhido — seletor Auto /
 English / Português (Brasil), **inglês como padrão**, e 905 chaves nos dois
 idiomas; fecha o item 3e com a varredura ampla em zero), `0.5.1` (a escada de aceleração passou a ver o tamanho do modelo), `0.5.0` (pinning automático nos núcleos grandes + benchmark de CPU corrigido), `0.2.3` (M4), `0.3.0` (cloud + métricas), `0.3.1` (exportar, chips, sumarização), `0.3.2` (PDF→markdown, clamp cloud correto, tools de arquivo removidas quando documento anexado), `0.3.3` (catálogo: LFM2.5-VL, Spark X2.5, Qwen3.5), `0.3.4` (release signed com a chave de verdade), `0.4.0` (encoders: `/v1/embeddings`, `/v1/rerank` e `/v1/classify`; 10 encoders no catálogo; console de encoder; parâmetros por papel; `config.json` como pre-flight no HF).
 
@@ -365,12 +365,19 @@ build. Por isso o erro sobreviveu duas releases inteiro: **um número que não
 participa de nada também não denuncia nada**, e o único jeito de pegá-lo é medir o
 APK.
 
-Conferido contra a fonte e contra os dois assets, **não calculado**:
+Conferido contra a fonte e contra os assets, **não calculado**:
 
 | release | `pubspec` | `2 * 1000 + build` | `aapt2 dump badging` |
 |---|---|---|---|
 | `0.5.1` | `0.5.1+2008` | 4008 | **`4008`** |
 | `0.6.0` | `0.6.0+2009` | 4009 | **`4009`** |
+| `0.7.0` | `0.7.0+2010` | 4010 | **`4010`** |
+
+A `0.7.0` confirma a fórmula pela terceira vez, e a assinatura também: `CN=dollarbr`,
+SHA-256 `1cd43cb7…` — **a mesma chave da `0.3.4`**, que é a primeira assinada com a
+chave do projeto. Quem tem a `0.6.0` instalada **atualiza por cima**; quem tem uma
+qualquer das sete anteriores, com chave de debug diferente, precisa desinstalar
+primeiro.
 
 A prosa tinha o mesmo defeito pelo mesmo motivo: *"O maior publicado é **5007**
 (0.5.0, medido)"*. O maior publicado era **4007** — o `5007` é o mesmo salto de
