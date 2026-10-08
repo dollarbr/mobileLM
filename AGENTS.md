@@ -3379,3 +3379,31 @@ tamanho: o `d1-3B`, que roda, **não tem nenhum** `attn_qkv`. UmGGUF novo da fam
 imprime valores de kv, só nomes.** Quem estourou antes foi inferir `n_ff` de
 `n_elts / n_embd`, e isso deu 144 e 128 — errados, porque o FFN não é
 `n_ff × n_embd`. Os númerosTrue só apareceram lendo o valor da chave.
+
+## O card do `d1-3B` na tela do A72, medido — e onde ele aparece
+
+Verificado no aparelho com o APK debug instalado (0.7.0, `versionCode` 2010).
+**A tela do A72 é 1080x2400, mas a imagem é exibida reduzida** — ler coordenadas na
+versão reduzida erra o alvo por um fator de 1,17. Foi o que fez três toques seguidos
+não abrirem o grupo GGUF e o quarto abrir.
+
+**O card aparece, em `BAIXADOS`, sob o bloco `MODELOS DE DECISÃO`**, e **não** sob
+`GGUF`. Isso é a regra `modelSectionKey` funcionando: `downloaded` é testado
+**antes** de `fits`, então o teto de RAM nunca esconde um modelo que já está no
+disco. Confirmado no aparelho — `d1-3B-Q4_K_M.gguf` tem `1674456672` bytes lá,
+idêntico ao `Content-Length` conferido por HEAD.
+
+O card mostra `1.56 GB · 3B · 32k ctx`, `BAIXADO` / `GGUF` / `MULTIMODAL`, botão
+**Carregar**, e o ícone de apagar.
+
+**Em `GGUF` ele não está, e é o filtro.** O maior card do GGUF na tela é o
+`Qwen3.5 2B` a **1,19 GB** — exatamente o maior que passa no teto de 1,195 GB. Os
+37 `.gguf` do catálogo, 16 passam.
+
+**O `GGUF 26` da tela bate com a conta, e só porque o badge conta encoders também:**
+16 `.gguf` que passam + 10 encoders = 26. Um número que se lê sem essa conta não
+diz nada.
+
+**Os dois grupos e os cards só abrem por toque**, e o toque do A72 responde de forma
+irregular — o `Encoders` abriu no primeiro toque, o `GGUF` só no quarto. Toda
+medição de tela aqui é por `adb shell input`, nunca por dedo.
