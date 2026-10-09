@@ -3946,3 +3946,87 @@ línguas acima de 3× o aleatório** — contra 23 de 51 do checkpoint inglês. 
 
 **Nenhum dos dois é "o modelo de decisão". São dois formatos de 300–600 MB, e o
 formato é a escolha, não o tamanho.**
+
+---
+
+## ⚠️ O `d1-omni` JÁ TEM A CALIBRAÇÃO NOS METADADOS — E O llama.cpp a JOGA FORA
+
+Este é o achado mais acionável de todos, e ele só apareceu porque fui ler os
+metadados do GGUF em vez de confiar no `n_embd_out`.
+
+Lendo os 40 primeiros KV de `d1-omni-600M-Q8_0.gguf` **no aparelho**:
+
+```
+general.architecture                 = lfm2
+lfm2.decision.type                   = lfm2-d1-omni
+lfm2.decision.block_count            = 2
+lfm2.decision.temperature.choice     = 1.0
+lfm2.decision.temperature.choice.2   = 1.7465145587921143
+lfm2.decision.temperature.choice.3_5 = 1.3998981714248657
+lfm2.decision.temperature.choice.6_10= 1.1751071214675903
+lfm2.decision.temperature.choice.11  = 1.372515082359314
+lfm2.decision.temperature.noul       = 1.0
+lfm2.decision.temperature.noul.2     = 1.6663223505020142
+lfm2.decision.temperature.score      = 1.0
+lfm2.decision.temperature.score.3_5  = 1.7301132678985596
+lfm2.decision.temperature.score.6_10 = 1.0
+```
+
+**Dez temperaturas, uma por (tipo de pergunta, faixa de contagem de opções).** E
+as faixas **não são as mesmas entre tipos** — `choice` tem `2`, `3_5`, `6_10`,
+`11`; `score` tem `3_5`, `6_10` e nada acima; `noul` tem só `2`, porque `noul`
+não passa de duas opções. **A estrutura de faixas é específico do tipo, e isso é
+um detalhe de quem calibrou de verdade.**
+
+### Isso é literalmente o que o card do Laya manda você fazer
+
+> **Ships uncalibrated.** `temperature = [1.0, 1.0, 1.0]` with no per-option-count
+> buckets. It is systematically over-confident (mean confidence 0.75–0.83 against
+> much lower accuracy). **Refitting one temperature per (question type, option
+> count) on held-out data moves mean ECE 0.314 → 0.106.** Do this on your own data
+> before trusting the probabilities.
+
+O Laya diz: *faça isso*. **O `d1-omni` já foi feito** — está no arquivo, com os
+dez números, e o `d1-omni` é o único modelo da classe que **embute a calibração no
+GGUF** em vez de pedir que você calcule.
+
+### ⚠️ E o llama.cpp vendorizado não sabe que isso existe
+
+Três medições, e as três dizem a mesma coisa:
+
+| onde procurei | resultado |
+|---|---|
+| `src/models/lfm2.cpp` — `temperature` | **0 ocorrências** |
+| `gguf-py/gguf/constants.py` — chave de decision | **0 ocorrências** |
+| `conversion/lfm2.py` — `temperature` **ou** `decision` | **0 ocorrências** |
+
+As únicas chaves de temperatura que o vendor conhece são
+`{arch}.attention.temperature_length` e `{arch}.attention.temperature_scale`
+(`constants.py:208,219`), que são escala de atenção RoPE e **não têm nada a ver
+com calibração de decisão**.
+
+**A consequência é direta e verificada:** o modelo é calibrado, e o runtime
+**descarta a calibração**. E o `conversion/lfm2.py` deste vendor também não escreve
+essas chaves — o que significa que **o `d1-omni-600M-Q8_0.gguf` do aparelho não
+foi produzido por este conversor.** Quem o produziu wrote mais do que este vendor
+sabe ler.
+
+### O que isso muda sobre a prioridade
+
+A calibração é a **única** parte do contrato da Cloudflare que **não** depende da
+ponte nativa. Ela precisa de duas coisas:
+
+1. **Ler dez pares chave/valor do GGUF** — `llama_meta.dart` já expõe metadados, e
+   isto é uma leitura de KV, pequena e contida
+2. **Aplicar o softmax por pergunta com a temperatura da faixa certa** — aritmética
+   pura, testável sem aparelho
+
+A parte que **ainda** depende da ponte nativa é ler os 3 logits do kernel de
+decisão. **Então a Honestidade sobre o custo é esta:** a calibração é a fatia que
+se paga hoje; o `confidence` de verdade vem com a ponte.
+
+E vale registrar o porquê de isto ser a resposta certa e não um detalhe: **a nota de
+catálogo do `d1-3B` promete estabilidade por permutação, não porcentagem.** Isso
+continua correto — permutação pega o modelo que muda de resposta com a ordem das
+opções, e temperatura conserta o número que sai, não a pergunta. **São dois
+problemas diferentes e nenhum dos dois dispensa o outro.**
