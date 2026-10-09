@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -132,6 +131,44 @@ void main() {
         out.add(m.group(1)!);
       }
     }
+    // **Os dois mapas da janela System One entram aqui pelo mesmo motivo.**
+    // `SystemOneReadout.labelKey` e `noteKey` e `kAnswerTypeKey` guardam chaves
+    // que a tela pinta com `map[valor]!.tr`, e nenhuma delas é literal no fonte
+    // — então a auditoria de `.tr` literal não as vê. A primeira versão deste
+    // arquivo auditou só os dois mapas do `hf_search_sheet.dart`, e uma mutação
+    // trocando `'soc_readout_logit'` por uma chave inexistente deixou os **11
+    // testes verdes**: a chave sumiria do arquivo e renderizaria o próprio
+    // identificador numa tela em português, que é a falha exata que o seletor de
+    // idioma veio fechar.
+    //
+    // O parser é o do `hf_search_sheet.dart` — `static const NOME = <…>{…}` até
+    // `};` — porque é o formato que o fonte usa, e um formato diferente seria um
+    // segundo detector que diverge em silêncio. A âncora está no teste irmão.
+    final soc = File('lib/services/system_one.dart').readAsStringSync();
+    for (final mapa in const [
+      'kReadoutLabelKey',
+      'kReadoutNoteKey',
+      'kAnswerTypeKey',
+    ]) {
+      // The type comes before the name — `const Map<K, V> name = {` — and a
+      // pattern that assumed `const name = <` would match **zero** maps and
+      // then throw here on the first one, which reads as "the map is gone"
+      // rather than "the regex is wrong". A detector that finds nothing must
+      // not be able to say it found nothing.
+      final bloco = RegExp(
+              r'const\s+[A-Za-z_][A-Za-z0-9_]*\s*<[^>]*>\s+' '$mapa' r'\s*=\s*\{(.*?)\n\};',
+              dotAll: true)
+          .firstMatch(soc);
+      if (bloco == null) {
+        throw StateError('o mapa $mapa sumiu de system_one.dart — este teste '
+            'audita a lista por nome, e uma lista sumida é zero chaves com o '
+            'teste verde');
+      }
+      for (final m in RegExp(r":\s*'([a-z0-9_]+)'").allMatches(bloco.group(0)!)) {
+        out.add(m.group(1)!);
+      }
+    }
+
     // **O enum é lido token a token, e não por regex.** A primeira versão usou
     // `any\('([a-z0-9_]+)',` e casava **zero** vezes num fonte onde o token
     // estava plainly escrito — `any('hf_any', '')` —, então a auditoria do enum
@@ -397,6 +434,12 @@ void main() {
     final vistas = chavesIndiretas();
     expect(vistas, contains('hf_task_text_generation'));
     expect(vistas, contains('hf_mergekit'));
+    // As âncoras da janela System One. Sem estas, os três mapas de
+    // `system_one.dart` poderiam sumir e a auditoria devolveria uma lista menor
+    // sem ninguém dizer.
+    expect(vistas, contains('soc_readout_letter'));
+    expect(vistas, contains('soc_readout_logit'));
+    expect(vistas, contains('soc_answer_type_noul'));
     expect(vistas.length, greaterThanOrEqualTo(10),
         reason: 'os dois mapas de faceta somam 10 entradas');
 

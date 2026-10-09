@@ -165,6 +165,32 @@ class AppTranslation extends Translations {
       'set_task_created': 'Task created.',
       'soc_no_feature_vector': 'No feature vector.',
       'soc_ask_for_the_letter': 'ask for the letter',
+      // The two readouts a decision model has, and what each one costs. The
+      // sentence under the chips names the measured difference, because a chip
+      // that only says "letter / logit" makes the choice look like a preference.
+      'soc_readout': 'how to read it',
+      'soc_readout_letter': 'the letter it emits',
+      'soc_readout_logit': 'the option probabilities',
+      'soc_readout_note_letter':
+          'Asks the model to emit one letter. Measured on this phone: 2.0-2.2 s '
+          'when it answers, 50-51 s when it does not.',
+      'soc_readout_note_logit':
+          'Reads the option letters at the answer slot, in one forward pass, '
+          'with nothing generated. This is the only path whose confidence is a '
+          'measurement: 8.2 s here, 3.1 s on the d1-3B.',
+      'soc_ask_for_the_distribution': 'ask for the distribution',
+      'soc_answer_type': 'question type',
+      'soc_answer_type_choice': 'choice - one of your options',
+      'soc_answer_type_score': 'score - a level on your scale',
+      'soc_answer_type_noul': 'noul - true or false',
+      // Deliberately four decimals. Two would round the measured pair
+      // 0.6972 / 0.5458 into "70%" and "55%", which reads as two percentages of
+      // the same thing; they are two different measurements.
+      'soc_confidence_value': 'confidence @c',
+      'soc_level_label': 'level @n of @t',
+      'soc_passes':
+          '@n forward passes — one per question, because the answer slot is a '
+          'token position and this window does not tokenize the prompt.',
       'wv_new_folder': 'New folder',
       'wv_new_file': 'New file',
       'ap_text_file': 'Text file',
@@ -1267,6 +1293,26 @@ class AppTranslation extends Translations {
       'set_task_created': 'Tarefa criada.',
       'soc_no_feature_vector': 'Sem vetor de features.',
       'soc_ask_for_the_letter': 'peça a letra',
+      'soc_readout': 'como ler',
+      'soc_readout_letter': 'a letra que ele emite',
+      'soc_readout_logit': 'as probabilidades das opções',
+      'soc_readout_note_letter':
+          'Pede que o modelo emita uma letra. Medido neste aparelho: 2,0-2,2 s '
+          'quando responde, 50-51 s quando não responde.',
+      'soc_readout_note_logit':
+          'Lê as letras das opções no slot de resposta, numa passagem, sem gerar '
+          'nada. É o único caminho cuja confiança é uma medição: 8,2 s aqui, '
+          '3,1 s no d1-3B.',
+      'soc_ask_for_the_distribution': 'peça a distribuição',
+      'soc_answer_type': 'tipo de pergunta',
+      'soc_answer_type_choice': 'choice — uma das suas opções',
+      'soc_answer_type_score': 'score — um nível da sua escala',
+      'soc_answer_type_noul': 'noul — verdadeiro ou falso',
+      'soc_confidence_value': 'confiança @c',
+      'soc_level_label': 'nível @n de @t',
+      'soc_passes':
+          '@n passagens para frente — uma por pergunta, porque o slot de '
+          'resposta é uma posição de token e esta janela não tokeniza o prompt.',
       'wv_new_folder': 'Nova pasta',
       'wv_new_file': 'Novo arquivo',
       'ap_text_file': 'Arquivo de texto',

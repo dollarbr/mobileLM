@@ -582,7 +582,13 @@ void main() {
       // dois mapas, porque **o número é o que acusa** e ele estava 12 abaixo do
       // que o fonte produz. As duas metades do mapa continuam com as mesmas
       // chaves — o teste logo acima é que diz isso.
-      expect(en.length, 919);
+      //
+      // 919 → 932 são as **13** chaves da janela System One: o rótulo dos dois
+      // readouts, a frase de custo de cada um, o botão, o tipo de resposta e as
+      // três formas, a confiança, o nível e a contagem de passagens. Contadas nos
+      // DOIS mapas pelo `l10n_keys_test`, e conferidas uma a uma: nenhuma é
+      // texto já existente renomeado — são frases que não existiam.
+      expect(en.length, 932);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

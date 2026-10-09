@@ -51,6 +51,23 @@ enum SystemOneShape {
   /// kind of model does not have.
   decision,
 
+  /// The same kind of model, read from the **option-letter logits** instead of
+  /// from a generated letter — `/v1/systemone`.
+  ///
+  /// This is a **reader**, not a file shape: Tev1 and d1-3B are both `decision`
+  /// files, and both answer through this. What differs is the readout, so it
+  /// cannot be decided by anything about the file — it is chosen by the window,
+  /// and the window therefore has to say which it is doing.
+  ///
+  /// It exists because the two readouts are not interchangeable. The generated
+  /// letter gives a label and nothing else (`scores` all null, `why_no_scores`
+  /// explaining why). The logit readout gives `confidence` and `probabilities`,
+  /// because those are real numbers off the LM head — and the app's own rule 1
+  /// says a window that shows a bar chart of uncalibrated numbers is lying in
+  /// the shape of a graph. **The logit readout is the only one of the two whose
+  /// numbers are measurements.**
+  typedDecision,
+
   /// A `.tflite` classification head — the Laya act head is the one that
   /// exists.
   ///
@@ -100,8 +117,79 @@ SystemOneShape systemOneShapeOf({
 /// gets sent. A caller has to resolve [SystemOneShape.unknown] first.
 bool isClassAnswering(SystemOneShape shape) =>
     shape == SystemOneShape.decision ||
+    shape == SystemOneShape.typedDecision ||
     shape == SystemOneShape.tfliteHead ||
     shape == SystemOneShape.ggufHead;
+
+/// The two readouts a `decision` file has, and what each can say.
+///
+/// **This is a choice, not a detection.** Tev1 and d1-3B are the same kind of
+/// file and both answer through both readouts; nothing in the model picks one,
+/// so the window picks and has to say which it did. Both are worth having
+/// because they answer different questions — the generated letter is what the
+/// model *emits*, and the letter logits are what the model *thinks*, and the
+/// gap between them is the whole reason rule 1 of this window exists.
+enum SystemOneReadout {
+  /// Ask the model to emit a letter. `/v1/classify`.
+  ///
+  /// The answer is a label, and `scores` is all null. Measured on the A72: 5 of
+  /// 5 correct on Tev1, and a 60 s timeout on the sixth. Slow by construction —
+  /// a letter costs a generation.
+  letter('letter'),
+
+  /// Read the option-letter logits at the answer slot. `/v1/systemone`.
+  ///
+  /// The answer is a distribution, so `confidence` and `probabilities` are real.
+  /// One forward pass, no generation: measured 8,163 ms for Tev1 against a 60 s
+  /// ceiling on the generated path, and 3,061 ms for d1-3B.
+  logit('logit');
+
+  const SystemOneReadout(this.wire);
+
+  /// The spelling on the wire.
+  final String wire;
+
+  static SystemOneReadout parse(String? s) {
+    return SystemOneReadout.values
+        .firstWhere((r) => r.wire == s, orElse: () => SystemOneReadout.letter);
+  }
+}
+
+/// The translation keys for the two readouts, **written out**.
+///
+/// A key assembled at runtime is one no `l10n_keys_test` can see, and the repo's
+/// rule is that an unaudited key renders as its own identifier — which on a
+/// Portuguese screen is the exact failure the language selector came to close.
+/// The audit does read maps like these, value by value, in both languages.
+///
+/// **These are top-level and not members of the enum**, and that is what makes
+/// them auditable with the same parser the other two maps in the repo use. As
+/// enum members they closed with two spaces of indentation and the top-level one
+/// closed with none, and a regex that accepted both forms would be a second
+/// detector that diverges in silence — the way this repo keeps paying for.
+const Map<SystemOneReadout, String> kReadoutLabelKey = {
+  SystemOneReadout.letter: 'soc_readout_letter',
+  SystemOneReadout.logit: 'soc_readout_logit',
+};
+
+/// The sentence under the chips, same reason as [kReadoutLabelKey].
+const Map<SystemOneReadout, String> kReadoutNoteKey = {
+  SystemOneReadout.letter: 'soc_readout_note_letter',
+  SystemOneReadout.logit: 'soc_readout_note_logit',
+};
+
+/// The translation keys for the three typed answer types, written out.
+///
+/// Same reason as [kReadoutLabelKey], and with a sharper edge: a missing
+/// `soc_answer_type_score` would not render as an ugly key — the endpoint's own
+/// `type` is the value being labelled, so a blank next to `score: 0` reads as
+/// "the app does not know what this is", which is worse than a visible
+/// identifier.
+const Map<String, String> kAnswerTypeKey = {
+  'choice': 'soc_answer_type_choice',
+  'score': 'soc_answer_type_score',
+  'noul': 'soc_answer_type_noul',
+};
 
 /// One option in a decision, and the label a class index carries.
 class SystemOneOption {
@@ -722,10 +810,73 @@ class SystemOneResult {
     this.failure,
     this.match,
     this.stability,
+    this.readout,
+    this.answerType,
+    this.confidence,
+    this.probabilities = const {},
+    this.legend = const {},
+    this.score,
+    this.noul,
+    this.whyNoConfidence,
+    this.passes,
   });
 
   final String model;
   final SystemOneShape? shape;
+
+  /// Which readout produced this, when the run was a decision.
+  ///
+  /// Null for a `.tflite` head and for the pre-existing `/v1/classify` payloads,
+  /// because those have no second readout to have come from. It is here so the
+  /// window can say **how** a number was obtained — and rule 1 of this window is
+  /// that a number without its provenance is a claim without a source.
+  final SystemOneReadout? readout;
+
+  /// Which of the three typed shapes answered, when [readout] is [logit].
+  ///
+  /// `choice`, `score` or `noul`, from the endpoint's own `type` field — not
+  /// inferred, because the three put their answer under three different keys and
+  /// a window that guessed would have to show all three.
+  final String? answerType;
+
+  /// TypeSafe's confidence, for `choice` and `score`.
+  ///
+  /// **`(n·p_max − 1)/(n − 1)`, not the top probability.** With two options it
+  /// stretches `[0.5, 1]` onto `[0, 1]`, so a coin flip reads as zero and a 0.9
+  /// top reads as 0.8 — which is the right shape for a decision, because two
+  /// options really is half a decision. Measured on the A72: 0,5458 for a
+  /// `choice` whose top probability was 0,6972.
+  final double? confidence;
+
+  /// Calibrated probability per option, keyed by the option's own text.
+  ///
+  /// Keyed by text and not by index because the text is what the caller wrote
+  /// and what a person reads. Empty means the run had no distribution, and the
+  /// window then says so instead of inventing bars.
+  final Map<String, double> probabilities;
+
+  /// Level text by index, for `score`.
+  final Map<int, String> legend;
+
+  /// The winning level's index, for `score`.
+  final double? score;
+
+  /// The probability of true, for `noul`.
+  final double? noul;
+
+  /// Why [confidence] is null, when it is.
+  ///
+  /// The endpoint's own sentence. A `noul` has a probability of true and no
+  /// confidence **by contract**, and a window that showed an empty field where
+  /// the other two shapes show a number would look broken rather than correct.
+  final String? whyNoConfidence;
+
+  /// How many forward passes the run took.
+  ///
+  /// One per question, and that is **not** an implementation detail: the caller
+  /// asked for N questions and this is what the answer cost. Two questions
+  /// measured 16,141 ms against 8,163 for one.
+  final int? passes;
 
   /// The caller's label for the answer. From the model's own letter on the
   /// decision path, from the caller's own list by index on the logits path.
@@ -899,6 +1050,166 @@ class SystemOneResult {
       stability: _stability(json['stability']),
       notes: _notes(json),
     );
+  }
+
+  /// Read `/v1/systemone`'s payload.
+  ///
+  /// A **separate reader**, not a branch of [fromClassify], because the two
+  /// payloads do not overlap: this one has `answers` indexed by question id and
+  /// the other has `label` at the top level. A window that tried to read both
+  /// through one function would need a flag saying which wire it is looking at,
+  /// and a flag that says "which wire" is a bug waiting for the wire to change.
+  ///
+  /// **The refusal is read before the answers, and it is a result.** A typed
+  /// decision fails with a `400` carrying the reason — eleven options, a letter
+  /// that is two tokens in this vocabulary — and those are the sentences a person
+  /// needs. Measured on the A72: the ceiling is ten, and the message says ten.
+  SystemOneResult fromSystemOne(
+    Map<String, dynamic> json, {
+    int status = 200,
+  }) {
+    final model = _str(json['model']) ?? '';
+    final error = _str(json['error']);
+    if (error != null || status != 200) {
+      return SystemOneResult(
+        model: model,
+        shape: SystemOneShape.typedDecision,
+        readout: SystemOneReadout.logit,
+        failure: error ?? 'HTTP $status',
+        notes: _notes(json),
+      );
+    }
+
+    final answers = json['answers'];
+    final dropped = _str(json['why_answers_dropped']);
+    final usage = json['usage'];
+    final passes = usage is Map ? usage['passes'] : null;
+
+    // One question is the normal case and the only one whose answer can be shown
+    // in the panels this window already has. Several are answered — measured two
+    // in one call — and all of them are counted, but the panels are for one
+    // question and pretending otherwise would mean a bar chart per question with
+    // no way to say which is which. The count is in [notes] instead.
+    Map<String, dynamic>? first;
+    String? firstId;
+    if (answers is Map && answers.isNotEmpty) {
+      firstId = '${answers.keys.first}';
+      final v = answers[firstId];
+      first = v is Map<String, dynamic> ? v : null;
+    }
+    if (first == null) {
+      return SystemOneResult(
+        model: model,
+        shape: SystemOneShape.typedDecision,
+        readout: SystemOneReadout.logit,
+        passes: passes is int ? passes : null,
+        failure: _str(json['error']) ??
+            'The endpoint answered without any decision. Its own "answers" was '
+                '${answers == null ? 'missing' : 'empty'}.',
+        notes: _notes(json),
+      );
+    }
+
+    final type = _str(first['type']);
+    final probs = <String, double>{};
+    final rawProbs = first['probabilities'];
+    if (rawProbs is Map) {
+      for (final e in rawProbs.entries) {
+        final v = e.value;
+        if (v is num) probs['${e.key}'] = v.toDouble();
+      }
+    }
+    final legendText = <int, String>{};
+    final rawLegend = first['legend'];
+    if (rawLegend is Map) {
+      for (final e in rawLegend.entries) {
+        final idx = int.tryParse('${e.key}');
+        if (idx != null) legendText[idx] = '${e.value}';
+      }
+    }
+    final score = first['score'];
+    final noul = first['noul'];
+    final confidence = first['confidence'];
+
+    return SystemOneResult(
+      model: model,
+      shape: SystemOneShape.typedDecision,
+      readout: SystemOneReadout.logit,
+      answerType: type,
+      // `label` is the window's field for "what the model said", and the three
+      // typed shapes put it under three keys. `letter` stays **null** here on
+      // purpose: nothing was generated, so there is no letter, and printing the
+      // option's letter would be the app inventing one.
+      label: type == 'score' ? (score is num ? '${score.toDouble()}' : null) : _str(first['choice']),
+      confidence: confidence is num ? confidence.toDouble() : null,
+      probabilities: probs,
+      legend: legendText,
+      score: score is num ? score.toDouble() : null,
+      noul: noul is num ? noul.toDouble() : null,
+      whyNoConfidence: _str(first['why_no_confidence']),
+      passes: passes is int ? passes : null,
+      notes: [
+        if (firstId != null) 'question: $firstId',
+        if (answers is Map && answers.length > 1)
+          '${answers.length} questions answered',
+        if (dropped != null) dropped,
+        ..._notes(json),
+      ],
+    );
+  }
+
+  /// The JSON body for `POST /v1/systemone`.
+  ///
+  /// [questionId] is the key the answer comes back under, and it is also the
+  /// question when [instructions] is absent — the contract's own rule, and a
+  /// better one than an empty prompt, which would make every id-less question the
+  /// same question.
+  ///
+  /// **`criteria`, not `options`, for a `choice`.** The contract uses a map for a
+  /// `choice` and an index-zero list for a `score`, and the endpoint renders
+  /// `key: description` for a choice — which is what the model was calibrated
+  /// on. Sending this window's `options` list instead would produce a valid
+  /// request with a different prompt, and the calibration would describe numbers
+  /// the model never saw.
+  ///
+  /// [temperature] is **omitted** by default. The endpoint applies the per-type
+  /// temperature the model files, and a window that sent `1.0` would override a
+  /// calibration it cannot see.
+  Map<String, dynamic> systemOneBody({
+    required String state,
+    required String questionId,
+    required String questionType,
+    required SystemOneOptions options,
+    String? instructions,
+    double? temperature,
+  }) {
+    final labels = [for (final o in options.items) o.label];
+    // `noul` takes neither: it is two by definition, and the endpoint renders the
+    // statements itself. Sending criteria for it would be a request the model
+    // reads as a `choice` with two options.
+    // A `choice` is a MAP keyed by letter, so the letter is the value and the label
+    // the description — and the endpoint renders `key: description`, which is
+    // what the model was calibrated on. A `score` is a LIST, because the level
+    // index **is** the value and a map would lose the numbering the response
+    // answers with.
+    final criteria = questionType == 'noul'
+        ? null
+        : (questionType == 'choice'
+            ? {for (var i = 0; i < options.items.length; i++) options.items[i].letter: labels[i]}
+            : labels);
+
+    return {
+      'state': state,
+      'questions': {
+        questionId: {
+          'type': questionType,
+          if (instructions != null && instructions.trim().isNotEmpty)
+            'instructions': instructions.trim(),
+          if (criteria != null) 'criteria': criteria,
+        },
+      },
+      if (temperature != null) 'temperature': temperature,
+    };
   }
 
   /// The option order of one probe, from **either** shape the wire can carry.

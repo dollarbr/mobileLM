@@ -176,6 +176,14 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// permutations rotation never does, and 1 is the honest default.
   int _variants = 1;
 
+  /// Which readout to drive, and **not a fact about the file**.
+  ///
+  /// The default is [SystemOneReadout.letter] because that is the path this
+  /// window already spoke and the one a `.tflite` card never reaches. Someone
+  /// asking "is this confidence real?" is asking for the logit readout, and the
+  /// chip is how they get there.
+  SystemOneReadout _readout = SystemOneReadout.letter;
+
   FeatureVector? _parsedVector;
   String? _vectorProblem;
 
@@ -491,18 +499,48 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
       _result = null;
     });
     try {
-      final json = await _request(
-        'POST',
-        '/v1/classify',
-        body: const SystemOneResult().decisionBody(
-          state: _state.text.trim(),
-          question: _question.text,
-          options: options,
-          instruction: _instruction.text,
-          variants: _variants,
-        ),
-      );
-      _show(json, SystemOneShape.decision);
+      if (_readout == SystemOneReadout.letter) {
+        final json = await _request(
+          'POST',
+          '/v1/classify',
+          body: const SystemOneResult().decisionBody(
+            state: _state.text.trim(),
+            question: _question.text,
+            options: options,
+            instruction: _instruction.text,
+            variants: _variants,
+          ),
+        );
+        _show(json, SystemOneShape.decision);
+      } else {
+        final json = await _request(
+          'POST',
+          '/v1/systemone',
+          // **The timeout is 90 s, and the logit readout does not need it.**
+          // One pass measured 8,163 ms on Tev1 and 3,061 ms on d1-3B; the
+          // request that would hang is a generation, and the other readout is
+          // the one that generates. Leaving the shared default is deliberate —
+          // a second timeout number to tune is a second number nobody checks.
+          body: const SystemOneResult().systemOneBody(
+            state: _state.text.trim(),
+            // The id is the question when there is no instruction of its own —
+            // the contract's rule — and a stable id here means a stable key in
+            // the answer, which is what the panel reads.
+            questionId: 'decision',
+            questionType: 'choice',
+            options: options,
+            instructions: _instruction.text.isEmpty ? null : _instruction.text,
+          ),
+        );
+        if (!mounted) return;
+        final status = json['__status'];
+        setState(() {
+          _result = const SystemOneResult().fromSystemOne(
+            json,
+            status: status is int ? status : 200,
+          );
+        });
+      }
     } on Object catch (e) {
       if (mounted) setState(() => _error = 'classify: $e');
     } finally {
@@ -846,9 +884,182 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         note:
             'soc_default_ok'.tr,
       ),
-      _variantsCard(card, field),
-      _actions(() => _runDecision(), 'soc_ask_for_the_letter'.tr),
+      _readoutCard(card, field),
+      if (_readout == SystemOneReadout.letter) _variantsCard(card, field),
+      _actions(
+        () => _runDecision(),
+        _readout == SystemOneReadout.letter
+            ? 'soc_ask_for_the_letter'.tr
+            : 'soc_ask_for_the_distribution'.tr,
+      ),
     ];
+  }
+
+  /// Which readout, and what each one costs.
+  ///
+  /// **This is a choice, not a detection**, and the chip says so. Tev1 and d1-3B
+  /// are the same kind of file and both answer through both readouts; nothing in
+  /// the model picks one, so the window picks and has to say which it did.
+  ///
+  /// The chip is also where the cost is stated, because the two differ by more
+  /// than an order of magnitude on this device: the generated letter measured
+  /// **2,0–2,2 s** when it answers and **50–51 s** when it does not (two of five
+  /// measured), while the logit readout measured **8,163 ms** for Tev1 and
+  /// **3,061 ms** for d1-3B. The letter path is not always slower — it is
+  /// *unpredictably* slow, and a window that hid that would look like a hang.
+  Widget _readoutCard(Color card, Color field) {
+    return _card(
+      card,
+      field,
+      'soc_readout'.tr,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final ro in SystemOneReadout.values)
+                ChoiceChip(
+                  label: Text(kReadoutLabelKey[ro]!.tr),
+                  selected: _readout == ro,
+                  onSelected:
+                      _busy ? null : (_) => setState(() => _readout = ro),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            kReadoutNoteKey[_readout]!.tr,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The `confidence`, the calibrated distribution, and what each shape puts
+  /// where.
+  ///
+  /// **The three numbers on one card are three different things and the labels
+  /// say which.** This is the whole reason this readout exists: the window's
+  /// rule 1 says a bar chart of uncalibrated logits is a lie in the shape of a
+  /// graph, and this block is the one place in the app where the bars are
+  /// *calibrated* — the endpoint applied the per-type temperature the model file
+  /// ships, and `confidence` is TypeSafe's `(n·p_max − 1)/(n − 1)` rather than
+  /// the top probability. Measured on the A72: a `choice` whose top was 0,6972
+  /// reported `confidence: 0,5458`, and those are not the same measurement.
+  ///
+  /// **A `noul` has no confidence, and it is shown as absent with the endpoint's
+  /// own reason**, because a boolean's probability of true *is* the answer and
+  /// restating it as a confidence would be a second name for one number. The
+  /// measured case makes the shape of the block obvious: 0,5188 of P(true) and
+  /// nothing next to it, with the sentence saying why.
+  Widget _distributionBlock(SystemOneResult r, Color field) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (r.answerType != null)
+          _note('soc_answer_type'.tr, kAnswerTypeKey[r.answerType]!.tr),
+        if (r.score != null && r.legend.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            preencher('soc_level_label',
+              {'n': r.score!.toStringAsFixed(0),
+               't': r.legend[r.score!.toInt()] ?? '?'}),
+            style: GoogleFonts.inter(fontSize: 13),
+          ),
+        ],
+        if (r.confidence != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            preencher('soc_confidence_value', {'c': r.confidence!.toStringAsFixed(4)}),
+            style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600),
+          ),
+        ] else if (r.whyNoConfidence != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline, size: 14, color: AppColors.info),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  preencher('soc_no_confidence',
+                      {'w': r.whyNoConfidence ?? ''}),
+                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.info),
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (r.probabilities.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            color: field,
+            padding: const EdgeInsets.all(10),
+            // **The bars are here because these numbers are calibrated, and this
+            // is the only place in the app where that is true.** Raw logits above
+            // stay in a monospace block for exactly the opposite reason.
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final e in _sortedProbabilities(r))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${e.value.toStringAsFixed(4)}  ${e.key}',
+                          style: GoogleFonts.jetBrainsMono(
+                              fontSize: 11, color: AppColors.textPrimary),
+                        ),
+                        const SizedBox(height: 3),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: LinearProgressIndicator(
+                            value: e.value.clamp(0.0, 1.0),
+                            minHeight: 4,
+                            backgroundColor: AppColors.textMuted,
+                            valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        if (r.passes != null && r.passes! > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              preencher('soc_passes', {'n': '${r.passes}'}),
+              style:
+                  GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// The probabilities, biggest first, and **ties keep the question's order**.
+  ///
+  /// The stable sort is the whole reason this is not `sort((a, b) => b.compareTo(a))`:
+  /// two options at the same probability are not a ranking, and an unstable sort
+  /// would present them in whatever order the sort happened to produce — which
+  /// reads as "the model preferred the second one" for a tie it did not have an
+  /// opinion about. `Map` iteration order is the question's option order, so a
+  /// stable sort over it breaks ties by the letter the caller assigned.
+  List<MapEntry<String, double>> _sortedProbabilities(SystemOneResult r) {
+    final entries = r.probabilities.entries.toList();
+    entries.sort((a, b) => b.value.compareTo(a.value));
+    return entries;
   }
 
   /// The permutation-count control, and the sentence that costs minutes.
@@ -1501,6 +1712,10 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             if (r.stability != null) ...[
               const SizedBox(height: 8),
               _stabilityBlock(r.stability!),
+            ],
+            if (r.readout == SystemOneReadout.logit) ...[
+              const SizedBox(height: 10),
+              _distributionBlock(r, field),
             ],
             if (r.logits != null) ...[
               const SizedBox(height: 10),
