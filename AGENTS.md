@@ -3869,17 +3869,48 @@ O mecanismo do Laya é **marcadores de opção**: *"every option is scored at it
 `[MASK]` token, then softmaxed over that question's options"*. Isso exige
 **logits em posições escolhidas** de um encoder bidirecional.
 
-O caminho de encoder do llama.cpp — que o app usa e mediu — emite **embeddings** e
-a saída de uma cabeça `cls.output`. A `conversion/bert.py` registra
-`ModernBertForMaskedLM`, mas um GGUF de masked-LM continua sendo lido pelo mesmo
-`cls.output`: o llama.cpp **não lê logits por posição** num encoder. Não há
-`logprobs` em lugar nenhum do binding Dart deste app.
+⚠️ **Eu escrevi que "o llama.cpp não lê logits por posição num encoder" e está
+ERRADO.** Lendo os 55 KVs do `d1-omni-600M-Q8_0.gguf` inteiro, o template que o
+`d1-omni` traz é:
 
-**Então: registrar `ModernBertForMaskedLM` no conversor não destrava o Laya.** O
-que destravaria é ler posição por posição, que é o que a cabeça `clef` faz de um
-jeito diferente — roteando evidência do estado para cada pergunta em vez de pôr um
-`[MASK]` por opção. **O Laya e o Clef são a mesma classe com dois mecanismos
-diferentes, e só um dos dois tem base no vendor deste app.**
+```
+<|startoftext|><|reserved_7|>STATE<|reserved_8|>INSTRUCTIONS
+  <|reserved_9|><|mask|><|reserved_10|>OPÇÃO_0
+  <|reserved_9|><|mask|><|reserved_10|>OPÇÃO_1 … <|reserved_11|>
+```
+
+**Um `<|mask|>` por opção** — exatamente o mecanismo de marcador do Laya. E o
+llama.cpp **lê posição por posição**, por dois caminhos que eu não tinha visto:
+
+1. `src/llama-context.cpp:1598-1606`, `case LLAMA_POOLING_TYPE_NONE:` copia
+   `n_tokens * n_embd_out` floats — o `n_embd_out = 3` que eu medi **é** o
+   `n_embd_out` que esse bloco usa;
+2. `llama_model_lfm2::graph_decision::build_decision_head` (`lfm2.cpp:549-552`)
+   faz `ggml_get_rows(ctx0, cur, inp_out_ids)` **na última camada**, ou seja as
+   posições dos `<|mask|>` viram as linhas pontuadas.
+
+**E `inp_out_ids` é `batch.logits[i]`** — que o JNI **já** liga em todas as
+posições na função de encoder (`jni_wrapper.cpp:2710`, `batch.logits[i] = 1`).
+
+**Então o que separa o `d1-omni` do Laya não é o mecanismo: é o mesmo, e o vendor
+já tem.** O que separa é a **política do app**, e está escrita em
+`jni_wrapper.cpp:1545`:
+
+```cpp
+if (is_encoder) {
+    ctx_params.embeddings   = true;
+    ctx_params.pooling_type = pooling;
+```
+
+E `infer_pooling` **recusa `NONE` de propósito** — o comentário em `:696-699` diz
+que responder `true` ali *"setaria `cparams.embeddings` sem pooling nenhum e
+passaria a `build_pooling` um modelo que ainda gera"*.
+
+O `d1-omni` **não declara `pooling_type`**, logo o pooling é `NONE`, logo
+`is_encoder` é falso, logo `embd.data` **nunca é alocado** — e o bloco de
+`:1598` tem a condição `if (embd.data && t_embd)`. **Os scores de decisão são
+calculados e jogados fora.** É essa a lacuna, e ela é **uma condição**, não um
+módulo.
 
 ### ⚠️ O card prova, com número, por que este app trocou porcentagem por estabilidade
 
@@ -4030,3 +4061,123 @@ catálogo do `d1-3B` promete estabilidade por permutação, não porcentagem.** 
 continua correto — permutação pega o modelo que muda de resposta com a ordem das
 opções, e temperatura conserta o número que sai, não a pergunta. **São dois
 problemas diferentes e nenhum dos dois dispensa o outro.**
+
+---
+
+## ⚠️ O `clef` NÃO é o módulo a configurar — e o buraco é UMA CONDIÇÃO
+
+Perguntado se dava para implementar os decision models "com o módulo clef", e a
+resposta é **não**, por três fatos medidos. Importa porque construir o caminho do
+`clef` aqui seria construir código sem modelo atrás dele.
+
+### 1. `clef` é a arch da Cloudflare, e ela não existe neste app
+
+`src/models/clef.cpp` herda de `llama_model_qwen35`, que bate com `Clef-Flash`
+post-trained de `Qwen3.5-9B`. E `conversion/` tem **220 registros** de
+`ModelBase.register` — **nenhum** `Clef`. **Um `Cloudflare/clef` não vira GGUF
+neste vendor**, então a única forma de tê-lo seria um GGUF vindo de fora, e
+mesmo assim: 27B e 9B contra o teto de **1,19 GB** do A72 (7,5× e 2,6× acima).
+
+### 2. O `d1-omni` não usa o mecanismo do `clef`
+
+`llama_batch_ext_set_decision_order` existe, é exportado, e é **a ordem que o
+`clef` lê** (`clef.cpp`: *"the output is one score per token, see
+llama_batch_ext_set_decision_order()"*). **`lfm2.cpp` não menciona
+`decision_order` nenhuma vez** — ele tem `graph_decision`, próprio, que avalia os
+três tipos numa passagem e usa `inp_out_ids` para escolher as posições.
+
+| | `clef` (Cloudflare) | `lfm2` (Liquid AI) |
+|---|---|---|
+| como marca perguntas | `llama_batch_ext_set_decision_order` por token | **nada** — o tipo é um eixo de `type_embd` |
+| saídas | **1** (`n_embd_out_impl = 1`) | **3** (`N_DECISION_TYPES`) |
+|õmecanismo | cabeça `clef` sobre `qwen35` | `graph_decision` sobre LFM2 |
+| conversor | **ausente** | `Lfm2Model`, presente |
+| cabe no A72 | não (2,6×–7,5×) | **sim, 388,3 MB** |
+
+**Implementar "o módulo clef" seria implementar o caminho do modelo que não
+carrega, para o modelo que não usa esse caminho.**
+
+### 3. O prompt não precisa ser inventado — está no arquivo
+
+Lendo os **55 KVs** do `d1-omni-600M-Q8_0.gguf` no aparelho:
+
+```
+tokenizer.chat_templates             = <array len=1>
+tokenizer.chat_template.systemone    = {% set ns = namespace(criteria=false) %}
+  …<|startoftext|><|reserved_7|>…{{ mark_state }}…{{ sep }}<|reserved_8|>…
+  …<|reserved_9|><|mask|>…{{ sep }}<|reserved_10|>…{% endfor %}…<|reserved_11|>
+
+lfm2.block_count                     = 18
+lfm2.decision.block_count            = 2
+tokenizer.ggml.add_bos_token         = 0
+tokenizer.ggml.bos_token_id          = 1
+tokenizer.ggml.eos_token_id          = 7
+```
+
+Os cinco tokens reservados são **papéis** e não texto:
+
+| token | papel |
+|---|---|
+| `<\|reserved_7\|>` | abre o **estado** |
+| `<\|reserved_8\|>` | abre a **pergunta** |
+| `<\|reserved_9\|><\|mask\|>` | **um por opção** — é isto que é pontuado |
+| `<\|reserved_10\|>` | fecha a opção |
+| `<\|reserved_11\|>` | fecha o registro |
+
+E o template decide o texto da opção por tipo: `choice` usa `o.key` +
+`": " + description`; `score` usa `level {{o.key}}: {{o.description}}`; `noul` usa
+`yes, the statement holds` / `no, the statement does not hold` quando não há
+`description`. **`criteria` do contrato da Cloudflare é lido por um Jinja que já
+está no arquivo** — não há o que adivinhar.
+
+### O buraco real: uma condição no JNI, e ela está escrita
+
+`jni_wrapper.cpp:1545` liga as embeddings **só** quando o modelo é encoder:
+
+```cpp
+if (is_encoder) {
+    ctx_params.embeddings   = true;
+    ctx_params.pooling_type = pooling;
+```
+
+E `infer_pooling` recusa `NONE` de propósito (`:696-699`) — responder `true` ali
+passaria a `build_pooling` um modelo que ainda gera. O `d1-omni` **não declara
+`pooling_type`**, logo `NONE`, logo `is_encoder` falso, logo `embd.data` nunca é
+alocado. E o bloco que copia os scores é:
+
+```cpp
+// llama-context.cpp:1596
+if (embd.data && t_embd) { … case LLAMA_POOLING_TYPE_NONE: … }
+```
+
+**Os scores de decisão são calculados e descartados.** Não falta kernel, não
+falta símbolo, não falta template: falta o app autorizar `embeddings` para um
+modelo que é **decision** em vez de **encoder** — as duas coisas confundidas numa
+flag só.
+
+### O que a implementação seria, em ordem
+
+1. **`infer_pooling` ganha um terceiro desfecho**, `decision`, decidido por
+   `n_embd_out > 1` **e** `n_embd_out != n_embd_inp` — mais `block_count > 0` nos
+   `decision.block_count`. Isso é ler **fatos do arquivo**, como o resto do repo
+   já faz, e não um nome.
+2. **Uma função de decode sem geração**: monta o prompt pelo
+   `tokenizer.chat_template.systemone`, põe `batch.logits[i] = 1` **só** nos
+   índices dos `<\|mask\|>` (positions 2–11 do `n_embd_out` confirmam que são
+   três floats por posição, um por tipo), decodifica **uma** vez, e lê
+   `llama_get_embeddings_ith(ctx, i)` para cada `\|mask\|`.
+3. **O softmax com a temperatura da faixa certa**, das dez chaves já medidas.
+4. **A rota `/v1/systemone`**, com `answers` indexado, `confidence` e
+   `probabilities`.
+
+E o critério derightness é o que **não** pode ser o do `clef`: **`variants` conta
+permutas de `choice`**, que é o defeito que o card do Laya mediu em *0 of 290*.
+O que a calibração dos autores mede é outra coisa — ECE do softmax, que é
+confiança **mal** distribuída, não resposta **instável**. São dois defeitos
+diferentes, e um modelo pode ter um sem o outro.
+
+**⚠️ E o honesto sobre o custo:** o passo 2 muda política nativa, o que só o
+aparelho diz. `tool/jni-syntax.sh` prova que compila; **não** prova que os três
+floats são a resposta, e um build de CI são 22 minutos. O caso de prova é o
+próprio `n_embd_out = 3` que eu medi — se a saída vier com outra largura, a
+primeira coisa a conferir é o que `n_out_ids` o llama.cpp contou, não o prompt.
