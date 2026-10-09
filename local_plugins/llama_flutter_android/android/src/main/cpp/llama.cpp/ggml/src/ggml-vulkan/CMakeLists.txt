@@ -11,9 +11,15 @@ find_package(Vulkan COMPONENTS glslc REQUIRED)
 if (DEFINED ENV{VULKAN_SDK})
     list(APPEND CMAKE_PREFIX_PATH "$ENV{VULKAN_SDK}")
 endif()
+# A versao upstream tornou isto REQUIRED em todo host. No Android o SDK Vulkan
+# nao traz os headers SPIRV, e o build do plugin ja avisava e seguia
+# (`if (NOT ANDROID)` no vendor antigo). Tornar obrigatorio quebrou
+# `assembleDebug` inteiro — nao o backend, o configure — e o A72 medido usa
+# Vulkan. Este e o unico lugar do re-sync que diverge do upstream, e a diferenca
+# e esta: no Android volta a ser um aviso.
 if (NOT ANDROID)
     find_package(SPIRV-Headers CONFIG REQUIRED)
-elseif(NOT DEFINED Vulkan_INCLUDE_DIR)
+elseif (NOT DEFINED Vulkan_INCLUDE_DIR)
     message(WARNING "SPIRV-Headers not found; GPU backend may miss headers on Android")
 endif()
 

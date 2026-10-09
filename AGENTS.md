@@ -3407,3 +3407,83 @@ diz nada.
 **Os dois grupos e os cards só abrem por toque**, e o toque do A72 responde de forma
 irregular — o `Encoders` abriu no primeiro toque, o `GGUF` só no quarto. Toda
 medição de tela aqui é por `adb shell input`, nunca por dedo.
+
+## `d1-omni-600M` CARREGA com o vendor re-sincronizado — e não serve como classificador
+
+**O que era verdade continua: o re-sync foi necessário e foi o que resolveu.** Sem
+ele, `check_tensor_dims: 'blk.16.ffn_gate.weight' not found`. Com ele, o A72
+carrega `d1-omni-600M-Q8_0.gguf` e `/v1/models` responde 200 com ele — medido, com
+o build no aparelho.
+
+**O re-sync** foi `src/`, `include/`, `ggml/` e `common/` do upstream
+`a657f7e98` (08/10/2026, *"add LiquidAI/d1-omni-600M decision model"*), **402
+arquivos**. Preservados 6 que o upstream removeu (`iqp.cpp/h`, `fa.metal`,
+`unary_softplus.cpp`, `fattn-buffers.*` — backends que este projeto não compila).
+O `libllama.so` novo tem **30** strings `decision`/`systemone`/`lfm2-d1`; a antiga
+tinha **0**.
+
+**Dois ajustes foram obrigatórios, e ambos divergem do upstream:**
+
+1. `find_package(SPIRV-Headers CONFIG REQUIRED)` voltou a ser condicional no
+   Android. O upstream tornou `REQUIRED` em todo host, e sem os headers o
+   `configure` morre antes de compilar qualquer coisa.
+2. **`minSdk` do plugin: 26 → 28.** O `ggml-vulkan` novo usa
+   `vkGetPhysicalDeviceFeatures2`, e a stub do NDK só exporta isso a partir da
+   **API 28**; na 26 o link morre com `undefined symbol`, com todo o resto
+   compilando. **O comentário antigo dizia *"Android 8.0 (for SharedMemory
+   support)"*, e essa razão não existe no plugin**: `SharedMemory`, `ashmem` e
+   `memfd_create` não aparecem em nenhum arquivo do JNI — e `memfd_create` é API
+   30. 28 é o que `android/app/build.gradle.kts` já declarava, então isto **alinha
+   o plugin ao app**, não baixa o teto do app.
+
+### E o `d1-omni` carrega mas **não classifica** — e isso é do modelo
+
+`/v1/classify` responde **422** com
+
+```
+raw: '<|pad|><|pad|><|pad|><|pad|><|pad|><|pad|><|pad|><|pad|>'
+```
+
+A geração simples responde `<|reserved_4|><|reserved_25|>` em 16 s: são **tokens
+de interface**, não prosa nem letra.
+
+**Medido no desktop contra o mesmo fonte, com o `systemone` montado à mão a partir
+do `tokenizer.chat_template.systemone` do próprio GGUF e os special tokens
+passados como id** (`<|startoftext|>`=1, `<|reserved_7|>`=17 … `<|reserved_11|>`=21):
+
+| perguntas | opções | resultado |
+|---|---|---|
+| 3, estado muda, ordem normal | 3 | topo = **índice 2 sempre** |
+| 3, estado muda, ordem invertida | 3 | topo = **índice 2 ainda** |
+| 2 opções, 6 combinações | 2 | acerta **2 de 6**, e o topo **não segue o estado** |
+
+**Inverter a ordem das opções não muda a resposta**, e o estado não muda o
+resultado. **Não é viés de posição, e não é o prompt:** é que o vetor de saída
+**tem sempre 3 valores, qualquer que seja o número de opções** — `n_embd_out = 3`,
+e 2, 3 ou 4 opções dão 3 valores cada vez. O estado **muda os valores**
+(`billing` → `0,4242/0,2622/0,4972`; texto sem relação → todos negativos), então o
+modelo está lendo o prompt; ele só não está produzindo uma distribuição **sobre as
+opções**.
+
+**Três valores, e três formas de decisão.** A calibração do próprio GGUF nomeia
+exatamente três: `choice`, `score` e `noul` (`.2`, `.3_5`, `.6_10`, `.11`, com
+temperatura por faixa). O `d1-omni` é um **classificador de forma**, não de
+opção — e `n_embd_out = 3` é a assinatura disso.
+
+**Então a integração está errada, e o erro é do app, não do modelo:** o
+`d1-omni` **não** é um classificador de opções, e o `/v1/classify` com `choices`
+é o contrato errado para ele. Ele precisaria de um endpoint que mande os **três
+tipos de resposta** e case o `raw` contra os tokens da interface — e o `d1-3B`, que
+**é** um LFM2 generativo e emite uma letra, continua sendo o modelo certo para
+`/v1/classify`.
+
+**`capabilities` reporta `classify: false`, e está certo** — mas por um motivo que
+ninguém esperava. `isClassifier` exige `pooling == 'rank'`, e este arquivo não
+declara `pooling_type`; o caminho **generativo** é que pega o modelo, e é por ele
+que ele carrega e responde tokens de interface.
+
+**Uma coisa que eu errei e que muda o quadro:** escrevi que o `d1-omni` estava
+"em LFM2 puro" e seria uma alternativa pequena ao `d1-3B`. **Não é** — ele tem 2
+blocos de decisão (`lfm2.decision.block_count = 2`), o `attn_qkv` fundido nas duas
+camadas finais, e uma cabeça de 3 saídas. São três arquiteturas diferentes na
+mesma família, e as três estão medidas aqui.
