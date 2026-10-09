@@ -2612,10 +2612,44 @@ inglês" mais acima, que tem as quatro decisões que não são óbvias.
 
 ## A janela de testes dos modelos "System One"
 
-O nome vem dos quatro que deram nome a ele — Jev, Laya, Tev1, Bespoke-Nimble — e
-a classe é **aberta**. É "um modelo que responde a uma pergunta estruturada com
-uma classe", e o próximo publicado entra nela sem ninguém editar uma lista.
-**Nada no código olha para esses quatro nomes**; a forma é decidida pelo que o
+**⚠️ A frase de onde vem o nome estava errada, e a fonte é do dono — TypeSafe AI.**
+
+Eu escrevi *"o nome vem dos quatro que deram nome a ele — Jev, Laya, Tev1,
+Bespoke-Nimble"* e tratei "Jev" como um quarto modelo qualquer. **Jev é o modelo
+System One da TypeSafe AI** (<https://docs.typesafe.ai/introduction>), e é o
+**primeiro** System One do mundo: *"Jev is TypeSafe's flagship model and the first
+System One model."*
+
+E **"System One" é o nome de uma classe da TypeSafe, não um rótulo deste app.**
+O nome vem de **Kahneman** — System 1 é o pensamento rápido e intuitivo, System 2
+o lento e deliberado —, via <https://docs.typesafe.ai/concepts/system-one>. Os
+primitivos da TypeSafe são **Choice, Score e Noul**, e o endpoint deles é
+**`POST /v1/systemone`**.
+
+**O que isso muda no app, e é grande:**
+
+| o que a classe da TypeSafe tem | o que este app tem |
+|---|---|
+| `POST /v1/systemone` | **nada** — zero ocorrências em `lib/` |
+| Choice / Score / Noul | só `choices` (letra→rótulo) |
+| `confidence` por pergunta | `relevance_score: null`, com o motivo |
+| `probabilities` por opção | `scores` mapeado para null |
+| **várias perguntas numa passagem** | **uma** pergunta por request |
+
+**A janela deste app é uma interface para o `/v1/classify` com três shapes**, e o
+`/v1/classify` é um endpoint **OpenAI de rótulos** — a família é a mesma, o
+contrato não é. `DecisionMatch` e a estabilidade por permutação continuam válidos
+para o shape `decision` (uma letra gerada), e `relevance_score: null` continua
+sendo a resposta certa para um LM que emite uma letra. O que **não** existe aqui
+é o que a TypeSafe chama de System One: os três tipos de pergunta, o `confidence`,
+a leitura por distribuição e o batch de perguntas.
+
+**Não é o caso de trocar o nome:** o app conversa com `/v1/classify` e o
+formulário de três shapes é o que ele sabe descrever. O que é caso é **saber de
+onde o nome vem** — porque "System One" nomeando uma coisa da TypeSafe e não
+deste app muda o que se pode prometer sobre a 0.7.0, e um guia que inventa a
+etimologia de um termo de terceiro é pior do que um guia calado.
+**Nada no código olha para nome nenhum** — nem `Tev1`, nem `Jev`, nem `Laya`; a forma é decidida pelo que o
 arquivo é, como o `/v1/classify` já faz, e `test/system_one_test.dart` tem um
 teste que afirma isso para os quatro e para um nome que ninguém ouviu falar.
 
@@ -3487,3 +3521,59 @@ que ele carrega e responde tokens de interface.
 blocos de decisão (`lfm2.decision.block_count = 2`), o `attn_qkv` fundido nas duas
 camadas finais, e uma cabeça de 3 saídas. São três arquiteturas diferentes na
 mesma família, e as três estão medidas aqui.
+
+## O card do `d1-omni-600M` contradiz três coisas que eu escrevi
+
+Lido em <https://huggingface.co/LiquidAI/d1-omni-600M> depois de medir. Ele não
+contradiz o que está medido — **contradiz como eu interpretei**, e a diferença
+importa porque uma das três muda o diagnóstico.
+
+**1. "É um classificador de forma, não de opção" — eu estava errado, e a forma
+está no `criteria`.** O card diz: *"{name: description}"* em `choice`, e o exemplo
+é
+
+```python
+"team": {"type": "choice", "instructions": "Which team should handle this?",
+         "criteria": {"billing": "Charges, refunds, invoices", ...}}
+```
+
+que é **exatamente** o prompt que montei. A forma não é "classificador de forma" —
+é uma decisão tipada, e `noul`/`choice`/`score` são os **tipos da pergunta**, não as
+saídas. `n_embd_out = 3` são as três **perguntas** do exemplo do card, lidas numa
+passagem só: `refund` (noul), `team` (choice), `urgency` (score).
+
+**Isso explica a medição que eu interpretei errado.** Eu mandei **uma** pergunta de
+tipo `choice` com 3 opções e li 3 valores como "a forma". Na verdade mandei
+**três perguntas** e recebi **três respostas** — uma por pergunta, e cada uma com o
+tipo dela. O erro foi meu: **não contei o que pedi**.
+
+**2. Zero tokens de saída — e isso é o que realmente o torna incompatível.**
+*"It returns typed answers with **zero output tokens**: every answer is read
+directly from the model's distribution over the options, with no generation and no
+parsing."* E a resposta traz `"usage": {"input_tokens": n, "output_tokens": 0}`.
+
+O app **só tem o caminho generativo** para este arquivo: `generate()` e ler tokens.
+Um modelo sem token de saída não tem o que ler. Foi por isso que o
+`/v1/classify` viu `<|pad|>`×8 — não é o modelo recusando a pergunta, é o app
+perguntando por uma letra onde a resposta é uma distribuição.
+
+**3. Decision Index: o próprio autor mede o omni como ~3× pior.**
+`d1-omni-600M` **15,95** contra `d1-3B` **48,57**. E nas decisões sobre benchmarks
+públicos: media **78,4** contra **82,9**. O `d1-3B` ganha em 6 de 7 linhas.
+
+**Então a conclusão muda de "serviria com outro endpoint" para "o contrato inteiro
+não existe no app".** `SystemOneShape` tem `decision` (uma letra) e `head` (uma
+cabeça `.tflite`). Faltam: os **tipos** `noul`/`choice`/`score`, o campo
+`criteria`, **várias perguntas numa passagem**, e a leitura por distribuição em vez
+de geração. É trabalho de produto, não uma adaptation de endpoint — e o ganho seria
+um modelo que o autor mede como o mais fraco dos dois.
+
+**O que fica como decisão:** o `d1-3B` é o modelo certo para o `/v1/classify` que
+existe, e ele é **3× melhor em decisão**. O `d1-omni` traz visão e áudio de
+verdade — que o `d1-3B` não tem — mas isso é um endpoint novo e um formato de
+resposta novo, e a pergunta que vale responder é se vale antes de escrevê-lo.
+
+**Um detalhe do card que é regra de uso e não folclore:** ele foi treino em
+`float32`, e em GPU `float16` dá a mesma resposta enquanto **`bfloat16` muda a
+resposta em 0,8% das linhas de texto e 1,7% de áudio**. Qualquer backend novo
+deste app tem que respeitar isso.
