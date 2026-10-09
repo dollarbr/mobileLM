@@ -17,6 +17,15 @@ Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 servidor OpenAI compatível + **encoders (embeddings/rerank/classify, BERT e
 ModernBERT)** + cloud models com auto-detect de contexto/capabilidades.
 
+**`POST /v1/systemone` — o endpoint de decisão tipada — não existe no app, e o
+substrato nativo dele já está todo no APK.** O `libllama.so` exporta
+`llama_batch_ext_set_decision_order`, tem `llama_model_clef`, tem
+`N_DECISION_TYPES = 3` no `lfm2.cpp` e no `modern-bert.cpp`, e `llama-ext.h`
+nomeia os três tipos (`noul`/`choice`/`score`) e `option`. **Faltam três arquivos
+tocados e nenhum:** Pigeon, `jni_wrapper.cpp`, e a rota. A seção
+"`/v1/systemone` é um padrão entre vendors" no fim do guia tem a medição completa
+(`nm -D`, `strings`, `examples/`, conversor, e o teto de 1,19 GB do A72).
+
 ## Encoders — o que a 0.4.0 trouxe (leia antes de mexer)
 
 **Dezesseis** encoders no catálogo (9 `rerank`, 7 `embed`), served por
@@ -3557,23 +3566,383 @@ Um modelo sem token de saída não tem o que ler. Foi por isso que o
 `/v1/classify` viu `<|pad|>`×8 — não é o modelo recusando a pergunta, é o app
 perguntando por uma letra onde a resposta é uma distribuição.
 
-**3. Decision Index: o próprio autor mede o omni como ~3× pior.**
-`d1-omni-600M` **15,95** contra `d1-3B` **48,57**. E nas decisões sobre benchmarks
-públicos: media **78,4** contra **82,9**. O `d1-3B` ganha em 6 de 7 linhas.
+**3. ⚠️ "O autor mede o omni como ~3× pior" — eu escrevi isso e está ERRADO.**
 
-**Então a conclusão muda de "serviria com outro endpoint" para "o contrato inteiro
-não existe no app".** `SystemOneShape` tem `decision` (uma letra) e `head` (uma
-cabeça `.tflite`). Faltam: os **tipos** `noul`/`choice`/`score`, o campo
-`criteria`, **várias perguntas numa passagem**, e a leitura por distribuição em vez
-de geração. É trabalho de produto, não uma adaptation de endpoint — e o ganho seria
-um modelo que o autor mede como o mais fraco dos dois.
+O card tem **duas** tabelas, e eu só li uma:
 
-**O que fica como decisão:** o `d1-3B` é o modelo certo para o `/v1/classify` que
-existe, e ele é **3× melhor em decisão**. O `d1-omni` traz visão e áudio de
-verdade — que o `d1-3B` não tem — mas isso é um endpoint novo e um formato de
-resposta novo, e a pergunta que vale responder é se vale antes de escrevê-lo.
+| | `d1-omni-600M` | `d1-3B` | Decider 4B | Decider 2B |
+|---|---|---|---|---|
+| **Decision Index** | **15,95** | **48,57** | 51,10 | 26,79 |
+| **Média "benchmarks as decisions"** | **78,4** | 82,9 | 81,1 | **77,1** |
+
+**A mesma empresa mediu o mesmo modelo em duas tabelas que discordam em 62,5
+pontos.** `d1-omni` é o **pior dos onze** no Decision Index e o **segundo de
+quatro** na média de benchmarks. Isso não é contradição do autor — é porque as
+tabelas medem coisas diferentes:
+
+- O **Decision Index** tem seis eixos (Knowledge 8,3 · Language 12,9 · Retrieval
+  35,0 · Tools 15,1 · Arts 6,8). Um eixo que pede *saber responder* precisa de
+  **token de saída**, e o `d1-omni` tem **zero** por construção. Ele não é medido
+  como modelo ruim; é medido num formato que ele estruturalmente não faz.
+- Os **benchmarks as decisions** são SQuAD 2.0, BoolQ, XNLI, PAWS-X, Civil
+  Comments, MASSIVE intent e PubMedQA — todos pontuáveis **lendo a distribuição**.
+  É exatamente o que o modelo faz.
+
+E o padrão confirma: onde o omni **vence** é `Civil Comments 95,8` e `PAWS-X 79,5`,
+**os dois melhores da tabela**, batendo o `Decider 4B` (4,7 B) por 10,3 e 9,7
+pontos. Onde ele perde é nos eixos que exigem texto.
+
+**O número honesto é o de decisão, e é o do omni:** 78,4 contra **77,1** do
+`Decider 2B`, que tem **2,3 B — quase 4× mais parâmetros**.
+
+**Então a conclusão muda de direção.** Eu escrevi que o ganho seria "um modelo que
+o autor mede como o mais fraco dos dois". Não: é **o único de 600 M, o único com
+visão e áudio, o único com `confidence` calibrada, e o que ganha de modelos 4×
+maiores em tarefa de decisão.**
+
+**⚠️ E a nota de proveniência:** o card diz que as linhas do `d1` na tabela do
+Decision Index foram pontuadas pelo **scorer oficial**, e as demais vieram do
+**leaderboard público v0.2.1**. Para a tabela de benchmarks ele diz *"internal
+evaluations"* e **não diz** se as colunas do Decider vieram da mesma avaliação
+interna. Então a comparação do omni contra o Decider 2B é **direção**, não prova.
 
 **Um detalhe do card que é regra de uso e não folclore:** ele foi treino em
 `float32`, e em GPU `float16` dá a mesma resposta enquanto **`bfloat16` muda a
 resposta em 0,8% das linhas de texto e 1,7% de áudio**. Qualquer backend novo
 deste app tem que respeitar isso.
+
+---
+
+## `/v1/systemone` é um padrão entre vendors — e o substrato C++ JÁ ESTÁ NO APK
+
+Esta é a seção mais consequente do guia, e ela é resultado de medir o `.so`, não de
+ler prosa. Ela responde à pergunta "dá para implementar o endpoint que falta?".
+
+### A classe é uma só, e agora é prova de quatro empresas
+
+| modelo | empresa | arch | parâmetros | licença |
+|---|---|---|---|---|
+| **Jev** | TypeSafe | API Only | — | — |
+| **Clef** | Cloudflare | `clef` | **27B** (Qwen3.8-27B) | Apache-2.0 |
+| **Clef-Flash** | Cloudflare | `clef` | **9B** (Qwen3.5-9B) | Apache-2.0 |
+| **d1-omni-600M** | Liquid AI | **`lfm2`** | 0,587B | lfm1.0 |
+| **d1-3B** | Liquid AI | `lfm2` | 3,0B | lfm1.0 |
+| **Laya** | Convai | ModernBERT-large | 421M | Apache-2.0 |
+| **laya-multilingual** | Convai | **mmBERT-base** | 322M | Apache-2.0 |
+
+O card do Clef diz, sem ambiguidade: **"The Clef API is fully compatible with Jev
+and SystemOne."** E as tags do repositório são `clef`, `cloudflare`, `systemone`,
+`decision-model`. O card do `laya-multilingual` usa a tag `system-one`. **Quatro
+empresas, quatro times, um nome de classe e um formato de request.**
+
+O leaderboard do Decision Index que a Cloudflare publica tem **seis** colunas de
+modelo — Clef, Clef-flash, **Jev**, **DiffusionGemma Jev**, **Kev 9B**, **Laya** —
+o que confirma que a classe é maior ainda e que o "Jev" é **apelido de família**,
+não nome de um produto só.
+
+### O contrato, como a Cloudflare o escreve
+
+Corpo de `POST /v1/systemone`:
+
+```json
+{
+  "model": "clef",
+  "state": "Our checkout started returning errors and orders are blocked.",
+  "questions": {
+    "department": {"type": "choice", "instructions": "Which team should handle the message?",
+                   "criteria": {"billing": "Payments or invoices", "technical": "Bugs or outages"}},
+    "urgency":    {"type": "score",   "criteria": ["Can wait", "This week", "Today"]},
+    "outage":     {"type": "noul",    "instructions": "Is a service down?"}
+  }
+}
+```
+
+Resposta: `model`, `answers` **indexado por id de pergunta**, `usage`.
+
+| tipo | o que a resposta traz |
+|---|---|
+| `choice` | `choice`, **`confidence`**, **`probabilities`** |
+| `score` | `score`, `confidence`, **`legend`**, `probabilities` |
+| `noul` | a probabilidade de `true` |
+
+`state` é string **ou JSON**. `criteria` é mapa para `choice`, **lista indexada
+de 0** para `score`, e descrições opcionais de `true`/`false` para `noul`.
+`instructions` é opcional — sem ele o id da pergunta é a pergunta.
+
+**É exatamente a tabela que eu escrevi em "o que a classe da TypeSafe tem e o que
+este app tem". A Cloudflare descreve o mesmo contrato em 2026, e a Liquid AI
+entregou um modelo que o implementa.**
+
+### ⚠️ O que o llama.cpp VENDORIZADO JÁ TEM — medido, não inferido
+
+Isto é o que muda o custo da resposta anterior, onde eu escrevi *"o contrato
+inteiro não existe no app"* e *"é trabalho de produto, não uma adaptação de
+endpoint"*. **A parte cara já está feita e já está no aparelho.**
+
+`src/llama-ext.h` define a ordem de decisão por token:
+
+```c
+enum llama_decision_order {
+    LLAMA_DECISION_ORDER_NONE            = 0, // not read by the head
+    LLAMA_DECISION_ORDER_QUESTION_NOUL   = 1, // text of a question
+    LLAMA_DECISION_ORDER_QUESTION_CHOICE = 2,
+    LLAMA_DECISION_ORDER_QUESTION_SCORE  = 3,
+    LLAMA_DECISION_ORDER_OPTION          = 4, // text of an option
+};
+LLAMA_API bool llama_batch_ext_set_decision_order(struct llama_batch_ext * batch,
+                                                  int32_t idx, enum llama_decision_order order);
+```
+
+**Os três tipos que o app não tem, nomeados no cabeçalho nativo, com o mesmo nome
+do contrato.** E o `.so` que o app carrega:
+
+```
+$ nm -D --defined-only libllama.so | grep -i decision
+00000000001a7da4 T _Z34llama_batch_ext_set_decision_orderP15llama_batch_exti20llama_decision_order
+
+$ strings libllama.so | grep -i 'decision\|clef' | sort -u
+16llama_model_clef            decision.proj_global       decision.scorer
+25llm_graph_input_attn_clef   decision.proj_memory       decision.scorer_out
+clef                          decision.proj_option_context  decision.scales
+                              decision.proj_option_lexical  decision.option_norm
+                              decision.proj_option_question decision.field_norm
+                              decision.hidden_norm       decision.option_summary_norm
+decision model is missing the scorer tensors
+decision model must have one token type per question type
+```
+
+E `LLM_ARCH_CLEF` está registrado em `llama-arch.cpp:43` como `"clef"`, com
+`llama_model_clef` instanciado em `llama-model.cpp:80`.
+
+**⚠️ Correção de arquitetura minha:** eu disse que o `d1-omni` era um modern-bert com
+blocos de decisão. Não é. Lendo o cabeçalho GGUF do arquivo no aparelho:
+
+```
+GGUF v3  tensores=179  kvs=55
+  general.architecture            = lfm2
+  general.name                    = d1-omni-600M
+  general.license.name            = lfm1.0
+  general.base_model.0.name       = LFM2.5 Encoder 350M
+```
+
+São **três** mecanismos de decisão distintos no mesmo vendor, e vale saber qual é
+qual:
+
+| arquivo do vendor | arch | `n_embd_out` | de quem |
+|---|---|---|---|
+| `src/models/lfm2.cpp` | `lfm2` | **3** (`N_DECISION_TYPES`) | Liquid AI — `d1-omni`, `d1-3B` |
+| `src/models/modern-bert.cpp` | `modern-bert` | **3** (`N_DECISION_TYPES`) | modern-bert com decisão |
+| `src/models/clef.cpp` | `clef` | **1** | Cloudflare — Clef, sobre backbone `qwen35` |
+
+E o `lfm2.cpp:75` recusa carregar se os tipos não baterem:
+`"decision model must have one token type per question type"`, com
+`type_embd = {n_embd, n_token_types}`. **Os três tipos são um eixo do tensor de
+embedding de tipos de token** — o que explica o `n_embd_out = 3` que medi no
+aparelho, e explica por que inverter a ordem das opções não muda o índice
+principal: a pergunta é o eixo, não a posição.
+
+### ⚠️ O que FALTA é só a ponte, e ela é pequena
+
+| camada | estado | evidência |
+|---|---|---|
+| cabeçalho de decisão | **presente** | `llama-ext.h:107-115` |
+| célula `llama_batch_ext` | **presente** | `llama-batch.cpp:1262` |
+| batch repassa a ordem | **presente** | `llama-batch.cpp:207,302,879,907,952` |
+| kernels `clef` compilados | **presente no `.so`** | `nm -D` + `strings` acima |
+| `llama_model_clef` registrado | **presente** | `llama-arch.cpp:43`, `llama-model.cpp:80` |
+| `Clef` no conversor | **AUSENTE** | 220 registros em `conversion/`, **nenhum** `Clef` |
+| `Lfm2Model` no conversor | **presente** | `conversion/lfm2.py` |
+| `Qwen3_5ForConditionalGeneration` | **presente** | `conversion/qwen.py` — o backbone do clef converte |
+| **JNI expõe a chamada** | **AUSENTE** | `llama_batch_ext` aparece **0×** em `jni_wrapper.cpp` |
+| **Pigeon declara o método** | **AUSENTE** | `decision_order`/`clef` = **0×** em todo `.dart` |
+| **rota HTTP `/v1/systemone`** | **AUSENTE** | `systemone` = **0×** em todo o vendor |
+| **implementação HTTP de referência** | **AUSENTE** | `examples/` não tem `server/` |
+
+O que falta, então, são **três arquivos tocados e nenhum**:
+
+1. **Pigeon** — um método que leva a lista de perguntas tipadas e a ordem por token
+2. **`jni_wrapper.cpp`** — uma função que chama
+   `llama_batch_ext_set_decision_order`, roda o batch e devolve `float[3]` por
+   pergunta mais `float[n_opcoes]` por pergunta de `choice`
+3. **`openai_server_service_io.dart`** — a rota `/v1/systemone`, com `answers`
+   indexado e `confidence` de verdade
+
+**Não há `server/` no vendor para portar** — a rota `/v1/systemone` do llama.cpp
+existe no upstream, mas a árvore vendorizada é podada e não a traz. A implementação
+é nova, sobre uma base nativa que já está toda lá.
+
+### ⚠️ E o tamanho fecha a porta para o Clef no A72
+
+`maxModelBytes = totalRamGB * 0.25`, e o A72 tem `MemTotal 5011844 kB` = 4,78 GB.
+O teto é **1,19 GB**.
+
+| modelo | melhor quantização plausível | cabe em 1,19 GB? |
+|---|---|---|
+| Clef (27B) | IQ2_XXS ~9 GB | **não, ~7,5× acima** |
+| Clef-Flash (9B) | IQ2_XXS ~3,1 GB | **não, ~2,6× acima** |
+| **d1-omni-600M** | Q8_0 = **388,3 MB, medido no aparelho** | **sim, sobra 800 MB** |
+
+### ⚠️ O Clef tem TRÊS bloqueios independentes, e medidos
+
+1. **O conversor não sabe produzi-lo.** `conversion/` tem 21.672 linhas, 87
+   arquivos e **220 registros** de `ModelBase.register` — e `Clef` não é um deles.
+   Não existe `clef.py`. O `Qwen3_5ForConditionalGeneration` **está** registrado, ou
+   seja, o *backbone* converte e a *cabeça* não. **Um `Cloudflare/clef` não vira
+   GGUF neste vendor.** (`Lfm2Model` e `ModernBertModel` **estão** registrados, o
+   que é consistente com o `d1-omni` já estar no aparelho em GGUF.)
+2. **O tamanho não cabe.** 27B e 9B contra um teto de **1,19 GB** — 7,5× e 2,6×
+   acima. Nenhum quantization do Clef entra no catálogo do A72.
+3. **A ponte falta**, como para todo mundo.
+
+**Isso não é argumento para nunca implementar.** É argumento para implementar
+**no `lfm2`**, porque é o único `arch` de decisão que (a) converte, (b) cabe e
+(c) já tem os três tipos no kernel.
+
+A mesma tabela do card do Clef dá a **latência mediana**, e ela é o outro lado da
+moeda:
+
+| | mediana | p95 |
+|---|---|---|
+| **Laya** | **5,8 ms** | 222,5 ms |
+| Clef-Flash | 38,8 ms | 122,4 ms |
+| Kev 9B | 51,4 ms | 187,9 ms |
+| Jev | 524,1 ms | 536,0 ms |
+| Clef | 209,3 ms | 238,6 ms |
+
+**O Laya é o mais rápido da classe por 6,7×, e é o mais fraco** — BFCL 38,1,
+SATA-Bench 0,3, Home appliance 0,0. **Velocidade e qualidade de decisão não andam
+juntas: `SATA-Bench 0,3` e `Home appliance 0,0` significam "não tenta", não
+"tentou e errou"**
+— é o que a cabeça de 1 MB faz quando o encoder não está lá.
+
+---
+
+## Laya, `laya-multilingual` e o que o card deles prova sobre este app
+
+O card de <https://huggingface.co/convaiinnovations/laya-multilingual> foi lido na
+íntegra. Três coisas nele são medíveis contra este app: **o que não converte**, **o
+que é a cabeça de 1 MB que já está no aparelho**, e **a evidência mais forte de que
+o desenho de estabilidade por permutação deste app está certo.**
+
+### A família, e qual peça de cada uma existe aqui
+
+| checkpoint | backbone | params | ctx | converte com o vendor? |
+|---|---|---|---|---|
+| `convaiinnovations/laya` (EN) | ModernBERT-large | 421M | 512 | **sim** — `ModernBertModel` existe |
+| **`laya-multilingual`** | **mmBERT-base** | 322M | 1024 (até 8192) | **NÃO** |
+| `laya-typed-decisions` | ModernBERT-large | 421M | 1024 | **sim**, mesma arch |
+
+**⚠️ `laya-multilingual` é um beco sem saída com o vendor atual, e é fato do
+conversor, não opinião.** `conversion/bert.py` registra:
+
+```
+BertModel · DistilBertModel · RobertaModel · NomicBertModel · NeoBert ·
+EuroBertModel · XLMRobertaModel · JinaBertV2Model · ModernBertModel
+```
+
+**Nenhum `MMBertModel`.** O `mmBERT` é da Apple (bidirecional, 22 camadas, hidden
+768, **vocabulário de 256 mil**), e `mmbert` não existe como arch em
+`llama-arch.h` — nem `xlmroberta`, nem `roberta` como arch próprio (o
+XLMRoberta do conversor reconverte para `bert`). **Sem arch, sem GGUF, sem
+carregar.** Isso vale registrar porque `laya-multilingual` é o checkpoint que o
+card manda usar para **tudo que não seja inglês**, e ele é exatamente o que este
+vendor não sabe ler.
+
+### A cabeça de 1,0 MB que já está no aparelho
+
+O `laya_en_act_head_fp32.tflite` de **1,0 MB** no `app_flutter/models` é a
+cabeça **act/escalate** do checkpoint **inglês** — *"a decision head trained from
+scratch: 2 transformer layers, an option-marker scorer, and an act/escalate
+head"*. O app mediu 6 ms de compilação e 0–2 ms de run no XNNPACK, contra 273 ms
+na GPU, e ela dá exatamente os mesmos logits que o `/v1/litert/run`.
+
+Os **1024 features** que ela quer são a saída do **ModernBERT-large de 421 MB**,
+e esse encoder não está no app. **É o item 2 da fila, e agora sabemos o nome
+exato dele**: `convaiinnovations/laya`, ModernBERT-large, e é o backbone que o
+conversor **sabe** ler. A peça de 1 MB e a de 421 MB são do mesmo checkpoint — o
+app tem uma e não tem a outra, e por isso a mais rápida do mundo não roda de
+ponta a ponta.
+
+### ⚠️ Convertível não é servível — e aqui está por quê
+
+O mecanismo do Laya é **marcadores de opção**: *"every option is scored at its own
+`[MASK]` token, then softmaxed over that question's options"*. Isso exige
+**logits em posições escolhidas** de um encoder bidirecional.
+
+O caminho de encoder do llama.cpp — que o app usa e mediu — emite **embeddings** e
+a saída de uma cabeça `cls.output`. A `conversion/bert.py` registra
+`ModernBertForMaskedLM`, mas um GGUF de masked-LM continua sendo lido pelo mesmo
+`cls.output`: o llama.cpp **não lê logits por posição** num encoder. Não há
+`logprobs` em lugar nenhum do binding Dart deste app.
+
+**Então: registrar `ModernBertForMaskedLM` no conversor não destrava o Laya.** O
+que destravaria é ler posição por posição, que é o que a cabeça `clef` faz de um
+jeito diferente — roteando evidência do estado para cada pergunta em vez de pôr um
+`[MASK]` por opção. **O Laya e o Clef são a mesma classe com dois mecanismos
+diferentes, e só um dos dois tem base no vendor deste app.**
+
+### ⚠️ O card prova, com número, por que este app trocou porcentagem por estabilidade
+
+Esta é a parte que vale mais, e ela **valida uma decisão já tomada** com dado de
+terceiro:
+
+**1. Confiança não detecta erro — e o card diz isso com todas as letras.**
+
+> Its mean confidence never drops below **0.885** at any accuracy level, so
+> **confidence gating cannot catch it.**
+
+Khmer: **0,000 de acerto a 0,952 de confiança**. Hebrew 0,060. Armenian 0,050
+(exatamente aleatório). Bengali 0,080. **Todos reportados entre 0,89 e 0,96 de
+confiança.** Macro ECE do checkpoint inglês: **0,733**; o multilíngue, 0,387.
+
+É por isso que `relevance_score` é `null` neste app com o motivo anexado, e é por
+isso que a nota de catálogo do `d1-3B` promete **estabilidade por permutação** e
+não porcentagem. **Um bar chart de logits rotulados de confiança é mentira
+deixada em forma de gráfico** — e o Laya é o caso de estudo.
+
+**2. O viés de posição é real, tem nome e é medido.**
+
+> Ordinal `score` questions are the weakest primitive (SST-5 0.282), and this
+> checkpoint has a **measured position bias on them**: it rarely picks the
+> first-listed level, in any language, including English (**0 of 290** in one
+> independent run).
+
+**"0 of 290"** é o mesmo defeito que `variants` existe para pegar neste app: um
+modelo que responde diferente conforme a ordem das opções não está decidindo, está
+decorando a posição. A permutação **round-robin por primeira letra + Lehmer
+dentro do grupo** do `decision_stability.dart` é a resposta a isso, e o Laya
+confirma que a pergunta não éredi — é como esses modelos funcionam.
+
+**3. `noul` subdeclara o `true`.** *"On a clearly positive input, one measurement
+put `P(true)` at about 0,5 while the negative case was correctly near 0"* — e o
+próprio card sugere a checagem: a mesma pergunta como `choice` de duas opções com
+chaves neutras. **É exatamente um teste de permutação, escrito por quem mediu o
+problema.**
+
+**4. O limite de ~20 opções por `choice` é o mesmo teto do `d1`.** *"Options share
+the fixed 256-token head budget, so a very large label space leaves only a few
+tokens per label"*. O app já cobra esse limite no `/v1/classify` com o erro
+*"at least two, at most twenty-four"*.
+
+**5. E a calibração é pós-hoco, com um formato específico:** `temperature` por
+**(tipo de pergunta, contagem de opções)**, medindo ECE 0,314 → 0,106. **Esse é o
+parâmetro que o app não tem e que valeria ter** — e é o formato exato das
+permutas que ele já faz.
+
+### O número do Laya na tabela da Cloudflare, e o que ele significa
+
+`Laya` na tabela do Decision Index é o **mais rápido** (mediana **5,8 ms**) e o
+**mais fraco** (BFCL 38,1 · API-Bank 11,5 · SATA-Bench 0,3 · Home appliance
+**0,0** · MMLU 30,7). `RouterBench 57,1` é a única linha em que ele não está
+perto do chão.
+
+**Um 0,0 numa benchmark significa "não tenta", e há uma razão mecânica para isso
+que eu posso apontar:** a cabeça de 1 MB está no app sem o encoder de 421 MB que a
+alimenta. **E é a única comparação honesta entre o Laya e o `d1-omni`, porque os dois são
+pequenos e ambos publicam número próprio.** O `laya-multilingual` em intent de 20
+opções nas 51 línguas do MASSIVE: macro 0,366, macro ECE 0,387, e **45 de 51
+línguas acima de 3× o aleatório** — contra 23 de 51 do checkpoint inglês. O
+`d1-omni` tem 78,4 de média em benchmarks-as-decisions e 0 tokens de saída.
+
+**Nenhum dos dois é "o modelo de decisão". São dois formatos de 300–600 MB, e o
+formato é a escolha, não o tamanho.**
