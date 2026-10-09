@@ -22,8 +22,12 @@ void main() {
             reason: '${p.id} sem medição não é um controle');
         expect(p.note, isNotNull, reason: '${p.id} sem motivo não é um controle');
       }
-      // O noul deu 0.5188 numa pergunta cuja resposta óbvia é sim.
-      expect(DecisionPreset.byId('outage')!.measured, contains('0.5188'));
+      // O noul deu 0,5188 (Tev1) e 0,5522 (d1-3B) numa pergunta cuja resposta
+      // óbvia é sim. **O ponto é a vírgula:** o número na tela é `0,5188` em
+      // português, e um teste que procura `0.5188` reprovaria com a medição
+      // certa no lugar — a mesma armadilha de dois-pontos-e-vírgula que já
+      // pegou três traduções deste repo.
+      expect(DecisionPreset.byId('outage')!.measured, contains('0,5188'));
       // E o score respondeu "pode esperar" para uma cobrança duplicada.
       expect(DecisionPreset.byId('urgency')!.measured, contains('nível 0'));
     });
@@ -120,6 +124,53 @@ void main() {
       expect(comInstrucao, DecisionPreset.all.length,
           reason: 'se isto mudar, o `?? \'\'` volta a ser indistinguível do '
               '`if != null` e a guarda perde o único dado que a exercita');
+    });
+
+    test('toda medição DIZ DE QUAL MODELO ela é', () {
+      // **Isto é uma regra, e ela nasceu de uma medição que a violou.** O
+      // preset `urgency` dizia "nível 0 (Can wait) com 0,5537" sem dizer de que
+      // modelo — e medido no `d1-3B` o **mesmo preset** respondeu **nível 2
+      // (Today)**, que é a resposta certa. Três dos quatro presets citas uma
+      // medição sem o modelo, e o aparelho mostrou que a omissão muda o
+      // sentido do número.
+      //
+      // **Sem o nome do modelo a medição é uma afirmação sobre "este aparelho",
+      // e o aparelho tem vários modelos.** Um preset é um controle: ele fixa a
+      // pergunta para que a diferença entre o medido e o ao vivo seja do modelo,
+      // e um controle que não nomeia o que ele comparou não fecha o caso.
+      for (final p in DecisionPreset.all) {
+        expect(p.measured, isNotNull, reason: '${p.id} sem medição');
+        // Os dois nomes que aparecem nas medições deste arquivo. Um terceiro
+        // modelo entra aqui **e** na lista, e o teste passa a exigir que o
+        // preset o cite.
+        expect(
+          RegExp(r'\b(tev1|d1-3b)\b', caseSensitive: false)
+              .hasMatch(p.measured!),
+          isTrue,
+          reason: '${p.id} diz "${p.measured}" sem dizer de qual modelo é a '
+              'medição. Com mais de um modelo no aparelho, isso é uma '
+              'afirmação sobre nada',
+        );
+      }
+      // E o `forgot` diz explicitamente que ainda não foi medido no d1-3B, em
+      // vez de fingir que a medição do Tev1 vale para os dois.
+      expect(DecisionPreset.byId('forgot')!.note, contains('ainda não foi medido'));
+    });
+
+    test('as medições são de DOIS modelos que discordam, e é isso que é útil', () {
+      // Um preset com uma medição só é uma afirmação. Com duas, e discordando,
+      // ele mostra a coisa que interessa: **o mesmo preset, a mesma pergunta e
+      // duas respostas** — que é a diferença entre "o modelo errou" e "o modelo
+      // que você tem não é o que foi medido".
+      expect(DecisionPreset.byId('urgency')!.measured, contains('nível 0'));
+      expect(DecisionPreset.byId('urgency')!.measured, contains('nível 2'));
+      // O `charge` acerta a área nos dois e discorda só na força.
+      expect(DecisionPreset.byId('charge')!.measured, contains('0,6972'));
+      expect(DecisionPreset.byId('charge')!.measured, contains('0,5312'));
+      // E o `outage` é quase uma moeda nos dois — o defeito que os dois
+      // compartilham, e por isso o mais informativo dos quatro.
+      expect(DecisionPreset.byId('outage')!.measured, contains('0,5188'));
+      expect(DecisionPreset.byId('outage')!.measured, contains('0,5522'));
     });
 
     test('o noul não traz opções, e é por isso', () {

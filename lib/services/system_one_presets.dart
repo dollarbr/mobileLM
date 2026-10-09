@@ -99,9 +99,10 @@ class DecisionPreset {
       // segunda é a resposta certa para uma cobrança duplicada; a primeira é o
       // preset dizendo que_errou sem nenhum aviso.
       instruction: 'a que área isto pertence?',
-      measured: 'billing',
-      note: 'Tev1, 0.6972 para billing e confidence 0.5458. A letra gerada '
-          'disse A para o mesmo ticket.',
+      measured: 'billing nos DOIS · 0,6972 no Tev1 · 0,5312 no d1-3B',
+      note: 'Os dois modelos acertam a área e discordam na força: 0,6972 com '
+          'confiança 0,5458 no Tev1, 0,5312 com 0,2968 no d1-3B. A letra '
+          'gerada disse A para o mesmo ticket.',
     ),
     DecisionPreset(
       id: 'outage',
@@ -110,10 +111,11 @@ class DecisionPreset {
       options: [],
       question: 'Is a service down?',
       instruction: 'Is a service down?',
-      measured: 'P(true) 0.5188',
-      note: 'A resposta óbvia é sim e o modelo deu 0.5188 — uma moeda. É o '
-          'número que o card da Laya descreve: confidence não pega erro. '
-          'A resposta está certa e a confiança não ajuda.',
+      measured: 'P(true) 0,5188 no Tev1 · 0,5522 no d1-3B',
+      note: 'A resposta óbvia é sim e os DOIS modelos deram quase uma moeda: '
+          '0,5188 no Tev1 e 0,5522 no d1-3B, medidos em dias diferentes. É o '
+          'número que o card da Laya descreve: confiança não pega erro. A '
+          'resposta está certa e a confiança não ajuda.',
     ),
     DecisionPreset(
       id: 'urgency',
@@ -122,11 +124,13 @@ class DecisionPreset {
       options: ['Can wait', 'This week', 'Today'],
       question: 'How urgent?',
       instruction: 'How urgent?',
-      measured: 'nível 0 (Can wait) com 0.5537',
-      note: 'O Tev1 é um decision model de LETRA e não um modelo de nível '
-          'ordenado. Responder "pode esperar" para uma cobrança duplicada é o '
-          'modelo sendo asked a coisa que ele não foi treinado para fazer — e o '
-          'confidence de 0.3305 ao lado do 0.5537 do topo é o único sinal.',
+      measured: 'nível 0 (Can wait) no Tev1 · nível 2 (Today) no d1-3B',
+      note: 'Os DOIS modelos medidos, e eles discordam: o Tev1 respondeu "pode '
+          'esperar" (0,5537) para uma cobrança duplicada, o que é errado, e o '
+          'd1-3B respondeu "hoje" (0,5120), que é certo. O Tev1 é um decision '
+          'model de LETRA pedido sobre um nível ordenado. É por isso que a '
+          'medição cita o modelo: a mesma pergunta, o mesmo preset e duas '
+          'respostas.',
     ),
     DecisionPreset(
       id: 'forgot',
@@ -136,9 +140,10 @@ class DecisionPreset {
       // Mesma razão do `charge`: sem isto a pergunta do modelo seria a
       // palavra `decision`.
       instruction: 'a que área isto pertence?',
-      measured: 'C (account), em 50,7 s',
+      measured: 'C (account) no Tev1, em 50,7 s',
       note: 'O caminho da letra levou 50,7 s aqui e 2,0 s em dois outros '
-          'tickets. O custo é do readout, não deste ticket.',
+          'tickets, tudo no Tev1. O custo é do readout, não deste ticket. '
+          'No d1-3B este preset ainda não foi medido.',
     ),
   ];
 
