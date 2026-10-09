@@ -65,6 +65,63 @@ void main() {
       }
     });
 
+    test('todo preset que tem opções tem também a INSTRUÇÃO dela', () {
+      // **Este é o teste que o A72 pediu, e a razão é medida.** Sem
+      // `instructions`, o endpoint usa o **id** da pergunta como o texto dela —
+      // e o id desta janela é a palavra `decision`. O mesmo estado, o mesmo
+      // `d1-3B` e as mesmas três opções:
+      //
+      // | pergunta | resposta | A | B | C |
+      // |---|---|---|---|---|
+      // | `decision` (o id) | **C: account** | 0,1307 | 0,2846 | **0,5847** |
+      // | `a que área isto pertence?` | **A: billing** | **0,5312** | 0,1640 | 0,3047 |
+      //
+      // `A: billing` é a resposta certa para uma cobrança duplicada. A primeira
+      // linha é o que o preset produzia — e mostrava `medido: billing` ao lado,
+      // que é a pior forma de erro possível: número certo, pergunta errada.
+      //
+      // **E o `question` do preset não serve para isto.** O campo `question` da
+      // janela é exibido e **não vai no corpo** — `systemOneBody` não tem
+      // parâmetro `question`. Quem manda a pergunta ao modelo é
+      // `instructions`. Um preset com `question` e sem `instruction` manda o
+      // modelo perguntar `decision`.
+      for (final p in DecisionPreset.all) {
+        if (!decisionTypeNeedsOptions(p.type)) continue;
+        expect(p.instruction, isNotNull,
+            reason: '${p.id} tem ${p.options.length} opções e nenhuma '
+                'instrução: o modelo vai receber o id "decision" como '
+                'pergunta');
+        expect(p.instruction!.trim(), isNotEmpty,
+            reason: '${p.instruction} é o id, não uma pergunta');
+      }
+      // E o `noul` também tem, porque sem instrução ele pergunta `decision`
+      // sobre um booleano — que é pior ainda, porque o `noul` não tem opção
+      // nenhuma para o modelo se apoiar.
+      expect(DecisionPreset.byId('outage')!.instruction,
+          isNot(contains('decision')));
+    });
+
+    test('a guarda "não apaga o que não sabe" é defensiva e hoje não tem teste',
+        () {
+      // **Escrito porque uma mutação sobreviveu, e não porque o teste
+      // "falha".** `_applyPreset` faz `if (p.instruction != null)` em vez de
+      // `p.instruction ?? ''`, e voltar ao `?? ''` **não reprova nada**: os
+      // quatro presets têm instrução, então os dois caminhos fazem a mesma
+      // coisa. Uma guarda que nenhum dado alcança é código inatingível, e
+      // escrever que ela está coberta seria o que este repo já fez sete vezes.
+      //
+      // A guarda vale porque o próximo preset pode não ter instrução — e o
+      // sintoma de um `?? ''` ali é a medição errada ao lado da resposta errada
+      // que o teste de cima mediu. **Quem a torna alcançável é o teste de
+      // cima**: um preset com `instruction: null` reprovaria nele, e é por
+      // isso que ele existe e não é sobre estilo.
+      final comInstrucao =
+          DecisionPreset.all.where((p) => p.instruction != null).length;
+      expect(comInstrucao, DecisionPreset.all.length,
+          reason: 'se isto mudar, o `?? \'\'` volta a ser indistinguível do '
+              '`if != null` e a guarda perde o único dado que a exercita');
+    });
+
     test('o noul não traz opções, e é por isso', () {
       // O endpoint escreve as duas afirmações nas palavras do template do autor.
       // Preencher o cartão com dois campos seria um segundo conjunto de palavras

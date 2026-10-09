@@ -1632,9 +1632,22 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
     final q = p.question ?? DecisionPreset.defaultQuestion;
     _question.text = q;
     _question.selection = TextSelection.collapsed(offset: q.length);
-    final i = p.instruction ?? '';
-    _instruction.text = i;
-    _instruction.selection = TextSelection.collapsed(offset: i.length);
+    // **Um preset preenche o que sabe e NÃO apaga o que não sabe.** A primeira
+    // versão fazia `p.instruction ?? ''`, e isso destruía a instrução que a
+    // pessoa tivesse escrito — sem nenhum aviso, porque um campo vazio é a
+    // aparência do campo vazio.
+    //
+    // **E o vazio não é o mesmo que "não mudou".** Sem `instructions` o
+    // endpoint usa o **id** da pergunta como o texto dela, e o id desta janela
+    // é `decision`. Medido no A72 com `d1-3B`: o mesmo estado e as mesmas três
+    // opções dão `C: account` 0,5847 sem instrução e `A: billing` 0,5312 com
+    // ela. Um preset que produz a resposta errada e mostra a medição certa ao
+    // lado é a pior das duas_metidas erradas, e foi assim que apareceu.
+    final i = p.instruction;
+    if (i != null) {
+      _instruction.text = i;
+      _instruction.selection = TextSelection.collapsed(offset: i.length);
+    }
     setState(() {
       _answerType = p.type;
       _options = _optionsFor(p.options);

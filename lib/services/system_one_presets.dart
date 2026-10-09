@@ -90,6 +90,15 @@ class DecisionPreset {
       state: 'fui cobrado duas vezes pelo pedido #4417 neste mês',
       options: ['billing', 'technical support', 'account'],
       question: 'a que área isto pertence?',
+      // **A instrução é a pergunta, e este preset só funciona porque está
+      // escrita aqui — o A72 mediu o contrário.** Sem `instructions`, o endpoint
+      // usa o **id** da pergunta como o texto dela, e o id desta janela é
+      // `decision`. O mesmo estado, o mesmo modelo e as mesmas três opções dão
+      // `C: account` 0,5847 / 0,2846 / 0,1307 com a pergunta `decision`, e
+      // `A: billing` 0,5312 / 0,1640 / 0,3047 com a pergunta de verdade. A
+      // segunda é a resposta certa para uma cobrança duplicada; a primeira é o
+      // preset dizendo que_errou sem nenhum aviso.
+      instruction: 'a que área isto pertence?',
       measured: 'billing',
       note: 'Tev1, 0.6972 para billing e confidence 0.5458. A letra gerada '
           'disse A para o mesmo ticket.',
@@ -124,6 +133,9 @@ class DecisionPreset {
       state: 'esqueceu a senha e não entra na conta',
       options: ['bug', 'billing', 'account'],
       question: 'a que área isto pertence?',
+      // Mesma razão do `charge`: sem isto a pergunta do modelo seria a
+      // palavra `decision`.
+      instruction: 'a que área isto pertence?',
       measured: 'C (account), em 50,7 s',
       note: 'O caminho da letra levou 50,7 s aqui e 2,0 s em dois outros '
           'tickets. O custo é do readout, não deste ticket.',

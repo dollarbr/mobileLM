@@ -2785,7 +2785,7 @@ seguinte.
 ## A família `d1` da Liquid AI entra pela porta que já existe
 
 Medido em 08/10/2026 no A72, com o `d1-3B-Q4_K_M` importado à mão. Detalhe
-completo em [`docs/SYSTEM_ONE.md`](SYSTEM_ONE.md); aqui só o que o guia precisa
+completo em [`docs/SYSTEM_ONE.md`](docs/SYSTEM_ONE.md); aqui só o que o guia precisa
 saber para não refazer o trabalho.
 
 **Não existe "d3-3B"** — a família se chama `d1`, e são `d1-3B` (3,1 B, texto +

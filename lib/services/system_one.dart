@@ -1169,11 +1169,10 @@ class SystemOneResult {
       shape: SystemOneShape.typedDecision,
       readout: SystemOneReadout.logit,
       answerType: type,
-      // `label` is the window's field for "what the model said", and the three
-      // typed shapes put it under three keys. `letter` stays **null** here on
-      // purpose: nothing was generated, so there is no letter, and printing the
-      // option's letter would be the app inventing one.
-      label: type == 'score' ? (score is num ? '${score.toDouble()}' : null) : _str(first['choice']),
+      // `label` is the window's field for "what the model said". `letter` stays
+      // **null** here on purpose: nothing was generated, so there is no letter,
+      // and printing the option's letter would be the app inventing one.
+      label: typedAnswerLabel(type, first, probs, legendText),
       confidence: confidence is num ? confidence.toDouble() : null,
       probabilities: probs,
       legend: legendText,
@@ -1189,6 +1188,64 @@ class SystemOneResult {
         ..._notes(json),
       ],
     );
+  }
+
+  /// What each typed shape calls its answer, read from the field that IS it.
+  ///
+  /// **As três formas põem a resposta sob três chaves, e o título lia uma só.**
+  /// Medido no A72 com `d1-3B`, as duas outras estavam erradas:
+  ///
+  /// | forma | o que o endpoint mandou | o que a tela mostrava |
+  /// |---|---|---|
+  /// | `choice` | `choice: "A: billing"` | `A: billing` — certo |
+  /// | `noul` | `noul: 0,5522` + dois `probabilities` | **`(no label)`** |
+  /// | `score` | `score: 2.0`, `legend: {"2": "Today"}` | **`2.0`** |
+  ///
+  /// Um `noul` **não tem** `choice`, e um `score` tem `choice` que é o índice —
+  /// as duas eram lidas como `choice`, que é o campo do `choice`. Um booleano
+  /// sem título e um nível como `2.0` são a mesma linha errada, e nenhuma das
+  /// duas aparece em teste que só exercita `choice`.
+  ///
+  /// **O `noul` é o argmax das duas afirmações, e o endpoint é quem as nomeou.**
+  /// Não é o app inventando um rótulo: o corpo traz
+  /// `probabilities: {"yes, the statement holds": 0,5522, "no, …": 0,4478}`, e
+  /// a resposta de um booleano é a das duas que o modelo prefere.
+  ///
+  /// **Empate devolve `null`, e não uma das duas.** Um `noul` em exatamente
+  /// 0,5/0,5 é o modelo sem opinião — e a mesma forma de erro que o
+  /// `d1-omni` com `confidence: 0.0` sobre `0,34/0,25/0,28`, que normalizado
+  /// parece preferência. A distribuição está na tela ao lado; escolher uma das
+  /// duas seria fabricar a preferência que ela não tem.
+  static String? typedAnswerLabel(
+    String? type,
+    Map<String, dynamic> answer,
+    Map<String, double> probs,
+    Map<int, String> legend,
+  ) {
+    if (type == 'score') {
+      final raw = answer['score'];
+      // **A legenda primeiro, e ela existe para isto.** O endpoint manda
+      // `score` como índice e `legend` com o texto de cada nível; mostrar `2.0`
+      // quando `legend[2]` é `Today` é mostrar um float onde havia um nome.
+      if (raw is num) {
+        final nome = legend[raw.toInt()];
+        if (nome != null && nome.trim().isNotEmpty) return nome;
+        // **Sem legenda, o índice é escrito como índice.** `'${raw}'` de um
+        // `2.0` em Dart dá `2.0`, e o índice de um nível não tem ponto decimal.
+        return '${raw.toInt()}';
+      }
+      return null;
+    }
+    if (type == 'noul') {
+      if (probs.isEmpty) return null;
+      final entradas = probs.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      if (entradas.length > 1 && entradas[0].value == entradas[1].value) {
+        return null;
+      }
+      return entradas.first.key;
+    }
+    return _str(answer['choice']);
   }
 
   /// The JSON body for `POST /v1/systemone`.

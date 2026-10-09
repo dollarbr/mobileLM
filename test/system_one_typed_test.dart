@@ -81,6 +81,60 @@ Map<String, dynamic> scorePayload({
       'usage': {'questions': 1, 'passes': 1, 'forward_pass_ms': 7971},
     };
 
+/// Os mesmos três, medidos **hoje** no `d1-3B` do A72.
+///
+/// O primeiro conjunto é do `tev1` e continua aqui porque um reader que só
+/// conhece um modelo é um reader que ninguém testou. Estes dois juntos são o que
+/// separa "a resposta é do modelo" de "a resposta é do reader".
+Map<String, dynamic> noulPayloadD1({
+  double yes = 0.552194306187078,
+  double no = 0.44780569381292196,
+}) =>
+    {
+      'object': 'systemone.decision',
+      'model': 'd1-3B-Q4_K_M.gguf',
+      'answers': {
+        'decision': {
+          'type': 'noul',
+          'noul': yes,
+          'probabilities': {
+            'yes, the statement holds': yes,
+            'no, the statement does not hold': no,
+          },
+          'why_no_confidence':
+              'noul answers report the probability of true, which is the '
+              'contract for this shape; confidence is defined for choice and '
+              'score, where the distance between options carries information '
+              'that the probability alone does not.',
+        },
+      },
+      'usage': {'questions': 1, 'passes': 1, 'forward_pass_ms': 9123},
+    };
+
+/// **`score` chega como ponto** — `2.0`, medido — e a legenda indexada por
+/// inteiro é quem diz que aquilo é o nível `Today`.
+Map<String, dynamic> scorePayloadD1({
+  double level = 2.0,
+}) =>
+    {
+      'object': 'systemone.decision',
+      'model': 'd1-3B-Q4_K_M.gguf',
+      'answers': {
+        'decision': {
+          'type': 'score',
+          'score': level,
+          'confidence': 0.2679536766760716,
+          'legend': {'0': 'Can wait', '1': 'This week', '2': 'Today'},
+          'probabilities': {
+            'Can wait': 0.17389139299145873,
+            'This week': 0.31413948922449353,
+            'Today': 0.5119691177840477,
+          },
+        },
+      },
+      'usage': {'questions': 1, 'passes': 1, 'forward_pass_ms': 9044},
+    };
+
 void main() {
   group('o leitor de /v1/systemone, contra os tres payloads medidos', () {
     test('noul: a probabilidade de true, e o motivo de nao haver confidence', () {
@@ -96,6 +150,66 @@ void main() {
       expect(r.whyNoConfidence, contains('probability of true'));
       expect(r.passes, 1);
       expect(r.model, 'tev1-Q8_0.gguf');
+    });
+
+    test('o TITULO de cada forma, e as tres estao certas', () {
+      // **Este é o teste que faltava, e a ausência dele é a causa do defeito.**
+      // O arquivo afirmava `label` só no caso de `choice` — e as outras duas
+      // formas liam o campo errado em silêncio. O A72 mostrou `(no label)` num
+      // `noul` e `2.0` num `score`.
+      //
+      // `noul` tem **duas** afirmações nomeadas pelo endpoint e **nenhum**
+      // `choice`; a resposta de um booleano é a das duas que o modelo prefere.
+      final n = const SystemOneResult().fromSystemOne(noulPayload());
+      expect(n.label, 'yes, the statement holds');
+      expect(n.label, isNot('(no label)'));
+
+      // `score` devolve `2.0` com `legend[2] = 'Today'`: o nome, não o float.
+      final s = const SystemOneResult().fromSystemOne(scorePayloadD1());
+      expect(s.label, 'Today');
+      expect(s.label, isNot('2.0'));
+      expect(s.label, isNot('2'));
+
+      // E o `choice` continua o que era: o campo `choice`.
+      expect(const SystemOneResult().fromSystemOne(choicePayload()).label,
+          'billing: Charges, refunds and invoices');
+    });
+
+    test('o mesmo titulo nos dois modelos: o reader nao depende do modelo', () {
+      // **0,5187 no tev1 e 0,5522 no d1-3B, e a forma da resposta é a mesma.**
+      // Um reader que acertasse um e errasse o outro estaria lendo alguma coisa
+      // do `model` — e `model` não é entrada do reader.
+      for (final p in [noulPayload(), noulPayloadD1()]) {
+        expect(const SystemOneResult().fromSystemOne(p).label,
+            'yes, the statement holds');
+      }
+      // **Os dois `score` medidos deram níveis diferentes** — 0 no tev1 e 2 no
+      // d1-3B — e o título segue o **número**, não o modelo nem a média. A
+      // primeira versão deste teste afirmava `'Can wait'` para os dois e
+      // reprovou com `'Today'`: o reader estava certo e a expectativa é que
+      // não sabia que os dois modelos respondem coisas diferentes.
+      expect(const SystemOneResult().fromSystemOne(scorePayload()).label,
+          'Can wait');
+      expect(const SystemOneResult().fromSystemOne(scorePayloadD1()).label,
+          'Today');
+      // E o mesmo nível nos dois dá o mesmo título, que é a afirmação que
+      // importa: a legenda é uma função do índice.
+      expect(
+        const SystemOneResult().fromSystemOne(scorePayloadD1(level: 0.0)).label,
+        'Can wait',
+      );
+    });
+
+    test('noul empatado devolve NULO, e não uma das duas', () {
+      // **Um booleano em 0,5/0,5 é o modelo sem opinião.** Escolher uma das duas
+      // fabricaria a preferência que ele não tem — a mesma forma de erro que o
+      // `d1-omni` com `confidence: 0.0` sobre `0,34/0,25/0,28`, que parece
+      // preferência quando é não-opinião.
+      final r = const SystemOneResult()
+          .fromSystemOne(noulPayload(yes: 0.5, no: 0.5));
+      expect(r.probabilities.length, 2);
+      expect(r.noul, closeTo(0.5, 1e-12));
+      expect(r.label, isNull);
     });
 
     test('choice: a confianca medida, e NAO a probabilidade do topo', () {
@@ -136,10 +250,25 @@ void main() {
       }
     });
 
-    test('o `label` do score e o indice, porque a resposta traz um indice', () {
+    test('o `label` do score e o NOME do nivel, e o indice continua no `score`',
+        () {
+      // **Este teste afirmava `'2.0'` e se chamava "o indice".** O nome diz
+      // índice, o valor diz ponto flutuante, e **um dos dois está errado** — e
+      // era o valor, porque `2.0` não é índice de nada. Era o artefato de
+      // `'${score.toDouble()}'` escrito a partir do que o código fazia, com
+      // zero justificativa ao lado.
+      //
+      // O endpoint decide: `score` volta como índice e `legend` traz o nome de
+      // cada nível. **`legend` não existe para nada se o reader não a usar**, e o
+      // índice continua disponível em `r.score` para quem quiser o número.
       final r = const SystemOneResult().fromSystemOne(scorePayload(level: 2));
-      expect(r.score, 2.0);
-      expect(r.label, '2.0');
+      expect(r.score, 2.0, reason: 'o índice bruto continua no `score`');
+      expect(r.label, 'Today', reason: 'o `label` é o que a pessoa lê');
+      // E a afirmação original sobrevive, que é a que importava: um `score`
+      // NUNCA vira a letra de uma opção. `2.0` era o índice, `Today` é o nome,
+      // e `B` seria um terceiro objeto que ninguém mandou.
+      expect(r.label, isNot(contains('B')));
+      expect(r.letter, isNull);
     });
   });
 

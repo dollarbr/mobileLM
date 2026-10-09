@@ -127,6 +127,16 @@ docs/*
 !docs/HYBRID_CORE.md
 !docs/HANDOFF.md
 
+# `SYSTEM_ONE.md` é o terceiro caso da mesma regra: o `AGENTS.md` diz "detalhe
+# completo em docs/SYSTEM_ONE.md" na seção da família `d1`, e o arquivo não
+# estava no repo — um clone novo não tinha o documento que o próprio guia manda
+# ler antes de mexer na janela de decisão. **E o link estava quebrado por
+# dentro**: `[docs/SYSTEM_ONE.md](SYSTEM_ONE.md)`, cujo alvo resolve para
+# `<repo>/SYSTEM_ONE.md` e não existe. É a regra do guia da raiz — "um caminho
+# num guia tem que resolver a partir de onde o guia está" — verificada por
+# `grep`, não por leitura.
+!docs/SYSTEM_ONE.md
+
 # Stale entries from the parked Rust core (`mobilelm_core`, removed in 0.3.5 — see
 # docs/HYBRID_CORE.md). Nothing produces these two files any more; CI no longer
 # copies them into jniLibs, and `release.yml` warns if `liblitert-lm.so` reappears
