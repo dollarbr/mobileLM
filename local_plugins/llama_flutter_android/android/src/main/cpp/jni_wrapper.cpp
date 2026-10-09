@@ -2753,3 +2753,236 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeEncode
     }
     return result;
 }
+
+// Score a caller-supplied set of tokens at the last position of one prompt, in a
+// single forward pass.
+//
+// This is the primitive `nativeEncode`'s rerank branch already uses — one
+// token's logit at one position — generalised to N. A decision model in the
+// Mapika family is a plain causal LM whose prompt ends at an answer slot
+// (`Answer: (`), and whose readout is the LM head's rows for the option letters,
+// softmaxed over the valid letters. Nothing is generated, so there is no token
+// to sample and no text to parse — which is the whole reason this exists
+// separately from `nativeGenerate`.
+//
+// Three things here are decisions rather than transcription:
+//
+// **Only the last position is flagged.** `batch.logits[i]` *is* `inp_out_ids`.
+// The encoder above flags everything because pooling aggregates over the marked
+// tokens; here exactly one row is read, and flagging the whole prompt would
+// copy the entire sequence through the LM head for output nobody looks at.
+//
+// **The KV cache is cleared.** One forward pass answers one question and no
+// later position depends on it, so carrying a context forward is weight that
+// this path never reads. The AGENTS.md records what happens when it is not
+// cleared: `g_n_past` growing forever and the next prompt being decoded on top
+// of the previous one.
+//
+// **The logits are read raw, and the caller owns the softmax.** Temperature and
+// bucket selection are policy, and policy that lives in C++ cannot be tested
+// without a device. What crosses the boundary is one float per requested token,
+// in the order they were requested.
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeDecisionScores(
+    JNIEnv* env, jobject /* thiz */, jstring prompt, jintArray slot_indices,
+    jintArray token_ids) {
+    if (!g_model || !g_ctx || !g_vocab) {
+        throwLoadError(env, "No model loaded");
+        return nullptr;
+    }
+
+    // An encoder has no vocab-sized output to read a letter from, and its
+    // `n_vocab` logits do not exist. Refusing here names the reason; letting it
+    // through would read whatever is in that buffer and report it as a score.
+    if (llama_pooling_type(g_ctx) != LLAMA_POOLING_TYPE_NONE) {
+        throwLoadError(env,
+            "Letter-logit decisions need a generative model. This one declares a "
+            "pooling type, so it is an encoder: it scores a feature vector, not "
+            "option letters. Use /v1/rerank or /v1/classify for this file.");
+        return nullptr;
+    }
+
+    if (token_ids == nullptr || slot_indices == nullptr) {
+        throwLoadError(env, "slot_indices and token_ids are both required: a "
+                            "decision with no slots or no candidate tokens has "
+                            "nothing to read.");
+        return nullptr;
+    }
+    const jsize n_ids = env->GetArrayLength(token_ids);
+    const jsize n_slots = env->GetArrayLength(slot_indices);
+    if (n_ids <= 0 || n_slots <= 0) {
+        throwLoadError(env, "slot_indices and token_ids are both required and "
+                            "cannot be empty.");
+        return nullptr;
+    }
+
+    // Both jarrays are read once, in full, before anything is used: calling
+    // GetStringUTFChars twice for one string leaks the first copy, and reading
+    // one element at a time through GetIntArrayRegion costs a JNI transition
+    // per candidate for no reason.
+    std::vector<jint> ids((size_t) n_ids);
+    env->GetIntArrayRegion(token_ids, 0, n_ids, ids.data());
+    std::vector<jint> slots((size_t) n_slots);
+    env->GetIntArrayRegion(slot_indices, 0, n_slots, slots.data());
+
+    std::string p_utf8;
+    if (prompt) {
+        const char* raw = env->GetStringUTFChars(prompt, nullptr);
+        p_utf8 = raw ? sanitizeUTF8(raw, strlen(raw)) : std::string();
+        if (raw) env->ReleaseStringUTFChars(prompt, raw);
+    }
+
+    // add_special = true, parse_special = true: the same pair nativeGenerate
+    // uses, and for the same reason — the model was trained with its own
+    // boundary tokens and a prompt without them is a different input.
+    std::vector<llama_token> tokens(p_utf8.size() + 8);
+    int32_t n = llama_tokenize(g_vocab, p_utf8.c_str(), (int32_t) p_utf8.size(),
+                               tokens.data(), (int32_t) tokens.size(), true, true);
+    if (n < 0) {
+        tokens.resize((size_t) -n);
+        n = llama_tokenize(g_vocab, p_utf8.c_str(), (int32_t) p_utf8.size(),
+                           tokens.data(), (int32_t) tokens.size(), true, true);
+    }
+    if (n <= 0) {
+        throwLoadError(env, "Could not tokenize the decision prompt");
+        return nullptr;
+    }
+    tokens.resize((size_t) n);
+
+    // A slot past the end of the prompt is a caller bug, and it is refused here
+    // with the number rather than becoming a read of whatever row followed it.
+    // `-1` is not a legal slot but is allowed as "the last position", because
+    // the single-question layout always ends at the answer slot and computing
+    // its index from the token count would be a second source of truth.
+    std::vector<char> flagged((size_t) n, 0);
+    for (jsize s = 0; s < n_slots; s++) {
+        const jint idx = slots[(size_t) s] < 0 ? n - 1 : slots[(size_t) s];
+        if (idx < 0 || idx >= n) {
+            std::string bad;
+            for (jsize k = 0; k < n_slots; k++) bad += " " + std::to_string((int) slots[(size_t) k]);
+            throwLoadError(env,
+                "slot index out of range: this prompt tokenizes to " +
+                std::to_string(n) + " tokens and the slot indices are:" + bad +
+                ". The prompt and the slot list were built from different inputs.");
+            return nullptr;
+        }
+        flagged[(size_t) idx] = 1;
+    }
+
+    llama_batch batch = llama_batch_init(n, 0, 1);
+    if (!batch.token || !batch.logits) {
+        llama_batch_free(batch);
+        throwLoadError(env, "Could not allocate the decision batch");
+        return nullptr;
+    }
+    for (int32_t i = 0; i < n; i++) {
+        batch.token[i]     = tokens[(size_t) i];
+        batch.pos[i]       = i;
+        batch.n_seq_id[i]  = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i]    = (int8_t) flagged[(size_t) i];
+    }
+    batch.n_tokens = n;
+
+    const jsize out_len = n_slots * n_ids;
+    jdoubleArray result = nullptr;
+    {
+        // Same lock nativeEncode and nativeGenerate take, for the same reason:
+        // this blocks in llama_decode, and teardown frees the context from
+        // another thread.
+        std::lock_guard<std::mutex> ctx_lock(g_ctx_mutex);
+        llama_memory_clear(llama_get_memory(g_ctx), true);
+
+        const int32_t rc = llama_decode(g_ctx, batch);
+        if (rc != 0) {
+            llama_batch_free(batch);
+            throwLoadError(env, "llama_decode failed on the decision batch (rc=" +
+                                std::to_string(rc) + ", tokens=" + std::to_string(n) + ")");
+            return nullptr;
+        }
+
+        const int32_t n_vocab = llama_vocab_n_tokens(g_vocab);
+        std::vector<double> picked((size_t) out_len);
+        std::string out_of_range;
+        // Slot-major: slot 0's candidates first, then slot 1's. The order the
+        // flagged positions appear in is the order of `slots`, because
+        // `output_resolve_row` renumbers them.
+        for (jsize s = 0; s < n_slots; s++) {
+            const float* logits = llama_get_logits_ith(g_ctx, s);
+            if (logits == nullptr) {
+                llama_batch_free(batch);
+                throwLoadError(env,
+                    "The model produced no logits at answer slot " +
+                    std::to_string((int) s) +
+                    ". The context was not created for generation, which is a "
+                    "build problem rather than a model problem.");
+                return nullptr;
+            }
+            for (jsize i = 0; i < n_ids; i++) {
+                const jint id = ids[(size_t) i];
+                if (id < 0 || id >= n_vocab) {
+                    // A letter the vocabulary does not have is not a zero score:
+                    // it is a prompt built wrong, and a zero would silently
+                    // become the losing option of every decision. Name it.
+                    if (!out_of_range.empty()) out_of_range += ", ";
+                    out_of_range += std::to_string((int) id);
+                    picked[(size_t) s * n_ids + i] = 0.0;
+                    continue;
+                }
+                picked[(size_t) s * n_ids + i] = (double) logits[id];
+            }
+        }
+        if (!out_of_range.empty()) {
+            LOGE("Decision asked for token ids outside the vocabulary (n_vocab=%d): %s",
+                 (int) n_vocab, out_of_range.c_str());
+        }
+
+        result = env->NewDoubleArray(out_len);
+        if (result) {
+            env->SetDoubleArrayRegion(result, 0, out_len, picked.data());
+        }
+    }
+
+    llama_batch_free(batch);
+    if (result) {
+        LOGI("Decision scores: %d tokens in, %d slots x %d candidates",
+             (int) n, (int) n_slots, (int) n_ids);
+    }
+    return result;
+}
+
+// The one token id for a short string, or -1 when it is not one token.
+//
+// This exists because the decision readout is defined over *token ids* and a
+// caller cannot invent them: the letter `A` is one token in one vocabulary and
+// two in another, and the answer slots of this model family are read by
+// restricting the LM head's rows to those ids. `parse_special = false` and
+// `add_special = false`, because what is wanted is the id of the piece and not
+// a prompt.
+//
+// `-1` is the answer rather than an exception, and the caller names the reason:
+// "the letter B is not a single token in this vocabulary" is a fact about the
+// model worth reporting, and an exception from tokenize would say nothing about
+// which string failed. The count comes back through `out_n` because "it is two
+// tokens" and "it is zero tokens" are different problems.
+extern "C" JNIEXPORT jint JNICALL
+Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeTokenizeSingle(
+    JNIEnv* env, jobject /* thiz */, jstring text, jintArray out_n) {
+    if (!g_vocab) {
+        throwLoadError(env, "No model loaded");
+        return -1;
+    }
+
+    const char* raw = text ? env->GetStringUTFChars(text, nullptr) : nullptr;
+    const std::string s = raw ? std::string(raw) : std::string();
+    if (raw) env->ReleaseStringUTFChars(text, raw);
+
+    llama_token one = LLAMA_TOKEN_NULL;
+    const int32_t n = llama_tokenize(g_vocab, s.c_str(), (int32_t) s.size(),
+                                     &one, 1, false, false);
+    if (out_n) {
+        jint v = (jint) n;
+        env->SetIntArrayRegion(out_n, 0, 1, &v);
+    }
+    return n == 1 ? (jint) one : -1;
+}

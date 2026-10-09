@@ -180,6 +180,86 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
                 }
             }
 
+            // The one token id for a short string, for a decision readout.
+            //
+            // Synchronous and cheap: it is tokenization, not a forward pass,
+            // and the answer decides whether the caller can build a valid
+            // prompt at all. Turning it into a coroutine would mean the caller
+            // awaits N of them before it can send anything.
+            "tokenizeSingle" -> {
+                ensureNativeLoaded()?.let {
+                    result.error("NATIVE_LOAD", it.message, null); return
+                }
+                if (!isModelLoaded.get()) {
+                    result.error("NO_MODEL", "No model loaded", null); return
+                }
+                val text = call.argument<String>("text")
+                if (text == null) {
+                    result.error("BAD_ARGS", "text is required", null); return
+                }
+                val outN = IntArray(1)
+                val id = nativeTokenizeSingle(text, outN)
+                result.success(mapOf(
+                    "id" to id,
+                    "tokenCount" to outN[0],
+                ))
+            }
+
+            // One forward pass, then the raw logit of each requested token at
+            // each answer slot. Slot-major: slot 0's candidates, then slot 1's.
+            //
+            // Off the platform thread for the reason nativeEncode is: this
+            // blocks in llama_decode, and on a phone a decision prompt with a
+            // long state is hundreds of milliseconds to seconds.
+            "decisionScores" -> {
+                ensureNativeLoaded()?.let {
+                    result.error("NATIVE_LOAD", it.message, null); return
+                }
+                if (!isModelLoaded.get()) {
+                    result.error("NO_MODEL", "No model loaded", null); return
+                }
+                val prompt = call.argument<String>("prompt")
+                if (prompt == null) {
+                    result.error("BAD_ARGS", "prompt is required", null); return
+                }
+                val ids = call.argument<List<Int>>("tokenIds")
+                if (ids == null || ids.isEmpty()) {
+                    result.error("BAD_ARGS", "tokenIds is required and cannot be empty", null); return
+                }
+                // -1 is the last token, and it is what a caller that knows its
+                // prompt ends at the answer slot should send: computing the
+                // index from the token count on the Dart side would be a second
+                // source of truth about the same prompt.
+                val slots = call.argument<List<Int>>("slotIndices") ?: listOf(-1)
+                if (slots.isEmpty()) {
+                    result.error("BAD_ARGS", "slotIndices cannot be empty", null); return
+                }
+                scope.launch {
+                    val started = System.nanoTime()
+                    val out = try {
+                        nativeDecisionScores(prompt, slots.toIntArray(), ids.toIntArray())
+                    } catch (e: Throwable) {
+                        withContext(Dispatchers.Main) {
+                            result.error("DECISION_FAILED", e.message ?: e.toString(), null)
+                        }
+                        return@launch
+                    }
+                    val elapsedMs = (System.nanoTime() - started) / 1_000_000
+                    withContext(Dispatchers.Main) {
+                        if (out == null) {
+                            result.error("DECISION_FAILED", "The decision pass returned nothing", null)
+                        } else {
+                            result.success(mapOf(
+                                "scores" to out.toList(),
+                                "slots" to slots.size,
+                                "candidates" to ids.size,
+                                "elapsedMs" to elapsedMs,
+                            ))
+                        }
+                    }
+                }
+            }
+
             // Hand over whatever ggml/llama.cpp has logged since the last
             // call. Empty before the library is loaded, which is not an
             // error: the poller starts before the first model does.
@@ -691,5 +771,16 @@ class LlamaFlutterAndroidPlugin : FlutterPlugin, LlamaHostApi, MethodChannel.Met
     // FloatArray.toDoubleArray() to convert with.
     private external fun nativeEncoderInfo(): String
     private external fun nativeEncode(text: String, query: String): DoubleArray?
+    // Decision surface. nativeDecisionScores runs one forward pass over `prompt`
+    // and returns the raw logit of each id in `tokenIds`, at the last position,
+    // in the order asked. No softmax here on purpose: temperature and bucket
+    // choice are policy, and policy in C++ cannot be tested without a device.
+    private external fun nativeDecisionScores(prompt: String, slotIndices: IntArray, tokenIds: IntArray): DoubleArray?
+    // nativeTokenizeSingle returns the one token id for `text`, or -1 when it is
+    // not a single token, writing the token count to outN[0] so the caller can
+    // say which of "two tokens" and "no tokens" it hit. Needed because a
+    // decision readout is defined over token ids and the caller cannot invent
+    // them: "A" is one token in one vocabulary and two in another.
+    private external fun nativeTokenizeSingle(text: String, outN: IntArray): Int
     // outStats[0] = vulkanApiVersion, outStats[1] = deviceLocalMemoryBytes
 }
