@@ -17,7 +17,15 @@ import '../services/download_service.dart';
 import '../utils/logistic.dart';
 import '../utils/server_auth.dart';
 import 'decision_model.dart';
+// `decisionPermutations` exists in both `decision_stability.dart` (the measured
+// order for a generated letter) and `typed_decision.dart` (the same order for a
+// letter logit). The server uses the stability one, so the typed one is hidden
+// rather than prefixed at every call site — and the reason they are duplicated
+// at all is that the order was **measured**, which is why neither file defines
+// its own.
 import 'decision_stability.dart';
+import 'typed_decision.dart' hide decisionPermutations;
+import 'typed_decision_runner.dart';
 import 'encoder_settings_service.dart';
 import 'inference_service.dart';
 import 'litert_service.dart';
@@ -161,6 +169,11 @@ class OpenAiServerService {
         return;
       }
 
+      if (request.method == 'POST' && path == '/v1/systemone') {
+        await _handleSystemOne(request);
+        return;
+      }
+
       await _json(request, {'error': 'Not found'}, status: HttpStatus.notFound);
     } catch (error) {
       _onLog?.call('Request failed: $error');
@@ -244,7 +257,7 @@ class OpenAiServerService {
     InferenceService inference,
     ModelController controller,
   ) {
-    final filename = model.filename as String;
+    final filename = model.filename;
     final dp = controller.getDownloadProgress(filename);
     final isDownloaded = downloaded.contains(filename);
     final isLoaded = inference.isModelLoaded.value &&
@@ -1779,6 +1792,261 @@ class OpenAiServerService {
   Future<String> _modelPath(String filename) async {
     if (filename.startsWith('/')) return filename;
     return Get.find<DownloadService>().modelPath(filename);
+  }
+
+  /// `POST /v1/systemone` — typed questions answered from the option
+  /// distribution, in one forward pass per question.
+  ///
+  /// ## This is the endpoint the class actually names
+  ///
+  /// `/v1/classify` is this app's own shape: a string in, one label out, with a
+  /// `scores` map that is **all null** for a decision model, because a decision
+  /// model emits one letter and a letter is not a logit. This one is the
+  /// cross-vendor contract — TypeSafe's `Jev`, Cloudflare's `Clef`, Convai's
+  /// `Laya` and Liquid AI's `d1` all take this body — and the difference is not
+  /// cosmetic: `choice`/`score`/`noul` are three **question types**, `answers` is
+  /// keyed by question id, and `confidence` and `probabilities` are real numbers
+  /// read off the LM head's rows for the option letters.
+  ///
+  /// ## What it needs and refuses
+  ///
+  /// A **generative** model. An encoder has no vocab-sized output to read a
+  /// letter from, and the native side refuses that by name rather than returning
+  /// whatever is in the buffer.
+  ///
+  /// ## Why the answers are calibrated here and not in the model
+  ///
+  /// The logits cross the boundary raw. Temperature, softmax and the
+  /// `confidence` formula are in `typed_decision.dart`, which has 46 tests and
+  /// runs without a device — and the ten per-bucket temperatures the authors ship
+  /// in their own GGUFs are a *read*, not a mechanism this endpoint owns.
+  ///
+  /// ## One pass per question, and the cost is stated
+  ///
+  /// The slot index is a **token** position and this handler never tokenizes the
+  /// prompt, so questions cannot share a row. `prompt.py` can pack them; the fix
+  /// for that is a token count of a prefix, not a guessed index. On the A72 that
+  /// is one prefill per question.
+  Future<void> _handleSystemOne(HttpRequest request) async {
+    final body = await _readJson(request);
+    if (_busy) {
+      await _json(request, {'error': 'Model is busy'}, status: 429);
+      return;
+    }
+
+    final questions = <DecisionQuestion>[];
+    final rawQuestions = body['questions'];
+    if (rawQuestions is! Map || rawQuestions.isEmpty) {
+      await _json(
+        request,
+        {
+          'error': "'questions' is required and must be a non-empty object "
+              'keyed by question id, as in '
+              '{"department": {"type": "choice", "criteria": {...}}}.',
+        },
+        status: HttpStatus.badRequest,
+      );
+      return;
+    }
+
+    // Validate the whole set before the model is touched. A request that names
+    // eleven options is a fact about the request, and hearing about it before a
+    // prefill is the difference between a fast 400 and a slow one.
+    try {
+      for (final entry in rawQuestions.entries) {
+        final id = '${entry.key}';
+        final q = entry.value;
+        if (q is! Map) {
+          throw DecisionRequestError(
+            'The question "$id" is not an object; it must have a "type" and '
+            'either "options" or "criteria".',
+          );
+        }
+        final type = DecisionType.parse(q['type'] as String?);
+        if (type == null) {
+          throw DecisionRequestError(
+            'The question "$id" has type "${q['type']}", which is not one of '
+            'choice, score, noul.',
+          );
+        }
+        final options = _systemOneOptions(id, q);
+        questions.add(DecisionQuestion(
+          id: id,
+          type: type,
+          instructions: q['instructions'] as String?,
+          options: options,
+        ));
+      }
+      // Throws on more than ten options, with the reason.
+      for (final q in questions) {
+        decisionLetterSet(q.options.length);
+      }
+    } on DecisionRequestError catch (e) {
+      await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
+      return;
+    } on FormatException catch (e) {
+      await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
+      return;
+    }
+
+    double? temperature;
+    final rawT = body['temperature'];
+    if (rawT is num) temperature = rawT.toDouble();
+    if (temperature != null &&
+        (temperature <= 0 || !temperature.isFinite)) {
+      await _json(
+        request,
+        {'error': 'temperature must be a finite positive number, and '
+            '$temperature was given.'},
+        status: HttpStatus.badRequest,
+      );
+      return;
+    }
+
+    _busy = true;
+    TypedDecisionResult result;
+    try {
+      result = await const TypedDecisionRunner().run(
+        state: body['state'],
+        questions: questions,
+        temperature: temperature,
+      );
+    } on DecisionUnavailable catch (e) {
+      await _json(request, {'error': e.message},
+          status: HttpStatus.badRequest);
+      return;
+    } on DecisionRequestError catch (e) {
+      await _json(request, {'error': e.message}, status: HttpStatus.badRequest);
+      return;
+    } finally {
+      _busy = false;
+    }
+
+    // A duplicate id would silently drop an answer, and a response that cannot
+    // say everything it was asked is worth naming rather than shipping.
+    final dupes = result.duplicateIds;
+    await _json(request, {
+      'object': 'systemone.decision',
+      'model': inferenceModelName(),
+      'answers': result.toJson(),
+      if (dupes.isNotEmpty)
+        'why_answers_dropped':
+            'These question ids appeared more than once, and a JSON object '
+            'holds one value per key: ${dupes.join(', ')}. Each id was '
+            'answered once per pass, so the count of answers exceeds the count '
+            'of keys.',
+      'usage': {
+        'questions': questions.length,
+        'passes': questions.length,
+        'forward_pass_ms': result.elapsedMs,
+      },
+    });
+  }
+
+  /// The option texts for one question, from `options` or from `criteria`.
+  ///
+  /// The contract uses **both**: a list for `score` (indexed from 0, because the
+  /// level number is the value) and a map for `choice` (the key is the value).
+  /// `noul` takes neither — it is two by definition — and gets the phrases the
+  /// authors' own template uses, so the option texts the model sees are the ones
+  /// it was calibrated on.
+  ///
+  /// This is Dart-side normalisation only: the order of the map's keys is the
+  /// insertion order, and that is what decides the letter assignment. A JSON
+  /// object has no guaranteed key order to a *reader*, but Dart preserves what
+  /// `jsonDecode` produced, and this is a request the caller just sent.
+  List<String> _systemOneOptions(String id, Map<dynamic, dynamic> q) {
+    final type = DecisionType.parse(q['type'] as String?)!;
+    if (type == DecisionType.noul) {
+      // The template's own words. They are not decoration: the option text is
+      // part of the prompt, and a calibrated model was calibrated on these.
+      final desc = q['description'] as String?;
+      if (desc != null && desc.isNotEmpty) {
+        return ['yes, $desc', 'no, $desc does not hold'];
+      }
+      return ['yes, the statement holds', 'no, the statement does not hold'];
+    }
+
+    final criteria = q['criteria'];
+    if (criteria is List) {
+      final out = <String>[];
+      for (var i = 0; i < criteria.length; i++) {
+        final c = criteria[i];
+        if (c is String) {
+          out.add(c);
+        } else if (c is Map) {
+          final text = c['description'] ?? c['label'] ?? c['text'];
+          if (text is! String) {
+            throw DecisionRequestError(
+              'The question "$id" has a criterion at index $i with no text. It '
+              'must be a string, or an object with a "description".',
+            );
+          }
+          out.add(text);
+        } else {
+          throw DecisionRequestError(
+            'The question "$id" has a criterion at index $i that is neither a '
+            'string nor an object.',
+          );
+        }
+      }
+      if (out.isEmpty) {
+        throw DecisionRequestError(
+          'The question "$id" has an empty "criteria" list. A decision needs at '
+          'least two options.',
+        );
+      }
+      return out;
+    }
+
+    if (criteria is Map) {
+      final out = <String>[];
+      for (final entry in criteria.entries) {
+        final v = entry.value;
+        // `key: description` is what the authors' template renders for a
+        // choice, so the map key travels. Dropping it would send a prompt the
+        // model never saw.
+        final desc = v is String ? v : (v is Map ? v['description'] : null);
+        out.add(desc is String && desc.isNotEmpty
+            ? '${entry.key}: $desc'
+            : '${entry.key}');
+      }
+      if (out.isEmpty) {
+        throw DecisionRequestError(
+          'The question "$id" has an empty "criteria" object. A decision needs '
+          'at least two options.',
+        );
+      }
+      return out;
+    }
+
+    // `options` is this app's spelling and the one the `/v1/classify` window
+    // already teaches. Accepting it means a caller that has one decision working
+    // can add the typed field without relearning the wire.
+    final options = q['options'];
+    if (options is List) {
+      final out = <String>[];
+      for (final o in options) {
+        if (o is! String) {
+          throw DecisionRequestError(
+            'The question "$id" has a non-string option: $o',
+          );
+        }
+        out.add(o);
+      }
+      if (out.isEmpty) {
+        throw DecisionRequestError(
+          'The question "$id" has an empty "options" list. A decision needs at '
+          'least two options.',
+        );
+      }
+      return out;
+    }
+
+    throw DecisionRequestError(
+      'The question "$id" has no options. Send "criteria" (a map for choice, a '
+      'list for score) or "options" (a list).',
+    );
   }
 
   /// `POST /v1/classify` — this app's own shape, because there is no standard
