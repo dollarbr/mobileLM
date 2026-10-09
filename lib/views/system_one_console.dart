@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../controllers/server_controller.dart';
 import '../core/colors.dart';
 import '../services/system_one.dart';
+import '../services/system_one_presets.dart';
 import '../utils/server_auth.dart';
 import 'api_console_shell.dart';
 
@@ -184,6 +185,27 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   /// chip is how they get there.
   SystemOneReadout _readout = SystemOneReadout.letter;
 
+  /// Which of the three typed shapes to ask.
+  ///
+  /// Defaults to `choice` because that is what the option card was built for,
+  /// and the three are **different questions** rather than three formats: a
+  /// `noul` with criteria is a `choice` with two options wearing the wrong name,
+  /// which is why [decisionTypeNeedsOptions] hides the card for it instead of
+  /// trusting the person to leave it alone.
+  String _answerType = 'choice';
+
+  /// Which preset filled the fields, or null for a hand-written decision.
+  ///
+  /// Null is the honest state and the card says so: after a person edits the
+  /// state, the measured answer under the chips describes a question that is no
+  /// longer the one on screen, and comparing the two would be comparing a number
+  /// to a memory.
+  String? _presetId;
+
+  /// The selected preset, or null.
+  DecisionPreset? get _selectedPreset =>
+      _presetId == null ? null : DecisionPreset.byId(_presetId!);
+
   FeatureVector? _parsedVector;
   String? _vectorProblem;
 
@@ -214,6 +236,19 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
   @override
   void initState() {
     super.initState();
+    // **Apagar o preset quando a pessoa edita é o que faz a medição significar
+    // alguma coisa.** Sem estes três listeners o `_presetId` ficava no chip
+    // enquanto os campos mudavam, e a tela mostrava "medido: billing" ao lado
+    // de uma pergunta que não era a do `charge` — a pessoa comparando um número
+    // com uma memória, que é exatamente o que o cartão promete não deixar
+    // acontecer.
+    //
+    // `_applyPreset` também dispara estes (ele escreve nos mesmos
+    // controladores), e é por isso que ele **escreve `_presetId` no fim**: quem
+    // decide o estado é quem chamou, não cada `setState` no meio caminho.
+    _state.addListener(_edited);
+    _question.addListener(_edited);
+    _instruction.addListener(_edited);
     _result = widget.initialResult;
     final given = widget.headContract;
     if (given != null) {
@@ -227,6 +262,13 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
 
   @override
   void dispose() {
+    // **Os três listeners saem antes dos controladores.** Um `TextEditingController`
+    // que dispara um `setState` depois de `dispose` lança
+    // `setState() called after dispose()` — e o sintoma aparece na tela
+    // seguinte, num `Get.to` que ninguém associate a este cartão.
+    _state.removeListener(_edited);
+    _question.removeListener(_edited);
+    _instruction.removeListener(_edited);
     _state.dispose();
     _question.dispose();
     _vector.dispose();
@@ -527,7 +569,7 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             // the contract's rule — and a stable id here means a stable key in
             // the answer, which is what the panel reads.
             questionId: 'decision',
-            questionType: 'choice',
+            questionType: _answerType,
             options: options,
             instructions: _instruction.text.isEmpty ? null : _instruction.text,
           ),
@@ -864,7 +906,11 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
           ),
         ),
       ),
-      _optionsCard(card, field),
+      // **Hidden for a `noul`, not disabled.** The endpoint writes its own two
+      // statements and ignores whatever criteria arrived, so a card the person
+      // can still type into would be a field that looks live and is not. That is
+      // rule 1 with a text box instead of a chart, and the card's note says so.
+      if (decisionTypeNeedsOptions(_answerType)) _optionsCard(card, field),
       _card(
         card,
         field,
@@ -885,6 +931,8 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             'soc_default_ok'.tr,
       ),
       _readoutCard(card, field),
+      _answerTypeCard(card, field),
+      _presetCard(card, field),
       if (_readout == SystemOneReadout.letter) _variantsCard(card, field),
       _actions(
         () => _runDecision(),
@@ -893,6 +941,117 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
             : 'soc_ask_for_the_distribution'.tr,
       ),
     ];
+  }
+
+  /// The four presets, and what each one measured.
+  ///
+  /// **These are controls, not demos.** A person who types their own state and
+  /// gets a letter back has no way to tell whether the model is wrong, the
+  /// prompt is wrong, or the readout is wrong — and the window cannot tell for
+  /// them either. A preset fixes the first two, so what remains is the third.
+  ///
+  /// The sentence under the chips names the **measured** answer, including the
+  /// two cases where the model is wrong, because a preset whose every answer is
+  /// correct teaches a person that the path works and nothing else.
+  Widget _presetCard(Color card, Color field) {
+    final selected = _selectedPreset;
+    return _card(
+      card,
+      field,
+      'soc_presets'.tr,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final p in DecisionPreset.all)
+                ChoiceChip(
+                  label: Text(p.labelKey.tr),
+                  selected: _presetId == p.id,
+                  onSelected: _busy ? null : (_) => _applyPreset(p),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (selected == null) ...[
+            Text(
+              'soc_presets_none'.tr,
+              style: GoogleFonts.inter(
+                  fontSize: 12, color: AppColors.textMuted),
+            ),
+          ] else ...[
+            if (selected.measured != null)
+              Text(
+                preencher('soc_preset_measured', {'m': selected.measured!}),
+                style: GoogleFonts.inter(fontSize: 12),
+              ),
+            if (selected.note != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                selected.noteKey.tr,
+                style: GoogleFonts.inter(
+                    fontSize: 11, color: AppColors.textMuted),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The three typed shapes, and the option card's dependence on the answer.
+  ///
+  /// **Visible on both readouts, and it has to be.** `questionType` goes into
+  /// the request body on the *letter* path too — it is the same
+  /// `systemOneBody`, and the only difference between the branches is what
+  /// happens to the answer. A `noul` asked on the letter path still writes its
+  /// own two statements and still comes back as a letter.
+  ///
+  /// **A versão anterior escondia esta carta atrás do readout `logit`, e a
+  /// janela abria sem ela.** Um teste de widget achou: `Bad state: No element`
+  /// numa carta que ninguém conseguia chegar. A pessoa só descobria o seletor
+  /// depois de trocar o readout — e o preset faz essa troca por ela, de modo que
+  /// a omissão ficava invisível justamente no caminho principal.
+  Widget _answerTypeCard(Color card, Color field) {
+    return _card(
+      card,
+      field,
+      'soc_answer_type'.tr,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final t in kAnswerTypes)
+                ChoiceChip(
+                  label: Text(kAnswerTypeKey[t]!.tr),
+                  selected: _answerType == t,
+                  onSelected: _busy
+                      ? null
+                      : (_) => setState(() => _answerType = t),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // **The ceiling moves with the shape, and it has to.** `choice` and
+          // `score` are lettered options with the layout's ten of them; `noul` is
+          // two by definition and takes no criteria at all, because the endpoint
+          // writes the statements in the words the authors' template uses. The
+          // card is HIDDEN for a `noul` rather than disabled — a visible card
+          // that silently ignores what a person types into it is worse than no
+          // card, and this is rule 1 with a text field.
+          Text(
+            decisionTypeNeedsOptions(_answerType)
+                ? 'soc_answer_type_note_options'.tr
+                : 'soc_answer_type_note_noul'.tr,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Which readout, and what each one costs.
@@ -1306,14 +1465,34 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
                   IconButton(
                     tooltip: 'remove',
                     onPressed: () =>
-                        setState(() => _options = _options.removeAt(i)),
+                        // Apagar o preset: uma lista de opções diferente é uma
+                        // pergunta diferente, e a medição do chip descreve a
+                        // lista que o chip trouxe.
+                        setState(() {
+                          _options = _options.removeAt(i);
+                          _presetId = null;
+                        }),
                     icon: const Icon(Icons.close, size: 16),
                   ),
                 ],
               ),
             ),
           _add(
-              'add an option', () => setState(() => _options = _options.add())),
+              // **Um literal, e o aparelho mostrou.** O `uiautomator dump` do
+              // A72 leu `add an option` em inglês com a tela em português, ao
+              // lado de uma nota que ESTA sim estava traduzida — que é a
+              // assimetria que denuncia: o mesmo cartão com metade traduzida.
+              //
+              // A varredura estreita (`tool/inline_english_scan.dart`) não o vê
+              // porque não é o primeiro argumento de um `Text(` — é o `label:`
+              // de um `_add`, um helper. E é a **sexta** omissão da lista de
+              // call sites deste arquivo, todas da mesma forma: uma lista do que
+              // a trava mede sendo menor do que a tela.
+              'soc_add_option'.tr,
+              () => setState(() {
+                    _options = _options.add();
+                    _presetId = null;
+                  })),
           if (problem != null) _problem(problem),
           const SizedBox(height: 6),
           Text(
@@ -1413,10 +1592,93 @@ class _SystemOneConsoleState extends State<SystemOneConsole> {
         {'c': classes.toString(), 'l': _labels.length.toString()});
   }
 
+  /// The person changed something the preset filled, so the measurement it names
+  /// is no longer about what is on screen.
+  ///
+  /// **Called from the controllers' listeners, so it fires on every keystroke —
+  /// and the `setState` looks like it rebuilds the window per character. It
+  /// does not, and the early return is what makes that true:** the first
+  /// keystroke nulls `_presetId` and every one after it costs a null comparison.
+  /// So the expensive path runs **at most once per preset touched**, and for
+  /// somebody who never tapped a chip this is one comparison per character.
+  ///
+  /// **It has to call `setState` at all, and that is the part worth arguing.**
+  /// A `TextField` rebuilds itself when its controller changes and nothing else
+  /// does — the card is a *sibling*, so dropping the id without a `setState`
+  /// leaves `measured: billing` sitting on screen next to a question that is
+  /// not the preset's. The number would still be there, which is the exact
+  /// thing this is here to prevent.
+  void _edited() {
+    if (_presetId == null) return;
+    setState(() => _presetId = null);
+  }
+
+  /// Fill every field from a preset, and switch the readout to the logit one.
+  ///
+  /// **The readout is switched because a preset that filled the fields and left
+  /// the person on the generated-letter path would answer with a letter and
+  /// none of the numbers the preset exists to show.** The logit readout is the
+  /// one whose answer is a measurement, and a preset's whole purpose is to be
+  /// compared against a measurement.
+  ///
+  /// Every controller is set with `text`, not `value`, and then the cursor is
+  /// parked at the end: setting `text` resets the selection to `-1`, and a
+  /// person who then types lands at the *start* of the state they just chose.
+  /// That is not visible in a screenshot and it is the difference between a
+  /// preset being usable and being a trap.
+  void _applyPreset(DecisionPreset p) {
+    _state.text = p.state;
+    _state.selection = TextSelection.collapsed(offset: p.state.length);
+    final q = p.question ?? DecisionPreset.defaultQuestion;
+    _question.text = q;
+    _question.selection = TextSelection.collapsed(offset: q.length);
+    final i = p.instruction ?? '';
+    _instruction.text = i;
+    _instruction.selection = TextSelection.collapsed(offset: i.length);
+    setState(() {
+      _answerType = p.type;
+      _options = _optionsFor(p.options);
+      if (_readout != SystemOneReadout.logit) {
+        _readout = SystemOneReadout.logit;
+      }
+      // **O id vai por último e não pode vir antes.** As três linhas acima
+      // escrevem em controladores que agora têm o listener `_edited`, e cada
+      // uma delas dispara `setState(() => _presetId = null)`. Ler — o
+      // `_selectedPreset` do cartão — acontece *depois* deste `setState`, de
+      // modo que gravar o id aqui no meio devolveria a tela ao estado "nada
+      // escolhido" no quadro seguinte, com o campo já preenchido. Foi
+      // exatamente o que aconteceu na primeira versão: **o `setState` existia e
+      // `_presetId = p.id` simplesmente não estava nele**, e o cartão passou a
+      // mostrar `soc_presets_none` com os campos cheios.
+      _presetId = p.id;
+      _error = null;
+      _notice = null;
+      _result = null;
+    });
+  }
+
+  /// Build an option list from texts, or the type's own default.
+  ///
+  /// An **empty** list is not the starter list. For `noul` it is deliberate — the
+  /// endpoint writes the two statements itself, and filling the card with two
+  /// option fields would be two sets of words for the same boolean — and it
+  /// means the card is hidden rather than emptied.
+  SystemOneOptions _optionsFor(List<String> labels) {
+    if (labels.isEmpty) return const SystemOneOptions([]);
+    return SystemOneOptions([
+      for (var i = 0; i < labels.length; i++)
+        SystemOneOption(SystemOneOptions.letters[i], labels[i]),
+    ]);
+  }
+
   void _setOption(int index, String label) {
     _options = _options.replace(
         index, SystemOneOption(_options.items[index].letter, label));
-    setState(() {});
+    // **A opção é parte da pergunta que a medição descreve, e vai no
+    // `setState` — então apagar o id aqui também é o que mantém a frase
+    // honesta.** Trocar `bug/billing/account` por outro trio é o mesmo gesto
+    // que digitar no campo do estado.
+    setState(() => _presetId = null);
   }
 
   void _setLabel(int index, String label) {

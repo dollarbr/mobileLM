@@ -585,10 +585,13 @@ void main() {
       //
       // 919 → 932 são as **13** chaves da janela System One: o rótulo dos dois
       // readouts, a frase de custo de cada um, o botão, o tipo de resposta e as
-      // três formas, a confiança, o nível e a contagem de passagens. Contadas nos
-      // DOIS mapas pelo `l10n_keys_test`, e conferidas uma a uma: nenhuma é
-      // texto já existente renomeado — são frases que não existiam.
-      expect(en.length, 932);
+      // três formas, a confiança, o nível e a contagem de passagens. 932 → 946 são
+      // as **14** do lote seguinte: `add an option` — que era um literal em
+      // inglês numa tela em português, achado no aparelho e não na revisão —, o
+      // cartão de presets com os quatro chips e as suas quatro frases medidas, a
+      // frase de medido, e as duas notas de tipo. Nenhuma é texto já existente
+      // renomeado.
+      expect(en.length, 946);
     });
 
     test('a lista de opções não encolhe nem cresce sem ninguém ver', () {

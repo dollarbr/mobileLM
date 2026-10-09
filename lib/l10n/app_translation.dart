@@ -179,6 +179,41 @@ class AppTranslation extends Translations {
           'with nothing generated. This is the only path whose confidence is a '
           'measurement: 8.2 s here, 3.1 s on the d1-3B.',
       'soc_ask_for_the_distribution': 'ask for the distribution',
+      'soc_add_option': 'add an option',
+      // The presets. **Four, and two of them are here because the model gets
+      // them wrong** — a list whose every answer is correct teaches a person
+      // that the path works and nothing else.
+      'soc_presets': 'try one — tap to fill everything',
+      'soc_presets_none':
+          'Nothing chosen. Fill the fields above, or tap a chip and compare the '
+          'answer with the one that was measured.',
+      'soc_preset_measured': 'On this phone, measured: @m',
+      'soc_preset_charge': 'double charge',
+      'soc_preset_outage': 'is it down?',
+      'soc_preset_urgency': 'how urgent?',
+      'soc_preset_forgot': 'forgot the password',
+      'soc_preset_note_charge':
+          'Tev1, 0.6972 for billing and confidence 0.5458. The generated letter '
+          'said A for the same ticket.',
+      'soc_preset_note_outage':
+          'The obvious answer is yes and the model gave 0.5188 — a coin flip. '
+          'This is the number the Laya card predicts: confidence does not catch '
+          'errors. The answer is right and the confidence does not help.',
+      'soc_preset_note_urgency':
+          'Tev1 is a LETTER decision model, not an ordered-level model. '
+          'Answering "can wait" for a double charge is the model being asked the '
+          'thing it was not trained for — and the 0.3305 confidence beside the '
+          '0.5537 top probability is the only signal.',
+      'soc_preset_note_forgot':
+          'The letter path took 50.7 s here and 2.0 s on two other tickets. The '
+          'cost belongs to the readout, not to this ticket.',
+      'soc_answer_type_note_options':
+          'Options are lettered, and this layout holds ten. Above ten the authors '
+          'file a different rendering that this window does not build.',
+      'soc_answer_type_note_noul':
+          'True or false, and this window sends no options: the endpoint writes '
+          'the two statements in the words the model was calibrated on, and a '
+          'second set of words for the same boolean is not a second opinion.',
       'soc_answer_type': 'question type',
       'soc_answer_type_choice': 'choice - one of your options',
       'soc_answer_type_score': 'score - a level on your scale',
@@ -1304,6 +1339,39 @@ class AppTranslation extends Translations {
           'nada. É o único caminho cuja confiança é uma medição: 8,2 s aqui, '
           '3,1 s no d1-3B.',
       'soc_ask_for_the_distribution': 'peça a distribuição',
+      'soc_add_option': 'adicionar uma opção',
+      'soc_presets': 'experimente um — toque para preencher tudo',
+      'soc_presets_none':
+          'Nada escolhido. Preencha os campos acima, ou toque num chip e compare '
+          'a resposta com a que foi medida.',
+      'soc_preset_measured': 'Neste aparelho, medido: @m',
+      'soc_preset_charge': 'cobrança duplicada',
+      'soc_preset_outage': 'está fora?',
+      'soc_preset_urgency': 'quão urgente?',
+      'soc_preset_forgot': 'esqueceu a senha',
+      'soc_preset_note_charge':
+          'Tev1, 0,6972 para billing e confiança 0,5458. A letra gerada disse A '
+          'para o mesmo ticket.',
+      'soc_preset_note_outage':
+          'A resposta óbvia é sim e o modelo deu 0,5188 — uma moeda. É o número '
+          'que o card da Laya descreve: confiança não pega erro. A resposta está '
+          'certa e a confiança não ajuda.',
+      'soc_preset_note_urgency':
+          'O Tev1 é um decision model de LETRA, não um modelo de nível ordenado. '
+          'Responder "pode esperar" para uma cobrança duplicada é o modelo sendo '
+          'perguntado a coisa que ele não foi treinado para fazer — e a '
+          'confiança de 0,3305 ao lado dos 0,5537 do topo é o único sinal.',
+      'soc_preset_note_forgot':
+          'O caminho da letra levou 50,7 s aqui e 2,0 s em dois outros tickets. '
+          'O custo é do readout, não deste ticket.',
+      'soc_answer_type_note_options':
+          'As opções ganham letra, e este layout comporta dez. Acima de dez os '
+          'autores publicam outra renderização que esta janela não monta.',
+      'soc_answer_type_note_noul':
+          'Verdadeiro ou falso, e esta janela não manda opções: o endpoint '
+          'escreve as duas afirmações nas palavras com que o modelo foi calibrado, '
+          'e um segundo conjunto de palavras para o mesmo booleano não é uma '
+          'segunda opinião.',
       'soc_answer_type': 'tipo de pergunta',
       'soc_answer_type_choice': 'choice — uma das suas opções',
       'soc_answer_type_score': 'score — um nível da sua escala',

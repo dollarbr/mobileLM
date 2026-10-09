@@ -178,6 +178,39 @@ const Map<SystemOneReadout, String> kReadoutNoteKey = {
   SystemOneReadout.logit: 'soc_readout_note_logit',
 };
 
+/// The three typed shapes, as the window offers them.
+///
+/// A [String] and not an enum, on purpose: the endpoint's own `type` field is
+/// the value, and a window that had its own enum would need a mapping table
+/// between two names for the same three things — which is a table to forget an
+/// entry of. The keys below are the wire names, which is what makes the round
+/// trip provable: whatever the endpoint sends, this list either has a chip for
+/// it or falls through to `choice`, and the two cases look different.
+const List<String> kAnswerTypes = ['choice', 'score', 'noul'];
+
+/// What a type does to the options card, and what it does to the request.
+///
+/// **`noul` takes no criteria** — the endpoint writes the statements itself, in
+/// the words the authors' template uses, and sending two options would make the
+/// model read it as a `choice`. That is why [needsOptions] is false for it and
+/// why the window hides the card rather than disabling it: a visible card the
+/// person can fill in and have silently ignored is worse than no card.
+bool decisionTypeNeedsOptions(String type) => type != 'noul';
+
+/// The default options a type starts with, and why they differ.
+///
+/// `noul` starts with **no** options at all, and this is the second decision
+/// with a reason rather than a convenience. The endpoint renders
+/// `yes, the statement holds` / `no, the statement does not hold` when a `noul`
+/// arrives without a description, so the window's own words would be **a second
+/// set of statements for the same boolean** — and the model would read the
+/// window's instead of the ones it was calibrated on.
+const Map<String, List<String>> kAnswerTypeDefaultOptions = {
+  'choice': ['bug', 'billing', 'account'],
+  'score': ['Can wait', 'This week', 'Today'],
+  'noul': [],
+};
+
 /// The translation keys for the three typed answer types, written out.
 ///
 /// Same reason as [kReadoutLabelKey], and with a sharper edge: a missing
