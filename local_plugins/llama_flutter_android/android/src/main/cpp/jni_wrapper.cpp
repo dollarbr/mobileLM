@@ -2904,17 +2904,32 @@ Java_com_write4me_llama_1flutter_1android_LlamaFlutterAndroidPlugin_nativeDecisi
         const int32_t n_vocab = llama_vocab_n_tokens(g_vocab);
         std::vector<double> picked((size_t) out_len);
         std::string out_of_range;
-        // Slot-major: slot 0's candidates first, then slot 1's. The order the
-        // flagged positions appear in is the order of `slots`, because
-        // `output_resolve_row` renumbers them.
+        // Slot-major: slot 0's candidates first, then slot 1's.
+        //
+        // **`llama_get_logits_ith` takes the TOKEN INDEX, not the output
+        // ordinal.** This is the one line the encoder gets right by accident and
+        // that a decision batch gets wrong: `output_resolve_row(i)` does
+        // `output_ids[i]`, and `output_ids` is a map from token position to
+        // output row, `-1` everywhere but the flagged tokens. Passing the loop
+        // counter `s` therefore asks "the logits of **token** 0", which for a
+        // decision prompt is never the answer slot — the slot is the last token
+        // of a prompt of length n. Measured on the A72: `get_logits_ith:
+        // invalid logits id 0, reason: batch.logits[0] != true`, then
+        // `GGML_ABORT` at `llama-context.cpp:981` and the process dies.
+        //
+        // So the index asked for is the **resolved slot position** — the same
+        // value that was written into `flagged` above, with `-1` already
+        // resolved to `n - 1`.
         for (jsize s = 0; s < n_slots; s++) {
-            const float* logits = llama_get_logits_ith(g_ctx, s);
+            const jint pos = slots[(size_t) s] < 0 ? n - 1 : slots[(size_t) s];
+            const float* logits = llama_get_logits_ith(g_ctx, pos);
             if (logits == nullptr) {
                 llama_batch_free(batch);
                 throwLoadError(env,
                     "The model produced no logits at answer slot " +
-                    std::to_string((int) s) +
-                    ". The context was not created for generation, which is a "
+                    std::to_string((int) s) + " (token " +
+                    std::to_string((int) pos) +
+                    "). The context was not created for generation, which is a "
                     "build problem rather than a model problem.");
                 return nullptr;
             }
