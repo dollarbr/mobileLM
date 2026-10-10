@@ -6,25 +6,47 @@ Objetivo do repo: mix do **PrivateLM** (motor local Flutter) com **PocketStrike-
 ## Estado atual
 
 M1 ✅ · M2 ✅ · M3 ✅ · M4 ✅ · M5 ✅ — releases publicadas em
-<https://github.com/dollarbr/mobileLM/releases>. Versão publicada: **0.6.0+2009** (tag `0.6.0`; arm64 medido em `versionCode=4009`).
-O pubspec está em **`0.7.0+2010`** — a próxima minor, e ela é a **consistência por
-permutação** de um decision model: `/v1/classify` mede se a resposta muda com a ordem
-das opções, a resposta diz **como** a letra foi achada, e a janela mostra os dois.
-**Meça o asset dela antes de escrever qualquer número**: o esperado é `4010`, e se
-der outra coisa é a fórmula e não o pubspec.
+<https://github.com/dollarbr/mobileLM/releases>.
+
+**Versão publicada: `0.7.0`, arm64 medido em `versionCode=4010`** — medido com
+`aapt2 dump badging` no asset `mobilelm-0.7.0-arm64-v8a.apk` de 90.199.126 bytes,
+em 09/10/2026. **Este parágrafo dizia `0.6.0+2009` enquanto a 0.7.0 estava
+publicada desde 08/10**, que é a mesma falha que a seção de versionamento abaixo
+descreve em sete linhas: um número em prosa que nada verifica.
+
+O pubspec está em **`0.8.0+2011`** — a minor das **decisões tipadas**: o app
+serve `POST /v1/systemone` com os três tipos da classe (`choice`, `score`,
+`noul`), com `confidence` e `probabilities` de verdade, e a janela mede um modelo
+com **um toque** por preset, dizendo **qual modelo** foi medido.
+
+**Medido contra a fórmula:** o maior publicado é `4010` e o arm64 é
+`2 × 1000 + build`, logo `+2011` dá **4011**. **Meça o asset antes de escrever
+qualquer número** — e o número medido está na tabela de releases, à direita.
 Engine local (GGUF + LiteRT-LM 0.17.1) + agente multi-passo + tools nativas
 (24 built-in, 8 privilegiadas via Shizuku) + tarefas agendadas + image gen +
 servidor OpenAI compatível + **encoders (embeddings/rerank/classify, BERT e
 ModernBERT)** + cloud models com auto-detect de contexto/capabilidades.
 
-**`POST /v1/systemone` — o endpoint de decisão tipada — não existe no app, e o
-substrato nativo dele já está todo no APK.** O `libllama.so` exporta
-`llama_batch_ext_set_decision_order`, tem `llama_model_clef`, tem
-`N_DECISION_TYPES = 3` no `lfm2.cpp` e no `modern-bert.cpp`, e `llama-ext.h`
-nomeia os três tipos (`noul`/`choice`/`score`) e `option`. **Faltam três arquivos
-tocados e nenhum:** Pigeon, `jni_wrapper.cpp`, e a rota. A seção
-"`/v1/systemone` é um padrão entre vendors" no fim do guia tem a medição completa
-(`nm -D`, `strings`, `examples/`, conversor, e o teto de 1,19 GB do A72).
+**`POST /v1/systemone` — o endpoint de decisão tipada — foi entregue na 0.8.0, e
+este parágrafo dizia o contrário até esta linha.** A forma como ele descrevia o
+buraco estava certa: o substrato nativo (`llama_batch_ext_set_decision_order`,
+`llama_model_clef`, `N_DECISION_TYPES = 3`) **estava** todo no APK e os três
+arquivos faltantes eram mesmo Pigeon, `jni_wrapper.cpp` e a rota. **O que mudou
+é que os três foram escritos** — e a seção "Endpoint de decisão tipada" mais
+abaixo tem o que eles fazem e os números medidos. A seção "`/v1/systemone` é um
+padrão entre vendors" continua sendo a medição do substrato (`nm -D`, `strings`,
+`examples/`, conversor, e o teto de 1,19 GB do A72), e ela não mudou — mudou o
+que o app faz com ele.
+
+**E a prova de que não existia não era a string, e este guia a deu errada.**
+`git grep -c "systemone" 0.7.0 -- lib/` são **zero** linhas, e `typed_decision`
+não tem **nenhum** arquivo em `lib/` na 0.7.0 — hoje são dois, o runner e a
+rota. **Uma ausência de string e uma ausência de chamador são a mesma prova com
+forças diferentes**, e é a segunda que vale: `systemone` aparece em cinco
+arquivos de `lib/` hoje, e aparecia em zero antes, sem que nenhuma das duas
+contagens isoladas dissesse se o caminho rodava. **Provar que algo não existe
+procurando o nome dele é o modo de falha que este arquivo descreve em cima, e
+ele estava escrito aqui dentro.**
 
 ## Encoders — o que a 0.4.0 trouxe (leia antes de mexer)
 
@@ -2635,32 +2657,54 @@ o lento e deliberado —, via <https://docs.typesafe.ai/concepts/system-one>. Os
 primitivos da TypeSafe são **Choice, Score e Noul**, e o endpoint deles é
 **`POST /v1/systemone`**.
 
-**O que isso muda no app, e é grande:**
+**O que isso muda no app — e esta tabela foi escrita antes do trabalho e está
+desatualizada.** As duas colunas são *"o que a classe da TypeSafe tem"* e
+*"o que este app tinha em 07/10"*; a terceira é o estado **medido** hoje:
 
-| o que a classe da TypeSafe tem | o que este app tem |
-|---|---|
-| `POST /v1/systemone` | **nada** — zero ocorrências em `lib/` |
-| Choice / Score / Noul | só `choices` (letra→rótulo) |
-| `confidence` por pergunta | `relevance_score: null`, com o motivo |
-| `probabilities` por opção | `scores` mapeado para null |
-| **várias perguntas numa passagem** | **uma** pergunta por request |
+| o que a classe tem | o que o app tinha | o que o app tem, medido em 09/10 |
+|---|---|---|
+| `POST /v1/systemone` | **nada** — zero ocorrências em `lib/` | **a rota existe** e responde `object: systemone.decision` |
+| Choice / Score / Noul | só `choices` (letra→rótulo) | **os três tipos**, com seletor na janela |
+| `confidence` por pergunta | `relevance_score: null`, com o motivo | **`confidence` de verdade** — `(n·p_max − 1)/(n − 1)` |
+| `probabilities` por opção | `scores` mapeado para null | **`probabilities` por opção**, com temperatura antes do softmax |
+| **várias perguntas numa passagem** | **uma** pergunta por request | **o endpoint responde várias** — 2 perguntas, `passes: 2`, **4793 ms** |
 
-**A janela deste app é uma interface para o `/v1/classify` com três shapes**, e o
-`/v1/classify` é um endpoint **OpenAI de rótulos** — a família é a mesma, o
-contrato não é. `DecisionMatch` e a estabilidade por permutação continuam válidos
-para o shape `decision` (uma letra gerada), e `relevance_score: null` continua
-sendo a resposta certa para um LM que emite uma letra. O que **não** existe aqui
-é o que a TypeSafe chama de System One: os três tipos de pergunta, o `confidence`,
-a leitura por distribuição e o batch de perguntas.
+**A `confidence` é `(n·p_max − 1)/(n − 1)`, e não a probabilidade do topo.** Com
+3 opções e topo `0,5312` o endpoint devolve `0,2968`; com 2 e topo `0,8777`
+devolve `0,7554`. **Os dois verificados hoje no `d1-3B`, e os dois são a mesma
+conta feita de dois jeitos** — que é o que fecha uma fórmula.
 
-**Não é o caso de trocar o nome:** o app conversa com `/v1/classify` e o
-formulário de três shapes é o que ele sabe descrever. O que é caso é **saber de
-onde o nome vem** — porque "System One" nomeando uma coisa da TypeSafe e não
-deste app muda o que se pode prometer sobre a 0.7.0, e um guia que inventa a
+**A temperatura vem da calibração do AUTOR, hardcoded em Dart — e NÃO é lida do
+modelo.** `{choice: 1.164, noul: 1.624, score: 1.124}`, global `1.145`, tirados
+do `temperature_by_type` que o `decider-2b` publica. **O `d1-3B` que roda aqui
+tem ZERO chaves `lfm2.decision.temperature.*`** (medido, 43 chaves de
+metadados), e as dez que o `d1-omni` traz não são lidas por ninguém. Uma
+temperatura não muda qual opção é a mais provável; ela muda o quanto a
+distribuição se abre. **Então o número de `confidence` que a tela mostra é uma
+calibração de um modelo, aplicada a outro** — e é honesto mostrar a
+`probabilities` ao lado, que é o número que não depende dela.
+
+**O que ficou de fora, e é uma decisão:** a janela **não** mostra o `batch` de
+perguntas. Ela monta **uma**, porque o que a pessoa está medindo é se o modelo
+acerta *aquela* pergunta. O endpoint aceitar várias é do contrato; a tela
+aceitar várias é produto, e ninguém pediu.
+
+`DecisionMatch` e a estabilidade por permutação continuam válidos para o shape
+`decision` (uma letra gerada), e `relevance_score: null` continua sendo a
+resposta certa para um LM que emite uma letra — **são duas coisas diferentes e
+elas não se contradizem**: `null` é para o endpoint que não tem pesos de
+classificador, e a `confidence` da 0.8.0 é para o endpoint que lê a
+distribuição de um decision model.
+
+**Não é o caso de trocar o nome:** o app conversa com `/v1/classify` **e** com
+`/v1/systemone`, e o formulário de três shapes é o que ele sabe descrever. O que
+é caso é **saber de onde o nome vem** — porque "System One" nomeando uma coisa
+da TypeSafe e não deste app muda o que se pode prometer, e um guia que inventa a
 etimologia de um termo de terceiro é pior do que um guia calado.
-**Nada no código olha para nome nenhum** — nem `Tev1`, nem `Jev`, nem `Laya`; a forma é decidida pelo que o
-arquivo é, como o `/v1/classify` já faz, e `test/system_one_test.dart` tem um
-teste que afirma isso para os quatro e para um nome que ninguém ouviu falar.
+**Nada no código olha para nome nenhum** — nem `Tev1`, nem `Jev`, nem `Laya`; a
+forma é decidida pelo que o arquivo é, como o `/v1/classify` já faz, e
+`test/system_one_test.dart` tem um teste que afirma isso para os quatro e para um
+nome que ninguém ouviu falar.
 
 `lib/services/system_one.dart` (puro, 66 testes) + `lib/views/system_one_console.dart`.
 Aberta no **card `.tflite`** (duas ações: *Inspect the file*, que já existia, e
@@ -3741,7 +3785,11 @@ embedding de tipos de token** — o que explica o `n_embd_out = 3` que medi no
 aparelho, e explica por que inverter a ordem das opções não muda o índice
 principal: a pergunta é o eixo, não a posição.
 
-### ⚠️ O que FALTA é só a ponte, e ela é pequena
+### ⚠️ O que FALTA era só a ponte — e a ponte foi feita por OUTRO caminho
+
+**Esta seção descreveu um plano, e o plano estava errado em dois dos três
+arquivos.** O que segue é o estado **medido** em 09/10/2026, com a divergência
+marcada.
 
 | camada | estado | evidência |
 |---|---|---|
@@ -3752,24 +3800,40 @@ principal: a pergunta é o eixo, não a posição.
 | `llama_model_clef` registrado | **presente** | `llama-arch.cpp:43`, `llama-model.cpp:80` |
 | `Clef` no conversor | **AUSENTE** | 220 registros em `conversion/`, **nenhum** `Clef` |
 | `Lfm2Model` no conversor | **presente** | `conversion/lfm2.py` |
-| `Qwen3_5ForConditionalGeneration` | **presente** | `conversion/qwen.py` — o backbone do clef converte |
-| **JNI expõe a chamada** | **AUSENTE** | `llama_batch_ext` aparece **0×** em `jni_wrapper.cpp` |
-| **Pigeon declara o método** | **AUSENTE** | `decision_order`/`clef` = **0×** em todo `.dart` |
-| **rota HTTP `/v1/systemone`** | **AUSENTE** | `systemone` = **0×** em todo o vendor |
-| **implementação HTTP de referência** | **AUSENTE** | `examples/` não tem `server/` |
+| **JNI expõe a chamada** | **FEITO, por outro caminho** | `nativeDecisionScores` e `nativeTokenizeSingle` em `jni_wrapper.cpp:2786` e `:2984` |
+| **Pigeon declara o método** | **NUNCA EXISTIU — não é Pigeon** | `lib/pigeon/` não existe; é `MethodChannel` à mão, `llama_decision.dart` |
+| **rota HTTP `/v1/systemone`** | **FEITO** | `openai_server_service_io.dart:172`, `_handleSystemOne` em `:1830` |
+| `llama_batch_ext_set_decision_order` no JNI | **0× e continua 0×** | `grep -c` no `jni_wrapper.cpp` |
 
-O que falta, então, são **três arquivos tocados e nenhum**:
+**As duas divergências, e por que a segunda é a que importa.**
 
-1. **Pigeon** — um método que leva a lista de perguntas tipadas e a ordem por token
-2. **`jni_wrapper.cpp`** — uma função que chama
-   `llama_batch_ext_set_decision_order`, roda o batch e devolve `float[3]` por
-   pergunta mais `float[n_opcoes]` por pergunta de `choice`
-3. **`openai_server_service_io.dart`** — a rota `/v1/systemone`, com `answers`
-   indexado e `confidence` de verdade
+**Não é Pigeon.** Todo método nativo novo deste plugin passa por `MethodChannel`
+com uma classe Dart escrita à mão (`LlamaDecision`, com `decisionScores` e
+`tokenizeSingle`). Um arquivo Pigeon por chamada seria um gerador a mais para
+dois métodos.
 
-**Não há `server/` no vendor para portar** — a rota `/v1/systemone` do llama.cpp
-existe no upstream, mas a árvore vendorizada é podada e não a traz. A implementação
-é nova, sobre uma base nativa que já está toda lá.
+**E o JNI não chama `llama_batch_ext_set_decision_order` — e essa é a
+descoberta, não o atalho.** O plano era marcar cada token do prompt com a sua
+função e ler a cabeça de decisão. **O caminho que funciona é o mais simples
+possível: um decision model generativo JÁ É uma distribuição, e a letra que ele
+emitiria é o logit daquela letra no vocab inteiro.** Uma passagem, logit lido na
+posição do slot, e nada mais. `nativeDecisionScores(prompt, slotIndices,
+tokenIds)` faz exatamente isso, e recusa um encoder com o motivo escrito
+(*"Letter-logit decisions need a generative model"*).
+
+**Consequência que importa para o resto deste arquivo:** o caminho **não usa**
+`llama_model_clef`, **não usa** as dez chaves de temperatura do `d1-omni`, e
+**não precisa** de `embd.data` — que era a condição que impedia o `d1-omni` de
+servir. **Ele roda no `d1-3B`, que é LFM2 generativo, e no `tev1`, que é
+`qwen35`.** O `clef` do `.so` continua lá, compilado e registrado, e **não é o
+que responde**.
+
+**O bug que isso custou, e que só o aparelho achou:**
+`llama_get_logits_ith(ctx, i)` recebe o **índice do TOKEN**, não o ordinal da
+saída. `output_resolve_row(i)` faz `output_ids[i]`, e `output_ids` é um mapa de
+posição para token — passar o ordinal dá a linha de outro token e a resposta sai
+errada sem erro nenhum. `tool/jni-syntax.sh` **compila** com o argumento errado:
+ele vê o tipo, não o sentido.
 
 ### ⚠️ E o tamanho fecha a porta para o Clef no A72
 
@@ -3792,7 +3856,13 @@ O teto é **1,19 GB**.
    que é consistente com o `d1-omni` já estar no aparelho em GGUF.)
 2. **O tamanho não cabe.** 27B e 9B contra um teto de **1,19 GB** — 7,5× e 2,6×
    acima. Nenhum quantization do Clef entra no catálogo do A72.
-3. **A ponte falta**, como para todo mundo.
+3. **A ponte falta — e esta é a única que a 0.8.0 mudou.** Os outros dois
+   bloqueios continuam de pé, e continuam sendo de licence e de tamanho. O que a
+   0.8.0 fez foi **implementar a rota por outro caminho**: o JNI **não** chama
+   `llama_batch_ext_set_decision_order` (0× medido) e lê o logit da letra, o que
+   funciona em `lfm2` e em `qwen35` e **não** depende do `clef` nem do
+   `modern-bert`. **O `Clef` da Cloudflare continua sem caminho possível neste
+   aparelho — e isso não é um problema do app, é um problema de tamanho.**
 
 **Isso não é argumento para nunca implementar.** É argumento para implementar
 **no `lfm2`**, porque é o único `arch` de decisão que (a) converte, (b) cabe e
