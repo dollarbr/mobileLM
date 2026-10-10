@@ -1,13 +1,16 @@
 # Handoff — onde o mobileLM-app está, e o que fazer depois
 
-Documento escrito em **2026-10-01**, para quem vai retomar o trabalho em outra
-sessação sem o histórico da conversa. Ele é um **snapshot**, não uma fonte de
-verdade: `AGENTS.md` continua sendo a fonte de verdade, e o que está aqui ou é
-verificável em minutos ou diz onde verificar.
+Documento escrito em **2026-10-10**, para quem vai retomar o trabalho em outra
+sessão sem o histórico da conversa. **Reescrito em 09→10/10**: a versão de 01/10
+estava nove dias velha e carregava **cinco** números que não batiam mais — versão,
+`versionCode`, testes, varredura e chaves de tradução. Ele é um **snapshot**, não
+uma fonte de verdade: `AGENTS.md` continua sendo a fonte de verdade, e o que está
+aqui ou é verificável em minutos ou diz onde verificar.
 
 Duas regras do repo valem para este documento: **toda versão repetida em prosa é
 um lugar a mais para errar** (o `AGENTS.md` já registra uma versão 0.3.5 descrita
-como publicada e que nunca foi), e **tudo que aparece medido aqui foi medido no
+como publicada e que nunca foi, e um `versionCode` de `5008` numa tabela que não
+participa de build), e **tudo que aparece medido aqui foi medido no
 Galaxy A72** — o aparelho de teste, onde um número é um piso e não uma média.
 
 ---
@@ -16,15 +19,31 @@ Galaxy A72** — o aparelho de teste, onde um número é um piso e não uma méd
 
 | | |
 |---|---|
-| versão no `pubspec.yaml` | **0.6.0+2009** — tag `0.6.0` **publicada** |
-| `versionCode` publicado (arm64) | **`4009`**, medido com `aapt2 dump badging` no asset — `2 * 1000 + 2009` |
-| commit do topo | `4e4a1aa6c` · `b91addba8` · `863ab0219` |
-| `flutter test` | **583 passando, 0 falhas** |
-| `flutter analyze` | **206 issues, 0 erros** (pré-existentes; só erros gateiam CI) |
-| varredura estreita / ampla | **0** / **343**, dos quais **0 de texto de tela** |
-| mapa de tradução | **905 chaves**, as mesmas nos dois idiomas |
-| árvore | limpa, `main` tracks `origin/main`, exceto os **dois arquivos untracked de propósito** abaixo |
+| versão no `pubspec.yaml` | **`0.8.0+2011`** — tag `0.8.0` **a ser publicada**; esperado `2 * 1000 + 2011` = **`4011`** |
+| `versionCode` publicado (arm64) | **`4010`** (tag `0.7.0`), medido com `aapt2 dump badging` no asset |
+| commit do topo | `f43a1a4b2` · `3ee38eeca` · `f58d391de` · `e9e4f6de6` |
+| `flutter test` | **766 passando, 0 falhas** |
+| `flutter analyze` | **221 issues, 0 erros** (pré-existentes; só erros gateiam CI) |
+| varredura estreita / ampla | **0** / **354**, dos quais **0 de texto de tela** |
+| mapa de tradução | **946 chaves**, as mesmas nos dois idiomas (medido com o parser do próprio `l10n_keys_test`) |
+| `tool/jni-syntax.sh` | **ok** — exigido, porque `jni_wrapper.cpp` mudou desde a 0.7.0 |
+| árvore | `main` **4 commits à frente** de `origin/main`, mais os **dois arquivos untracked de propósito** abaixo |
 |_branch extra_ | `pdf-markdown-*` (locais), `core/rust-hybrid` (no remoto, **não apagar**) |
+
+**Este bloco dizia `0.6.0+2009` / `4009` / 583 testes / 343 na varredura / 905
+chaves, e os cinco números estavam errados.** A primeira versão foi escrita em
+01/10; a `0.7.0` já estava publicada quando ela foi escrita. Ver
+[`AGENTS.md`](../AGENTS.md) "Release é por tag" para a tabela de releases
+conferida contra os assets.
+
+⚠️ **O `versionCode` da 0.8.0 está escrito como esperado, não como medido, e a
+distinção é o ponto.** `flutter build apk --release` **falha localmente de
+propósito** — `android/app/build.gradle.kts:36` lança *"Release builds are ONLY
+allowed in CI environments"* quando `!isCI`. O asset só existe depois que
+`release.yml` roda na tag. **Então o `4011` acima é a fórmula aplicada, e a
+medição do asset é o passo seguinte a fazer depois que o CI terminar:**
+`gh release download 0.8.0 -p '*-arm64-v8a.apk' && aapt2 dump badging <apk> | grep ^package`.
+Se der outra coisa, é a fórmula que está errada, não o pubspec.
 
 ⚠️ **`lib/services/sd_weight_estimate.dart` e `test/sd_weight_estimate_test.dart`
 estão untracked de propósito, e é o item 0b da fila.** São o plano que **não foi
@@ -33,13 +52,26 @@ coisa verificavelmente falsa (erra +74% a +126%). **`git add lib/` e
 `git add test/` puxam os dois**, e já aconteceu duas vezes; use
 `git add <arquivo>` ou `git reset -q HEAD <arquivo>` depois.
 
-**A 0.6.0 está publicada**, e é a **seletor de idioma**: Auto / English /
-Português (Brasil), **inglês como padrão**, com 905 chaves nos dois idiomas. Minor
-porque a frase sai verdadeira — *antes não existia escolha de idioma*. O item 3e
-entrou junto e fechou: **224** textos de tela traduzidos e a varredura ampla em
-zero. **O próximo minor ainda não foi escolhido** — as três candidatas que passam
-no critério do repo estão em `AGENTS.md`, no fim de "Sugestões de próximas
-features".
+**A 0.7.0 está publicada** (arm64 `4010`) e a **0.8.0 está preparada, com a tag
+ainda por pushed**. As duas são minors, e o critério do repo é o mesmo: "isto faz
+X, que antes não existia".
+
+| release | a frase | verificado contra |
+|---|---|---|
+| `0.7.0` | *o app diz se a resposta de um decision model sobrevive a reordenar as opções, diz **como** a letra foi encontrada, e **não diz quando isso não foi medido*** | `git grep -c "systemone" 0.7.0 -- lib/` = **0** linhas |
+| `0.8.0` | *o app serve `POST /v1/systemone` — os três tipos da classe, com `confidence` e `probabilities` de verdade — e a janela mede um modelo com um toque, dizendo qual modelo foi medido* | `typed_decision` tem **nenhum** arquivo em `lib/` na 0.7.0; hoje são dois |
+
+⚠️ **A prova de que algo não existe procurando o nome dele é um modo de falha, e
+o `AGENTS.md` cometia.** `git grep -c "systemone" 0.7.0` é zero, e isso é
+verdade — mas não distingue "a rota não existe" de "a rota existe com outro
+nome". O que fecha é a **ausência de chamador**: `typed_decision` sem nenhum
+arquivo em `lib/` na 0.7.0, contra dois hoje.
+
+**O plano da ponte estava errado em dois dos três arquivos, e a implementação
+divergiu dele:** não é Pigeon (é `MethodChannel` à mão) e o JNI **não** chama
+`llama_batch_ext_set_decision_order` — `grep -c` dá **0** e continua 0. O caminho
+que funciona lê o **logit da letra**, o que roda em `lfm2` e em `qwen35` sem
+depender do `clef`. Detalhes e números na seção `/v1/systemone` do `AGENTS.md`.
 
 ### O catálogo, contado e não estimado
 
@@ -72,6 +104,72 @@ arquivos rastreados pelo git, zero referências no `pubspec.yaml`. **`ls
 local_plugins/` mostra cinco plugins e parece que o núcleo Rust voltou**; ele não
 voltou. A branch é `core/rust-hybrid` e a história está em
 [`HYBRID_CORE.md`](HYBRID_CORE.md).
+
+---
+
+## 1b. O que a 0.8.0 entrega, e o que foi medido no A72
+
+`POST /v1/systemone` existe, responde os **três tipos da classe da TypeSafe**
+(`choice`, `score`, `noul`) e devolve `confidence` e `probabilities` de verdade.
+A janela System One mede um modelo por **preset**, com um toque.
+
+**Medido no A72 `RQ8R3077LMF`, `d1-3B-Q4_K_M` na CPU:**
+
+| pergunta | tipo | resposta | medido |
+|---|---|---|---|
+| "a que área isto pertence?" (`charge`) | choice | **A: billing** | conf **0,2968** · `0,5312 / 0,3047 / 0,1640` |
+| "is a service down?" (`outage`) | noul | **yes, the statement holds** | P(true) **0,5522** |
+| "how urgent?" (`urgency`) | score | **Today** (nível 2) | conf **0,2680** |
+
+O `charge` é **byte-idêntico** a um `curl` reproduzido 4× — o caminho da tela e o
+do endpoint são o mesmo. **`confidence` = `(n·p_max − 1)/(n − 1)`**, verificado
+duas vezes: 3 opções / `0,5312` → `0,2968`; 2 opções / `0,8777` → `0,7554`.
+
+**O discriminador que prova que a janela manda a pergunta certa**, mesmo modelo,
+mesmas opções, só o texto muda:
+
+| pergunta enviada | resposta | A | B | C |
+|---|---|---|---|---|
+| `decision` (o **id**, sem `instructions`) | C: account | 0,1307 | 0,2846 | **0,5847** |
+| `a que área isto pertence?` | **A: billing** | **0,5312** | 0,1640 | 0,3047 |
+
+⚠️ **Sem `instructions`, o endpoint usa o id da pergunta como texto — e o id desta
+janela é a palavra `decision`.** Foi um defeito real que só o aparelho achou: os
+presets mandavam a letra do id, e o modelo respondia com confiança sobre a pergunta
+errada.
+
+**Várias perguntas numa passagem funciona** (o endpoint aceita; a tela **não** faz):
+2 perguntas, `passes: 2`, `forward_pass_ms: 4793`.
+
+**A temperatura é do AUTOR e está hardcoded em Dart** — `{choice: 1.164, noul:
+1.624, score: 1.124}`, global `1.145`, do `temperature_by_type` do `decider-2b`.
+**O `d1-3B` que roda tem ZERO chaves `lfm2.decision.temperature.*`** (43 chaves de
+metadados) e as dez do `d1-omni` não são lidas por ninguém. Então o `confidence`
+mostrado é **a calibração de um modelo aplicada a outro** — por isso a
+`probabilities` fica ao lado dele.
+
+**O mesmo preset dá respostas diferentes em modelos diferentes**, e é por isso que
+todo preset diz **qual modelo** foi medido: `urgency` → nível 0 (*Can wait*) no
+`tev1` (errado), nível 2 (*Today*) no `d1-3B` (certo).
+
+### Como refazer a medição sem a tela
+
+O `Run` do console é o caminho curto, mas o `curl` é o que fixa a verdade:
+
+```sh
+A=RQ8R3077LMF
+adb -s $A forward tcp:8091 tcp:8091     # sem isto o curl dá 000, sempre
+curl -s -m 10 http://127.0.0.1:8091/health          # 200 = servidor de pé
+curl -s -m 120 -X POST http://127.0.0.1:8091/v1/models/load \
+  -H 'content-type: application/json' \
+  -d '{"filename":"d1-3B-Q4_K_M.gguf","accept_risk":true}'
+# ~20 s. Carregue pelo POST, não pelo card da tela.
+```
+
+⚠️ **O switch de servidor do A72 NÃO aceita `x2 − 42`**, que é o que o
+`AGENTS.md` documenta: `993` cai 8 px fora do alvo e não faz nada. O que funciona é
+**`x ≈ 910`, `y ≈ 405`**. Confirme por `/health` retornando 200, **nunca** pelo
+texto do nó.
 
 ---
 
@@ -266,6 +364,26 @@ verdadeira.
 ---
 
 ## 5. O próximo passo natural
+
+### ⚠️ Primeiro: medir o `versionCode` do asset da 0.8.0
+
+Não é um item da fila de features — é o **passo pendente desta release**, e ele
+não pode ser feito antes de o `release.yml` terminar. O número na tabela da
+seção 1 (`4011`) é **a fórmula aplicada**, não uma medição: o build de release é
+**recusado localmente** por `android/app/build.gradle.kts:36`
+(*"Release builds are ONLY allowed in CI environments"*).
+
+```sh
+gh release list --repo dollarbr/mobileLM            # a 0.8.0 está publicada?
+gh release download 0.8.0 -p '*-arm64-v8a.apk' \
+  -d /tmp/opencode/a080 --repo dollarbr/mobileLM
+aapt2 dump badging /tmp/opencode/a080/*.apk | grep ^package
+```
+
+Esperado: `versionCode='4011'`, `versionName='0.8.0'`. **Se der outra coisa, é a
+fórmula e não o pubspec** — e o número medido tem de substituir o esperado em
+`AGENTS.md` e aqui. **Enquanto não medir, nenhum dos dois documentos pode
+descrever a 0.8.0 como publicada.**
 
 ### Medir a quantização — e ele precisa de um par que o catálogo não tem
 

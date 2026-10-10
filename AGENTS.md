@@ -695,9 +695,9 @@ Os números que saem:
 | varredura | total | de que é |
 |---|---|---|
 | estreita | **0** | nada sobrou reescrevível |
-| ampla | **343** | **0 de texto de tela**, 343 de identificador, dado, rota, exemplo e comentário |
+| ampla | **354** | **0 de texto de tela**, 354 de identificador, dado, rota, exemplo e comentário |
 
-**Os 343 são o que sobrou do item 3e, e o número de texto de tela é zero.**
+**Os 354 são o que sobrou do item 3e, e o número de texto de tela é zero.**
 Antes de traduzir eles foram **216**, e só apareceram porque um bug de regex foi
 corrigido — a mesma varredura reportava **zero** com 263 atrás. A seção "O bug
 que escondeu 263 textos" está abaixo e vale mais que o número. E eles já foram
@@ -739,10 +739,21 @@ sentidos.** Com 216 linhas reais, zero seria um teste que passa pelo motivo
 errado — a mesma falha do teto alto pelo lado oposto. Zero só é honesto
 **depois** de o número medido chegar a zero, e é o que o item 3e fez: **205
 textos de tela**, entre 148 literais diretos e 33 interpolados, mais as exclusões
-que a lista de não-texto absorveu. O que a varredura mede agora são **343
+que a lista de não-texto absorveu. O que a varredura mede agora são **354
 literais** que são identificador, dado, rota, exemplo ou comentário — cada um com
 o motivo escrito. **A trava estreita continua em zero**, e é a que protege o que
 a máquina reescreve.
+
+**Estes 354 foram medidos contra a tag, e não contra uma memória.** A tag `0.7.0`
+dá **347**, e o total subiu **+7** desde então: **+3** em
+`lib/views/system_one_console.dart` (o trabalho do System One, todos `DADO`) e
+**+4** em `lib/controllers/model_controller.dart`, que **não** é deste trabalho.
+Texto de tela: **zero nos dois lados**. **Este arquivo dizia 343, que não bate
+com nem com a tag nem com o HEAD** — o oitavo número em prosa que ninguém
+verificou, e a mesma classe de erro do cabeçalho que diz `0.6.0+2009` com a 0.7.0
+publicada. `lib/services/` **não entra** na varredura ampla, por decisão
+registrada acima; por isso `system_one_presets.dart` — que é full de literais
+ingleses de propósito, porque são o que o modelo lê — dá **zero** aqui.
 
 **O item 3e foi fechado pelo aparelho, não pelo contador.** As duas últimas
 levas de texto em inglês apareceram no `uiautomator dump` do A72 com o teto em
@@ -830,7 +841,7 @@ este arquivo descreve em outros lugares.
 resposta da busca; traduzir esvazia a lista de resultados sem erro. O que a pessoa
 lê é o **valor** do mapa, com chave própria.
 
-**Os 343 da ampla não se traduzem, e a lista diz por quê.**
+**Os 354 da ampla não se traduzem, e a lista diz por quê.**
 `TextLanguage.naoTexto` tem 59 entradas, cada uma com o motivo: `'local'` é
 identificador de runtime comparado com `==`, `json['loaded']` é chave de payload,
 `frequency.startsWith('every')` é comparação, `'List models'` é chave de exemplo
